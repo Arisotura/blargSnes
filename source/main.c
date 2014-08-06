@@ -10,6 +10,7 @@
 #include <ctr/FS.h>
 #include <ctr/svc.h>
 #include "font.h"
+#include "mem.h"
 
 
 u8* TopFB[2];
@@ -28,6 +29,35 @@ Handle fsuHandle;
 FS_archive sdmcArchive;
 
 u32 pad_cur, pad_last;
+
+
+int strlen_u(u16* str)
+{
+	int i = 0;
+	while (str[i] != '\0') i++;
+	i--;
+	return i;
+}
+
+void derp_divmod(int num, int den, int* quo, int* rem)
+{
+	if (den == 0)
+	{
+		if (quo) *quo = 0xFFFFFFFF;
+		if (rem) *rem = 0xFFFFFFFF;
+		return;
+	}
+	
+	int i = 0;
+	while (num >= den)
+	{
+		num -= den;
+		i++;
+	}
+	
+	if (quo) *quo = i;
+	if (rem) *rem = num;
+}
 
 
 void gspGpuInit()
@@ -61,7 +91,7 @@ void gspGpuInit()
 	//map GSP heap
 	svc_controlMemory((u32*)&gspHeap, 0x0, 0x0, 0x2000000, 0x10003, 0x3);
 	
-	BottomFB0 = &gspHeap[0x46800*4];
+	BottomFB0 = &gspHeap[0x46500*4];
 
 	//wait until we can write stuff to it
 	svc_waitSynchronization1(gspEvent, 0x55bcb0);
@@ -104,7 +134,7 @@ void copyBottomBuffer()
 	
 	//copy topleft FB
 	u8 copiedBuffer=4+curBottomBuffer;
-	u8* bufAdr=&gspHeap[0x46800*copiedBuffer];
+	u8* bufAdr=&gspHeap[0x46500*copiedBuffer];
 	GSPGPU_FlushDataCache(NULL, bufAdr, 0x46500);
 
 	GX_RequestDma(gxCmdBuf, (u32*)bufAdr, (u32*)BottomFB[curBottomBuffer], 0x46500);
@@ -214,6 +244,8 @@ void DrawUnicodeText(int x, int y, u16* str)
 			
 			for (cx = 0; cx < glyphsize; cx++)
 			{
+				if ((x+cx) >= 320) break;
+				
 				if (val & (1 << cx))
 				{
 					int idx = ((x+cx)*240) + (239 - (y + cy));
@@ -225,6 +257,7 @@ void DrawUnicodeText(int x, int y, u16* str)
 		}
 		x += glyphsize;
 		x++;
+		if (x >= 320) break;
 	}
 }
 
@@ -272,8 +305,7 @@ void DrawHex(int x, int y, unsigned int n)
 
 
 
-//u16* filelist;
-u16 filelist[0x106 * 50]; // MAX 50 files -- DIRTY
+u16* filelist;
 int nfiles;
 
 bool IsGoodFile(u8* entry)
@@ -304,8 +336,8 @@ void LoadROMList()
 		nfiles++;
 	}
 	FSDIR_Close(dirHandle);
-	
-	//filelist = (u16*)malloc(0x20C * nfiles);
+
+	filelist = (u16*)MemAlloc(0x20C * nfiles);
 	
 	// TODO: find out how to rewind it rather than reopening it?
 	FSUSER_OpenDirectory(fsuHandle, &dirHandle, sdmcArchive, dirPath);
@@ -319,7 +351,7 @@ void LoadROMList()
 		
 		// dirty way to copy an Unicode string
 		memcpy(&filelist[0x106 * i], &entry[0], 0x20C);
-		*(u16*)&filelist[(0x106 * i) + 0x105] = 0;
+		filelist[(0x106 * i) + 0x105] = 0;
 		i++;
 	}
 	FSDIR_Close(dirHandle);
@@ -333,6 +365,7 @@ void DrawROMList()
 {
 	int i, x, y, y2;
 	int maxfile;
+	int menuy;
 	
 	DrawText(0, 0, "blargSnes 1.0 - by StapleButter");
 	
@@ -353,12 +386,14 @@ void DrawROMList()
 		BottomFB0[idx*3+2] = 0;
 	}
 	y += 5;
+	menuy = y;
 	
 	if ((nfiles - menuscroll) <= MENU_MAX) maxfile = (nfiles - menuscroll);
 	else maxfile = MENU_MAX;
 	
 	for (i = 0; i < maxfile; i++)
 	{
+		// blue highlight for the selected ROM
 		if ((menuscroll+i) == menusel)
 		{
 			for (y2 = y; y2 < (y+12); y2++)
@@ -375,6 +410,42 @@ void DrawROMList()
 		
 		DrawUnicodeText(3, y, &filelist[0x106 * (menuscroll+i)]);
 		y += 12;
+	}
+	
+	// scrollbar
+	if (nfiles > MENU_MAX)
+	{
+		int shownheight = 240-menuy;
+		int fullheight = 12*nfiles;
+		
+		int sbheight = shownheight * shownheight;
+		derp_divmod(sbheight, fullheight, &sbheight, NULL);
+		
+		int sboffset = menuscroll * 12 * shownheight;
+		derp_divmod(sboffset, fullheight, &sboffset, NULL);
+		if ((sboffset+sbheight) > shownheight)
+			sboffset = shownheight-sbheight;
+		
+		for (y = menuy; y < 240; y++)
+		{
+			for (x = 308; x < 320; x++)
+			{
+				int idx = (x*240) + (239-y);
+				
+				if (y >= sboffset+menuy && y <= sboffset+menuy+sbheight)
+				{
+					BottomFB0[idx*3+0] = 255;
+					BottomFB0[idx*3+1] = 255;
+					BottomFB0[idx*3+2] = 0;
+				}
+				else
+				{
+					BottomFB0[idx*3+0] = 64;
+					BottomFB0[idx*3+1] = 0;
+					BottomFB0[idx*3+2] = 0;
+				}
+			}
+		}
 	}
 }
 
@@ -403,6 +474,7 @@ int main()
 	
 	aptSetupEventHandler();
 	
+	FrameTime = 0ULL;
 	for (i = 0; i < 16; i++)
 	{
 		u64 t1 = svc_getSystemTick();
@@ -469,6 +541,8 @@ int main()
 	
 	//regData=0x010000FF;
 	//GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
+	
+	MemFree(filelist, 0x20C*nfiles);
 
 	svc_closeHandle(fsuHandle);
 	hidExit();
