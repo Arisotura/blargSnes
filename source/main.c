@@ -10,18 +10,22 @@
 #include <ctr/FS.h>
 #include <ctr/svc.h>
 #include "font.h"
+#include "logo.h"
 #include "mem.h"
 
 
-u8* TopFB[2];
-u8* BottomFB[2];
-u8* BottomFB0;
+u8* TopFBAddr[2];
+u8* BottomFBAddr[2];
+u8* TopFB;
+u8* BottomFB;
+
+#define TOPBUF_SIZE 0x2EE00
+#define BOTTOMBUF_SIZE 0x38400
 
 u8* gspHeap;
 u32* gxCmdBuf;
 
-u8 currentBuffer;
-int curBottomBuffer;
+int curTopBuffer, curBottomBuffer;
 
 Handle gspEvent, gspSharedMemHandle;
 
@@ -62,21 +66,31 @@ void derp_divmod(int num, int den, int* quo, int* rem)
 
 void gspGpuInit()
 {
+	u32 regval;
 	gspInit();
 
 	GSPGPU_AcquireRight(NULL, 0x0);
 	GSPGPU_SetLcdForceBlack(NULL, 0x0);
 
 	//grab main left screen framebuffer addresses
-	GSPGPU_ReadHWRegs(NULL, 0x400468, (u32*)&TopFB, 8);
-	GSPGPU_ReadHWRegs(NULL, 0x400568, (u32*)&BottomFB, 8);
+	GSPGPU_ReadHWRegs(NULL, 0x400468, (u32*)&TopFBAddr, 8);
+	GSPGPU_ReadHWRegs(NULL, 0x400568, (u32*)&BottomFBAddr, 8);
 	
-	TopFB[0] += 0x7000000;
-	TopFB[1] += 0x7000000;
-	BottomFB[0] += 0x7000000;
-	BottomFB[1] += 0x7000000;
+	GSPGPU_WriteHWRegs(NULL, 0x400494, (u32*)&TopFBAddr, 8);
 	
-	//BottomFB0 = BottomFB[0];
+	GSPGPU_ReadHWRegs(NULL, 0x400470, &regval, 4);
+	regval &= 0xFFFFFFF8;
+	regval |= 3; // 15bit color
+	GSPGPU_WriteHWRegs(NULL, 0x400470, &regval, 4);
+	regval = 480;
+	GSPGPU_WriteHWRegs(NULL, 0x400490, &regval, 4);
+	
+	TopFBAddr[0] += 0x7000000;
+	TopFBAddr[1] += 0x7000000;
+	BottomFBAddr[0] += 0x7000000;
+	BottomFBAddr[1] += 0x7000000;
+	
+	//BottomFB = BottomFBAddr[0];
 
 	//convert PA to VA (assuming FB in VRAM)
 	/*topLeftFramebuffers[0]+=0x7000000;
@@ -91,15 +105,14 @@ void gspGpuInit()
 	//map GSP heap
 	svc_controlMemory((u32*)&gspHeap, 0x0, 0x0, 0x2000000, 0x10003, 0x3);
 	
-	BottomFB0 = &gspHeap[0x46500*4];
+	TopFB = &gspHeap[0];
+	BottomFB = &gspHeap[TOPBUF_SIZE];
 
 	//wait until we can write stuff to it
 	svc_waitSynchronization1(gspEvent, 0x55bcb0);
 
 	//GSP shared mem : 0x2779F000
 	gxCmdBuf=(u32*)(0x10002000+0x800+threadID*0x200);
-
-	currentBuffer=0;
 }
 
 void gspGpuExit()
@@ -118,42 +131,46 @@ void gspGpuExit()
 }
 
 
-void setBottomBuffer(int buf)
+void CopyTopBuffer()
 {
+	GSPGPU_FlushDataCache(NULL, TopFB, TOPBUF_SIZE);
+	GX_RequestDma(gxCmdBuf, (u32*)TopFB, (u32*)TopFBAddr[curTopBuffer], TOPBUF_SIZE);
+}
+
+void CopyBottomBuffer()
+{
+	GSPGPU_FlushDataCache(NULL, BottomFB, BOTTOMBUF_SIZE);
+	GX_RequestDma(gxCmdBuf, (u32*)BottomFB, (u32*)BottomFBAddr[curBottomBuffer], BOTTOMBUF_SIZE);
+}
+
+void SwapTopBuffers(int doswap)
+{
+	CopyTopBuffer();
+	
+	u32 regData;
+	GSPGPU_ReadHWRegs(NULL, 0x400478, &regData, 4);
+	regData &= 0xFFFFFFFE;
+	regData |= curTopBuffer;
+	GSPGPU_WriteHWRegs(NULL, 0x400478, &regData, 4);
+	
+	if (doswap) curTopBuffer ^= 1;
+}
+
+void SwapBottomBuffers(int doswap)
+{
+	CopyBottomBuffer();
+	
 	u32 regData;
 	GSPGPU_ReadHWRegs(NULL, 0x400578, &regData, 4);
 	regData &= 0xFFFFFFFE;
-	regData |= buf;
+	regData |= curBottomBuffer;
 	GSPGPU_WriteHWRegs(NULL, 0x400578, &regData, 4);
-	curBottomBuffer = buf;
-}
-
-void copyBottomBuffer()
-{
-	//curBottomBuffer ^= 1;
 	
-	//copy topleft FB
-	u8 copiedBuffer=4+curBottomBuffer;
-	u8* bufAdr=&gspHeap[0x46500*copiedBuffer];
-	GSPGPU_FlushDataCache(NULL, bufAdr, 0x46500);
-
-	GX_RequestDma(gxCmdBuf, (u32*)bufAdr, (u32*)BottomFB[curBottomBuffer], 0x46500);
-	
-	setBottomBuffer(curBottomBuffer);
-}
-
-void copyBuffer()
-{
-	//copy topleft FB
-	u8 copiedBuffer=currentBuffer^1;
-	u8* bufAdr=&gspHeap[0x46500*copiedBuffer];
-	GSPGPU_FlushDataCache(NULL, bufAdr, 0x46500);
-
-	GX_RequestDma(gxCmdBuf, (u32*)bufAdr, (u32*)TopFB[copiedBuffer], 0x46500);
+	if (doswap) curBottomBuffer ^= 1;
 }
 
 
-void clearBottomBuffer()
+void ClearBottomBuffer()
 {
 	int x, y;
 	
@@ -162,9 +179,9 @@ void clearBottomBuffer()
 		for (x = 0; x < 320; x++)
 		{
 			int idx = (x*240) + (239-y);
-			BottomFB0[idx*3+0] = 32;
-			BottomFB0[idx*3+1] = 0;
-			BottomFB0[idx*3+2] = 0;
+			BottomFB[idx*3+0] = 32;
+			BottomFB[idx*3+1] = 0;
+			BottomFB[idx*3+2] = 0;
 		}
 	}
 }
@@ -201,9 +218,9 @@ void DrawText(int x, int y, char* str)
 				if (val & (1 << cx))
 				{
 					int idx = ((x+cx)*240) + (239 - (y + cy));
-					BottomFB0[idx*3+0] = 255;
-					BottomFB0[idx*3+1] = 255;
-					BottomFB0[idx*3+2] = 255;
+					BottomFB[idx*3+0] = 255;
+					BottomFB[idx*3+1] = 255;
+					BottomFB[idx*3+2] = 255;
 				}
 			}
 		}
@@ -249,9 +266,9 @@ void DrawUnicodeText(int x, int y, u16* str)
 				if (val & (1 << cx))
 				{
 					int idx = ((x+cx)*240) + (239 - (y + cy));
-					BottomFB0[idx*3+0] = 255;
-					BottomFB0[idx*3+1] = 255;
-					BottomFB0[idx*3+2] = 255;
+					BottomFB[idx*3+0] = 255;
+					BottomFB[idx*3+1] = 255;
+					BottomFB[idx*3+2] = 255;
 				}
 			}
 		}
@@ -292,9 +309,9 @@ void DrawHex(int x, int y, unsigned int n)
 				if (val & (1 << cx))
 				{
 					int idx = ((x+cx)*240) + (239 - (y + cy));
-					BottomFB0[idx*3+0] = 255;
-					BottomFB0[idx*3+1] = 255;
-					BottomFB0[idx*3+2] = 0;
+					BottomFB[idx*3+0] = 255;
+					BottomFB[idx*3+1] = 255;
+					BottomFB[idx*3+2] = 0;
 				}
 			}
 		}
@@ -373,17 +390,17 @@ void DrawROMList()
 	for (x = 0; x < 320; x++)
 	{
 		int idx = (x*240) + (239-y);
-		BottomFB0[idx*3+0] = 255;
-		BottomFB0[idx*3+1] = 255;
-		BottomFB0[idx*3+2] = 0;
+		BottomFB[idx*3+0] = 255;
+		BottomFB[idx*3+1] = 255;
+		BottomFB[idx*3+2] = 0;
 	}
 	y++;
 	for (x = 0; x < 320; x++)
 	{
 		int idx = (x*240) + (239-y);
-		BottomFB0[idx*3+0] = 255;
-		BottomFB0[idx*3+1] = 128;
-		BottomFB0[idx*3+2] = 0;
+		BottomFB[idx*3+0] = 255;
+		BottomFB[idx*3+1] = 128;
+		BottomFB[idx*3+2] = 0;
 	}
 	y += 5;
 	menuy = y;
@@ -401,9 +418,9 @@ void DrawROMList()
 				for (x = 0; x < 320; x++)
 				{
 					int idx = (x*240) + (239-y2);
-					BottomFB0[idx*3+0] = 255;
-					BottomFB0[idx*3+1] = 0;
-					BottomFB0[idx*3+2] = 0;
+					BottomFB[idx*3+0] = 255;
+					BottomFB[idx*3+1] = 0;
+					BottomFB[idx*3+2] = 0;
 				}
 			}
 		}
@@ -434,15 +451,15 @@ void DrawROMList()
 				
 				if (y >= sboffset+menuy && y <= sboffset+menuy+sbheight)
 				{
-					BottomFB0[idx*3+0] = 255;
-					BottomFB0[idx*3+1] = 255;
-					BottomFB0[idx*3+2] = 0;
+					BottomFB[idx*3+0] = 255;
+					BottomFB[idx*3+1] = 255;
+					BottomFB[idx*3+2] = 0;
 				}
 				else
 				{
-					BottomFB0[idx*3+0] = 64;
-					BottomFB0[idx*3+1] = 0;
-					BottomFB0[idx*3+2] = 0;
+					BottomFB[idx*3+0] = 64;
+					BottomFB[idx*3+1] = 0;
+					BottomFB[idx*3+2] = 0;
 				}
 			}
 		}
@@ -468,9 +485,20 @@ int main()
 	srv_getServiceHandle(NULL, &fsuHandle, "fs:USER");
 	FSUSER_Initialize(fsuHandle);
 	
-	clearBottomBuffer();
-	setBottomBuffer(0);
-	copyBottomBuffer();
+	curTopBuffer = 0;
+	curBottomBuffer = 0;
+	ClearBottomBuffer();
+	SwapBottomBuffers(0);
+	
+	for (y = 0; y < 240; y++)
+	{
+		for (x = 0; x < 400; x++)
+		{
+			int idx = (x*240) + (239-y);
+			((u16*)TopFB)[idx] = logo[(y*400)+x];
+		}
+	}
+	SwapTopBuffers(0);
 	
 	aptSetupEventHandler();
 	
@@ -489,41 +517,52 @@ int main()
 	FSUSER_OpenArchive(fsuHandle, &sdmcArchive);
 	
 	LoadROMList();
+	DrawROMList();
+	SwapBottomBuffers(0);
 	
 	
-	u32 regData=0x01FF0000;
-	GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
+	//u32 regData=0x01FF0000;
+	//GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
 	
 	APP_STATUS status;
 	while((status=aptGetStatus())!=APP_EXITING)
 	{
 		if(status==APP_RUNNING)
 		{
-			u64 t1 = svc_getSystemTick();
-			clearBottomBuffer();
+			//u64 t1 = svc_getSystemTick();
+			ClearBottomBuffer();
 			
 			pad_cur = hidSharedMem[0x28>>2];
 			u32 press = pad_cur & ~pad_last;
-			if (press & 0x40000040) // up
+			
+			if (press & (PAD_A|PAD_B))
+			{
+				// TODO: start another thread and load the selected ROM
+			}
+			else if (pad_cur & 0x40000040) // up
 			{
 				menusel--;
 				if (menusel < 0) menusel = 0;
 				if (menusel < menuscroll) menuscroll = menusel;
+				
+				DrawROMList();
+				SwapBottomBuffers(0);
 			}
-			else if (press & 0x80000080) // down
+			else if (pad_cur & 0x80000080) // down
 			{
 				menusel++;
 				if (menusel > nfiles-1) menusel = nfiles-1;
 				if (menusel-(MENU_MAX-1) > menuscroll) menuscroll = menusel-(MENU_MAX-1);
+				
+				DrawROMList();
+				SwapBottomBuffers(0);
 			}
-			
-			DrawROMList();
-			copyBottomBuffer();
 			
 			pad_last = pad_cur;
 			
-			u64 t2 = svc_getSystemTick();
-			svc_sleepThread(FrameTime - (t2-t1));
+			//u64 t2 = svc_getSystemTick();
+			//svc_sleepThread(FrameTime - (t2-t1));
+			svc_sleepThread(150 * 1000 * 1000);
 		}
 		else if(status == APP_SUSPENDING)
 		{

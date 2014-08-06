@@ -1,6 +1,8 @@
 blargSnes
 =========
 
+http://blargsnes.kuribo64.net/
+
 A SNES emulator for the 3DS. If you have seen lolSnes, you know what to expect.
 
 
