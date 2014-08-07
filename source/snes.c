@@ -29,7 +29,7 @@ u8* ROM_Bank0End;
 u8 ROM_Region;
 
 bool SNES_HiROM;
-u8 SNES_SysRAM[0x20000];
+u8 SNES_SysRAM[0x20000] __attribute__((aligned(256)));
 u32 SNES_SRAMMask;
 u8* SNES_SRAM = NULL;
 FILE* SNES_SRAMFile = NULL;
@@ -591,8 +591,8 @@ void SNES_Write16(u32 addr, u8 val)
 // TEMPORARY SHIT
 
 void PPU_Reset() {}
-void PPU_Write8(u32 addr, u8 val) {asm("stmdb sp!, {r12}");bprintf("PPU w8 21%02X %02X\n", addr, val);asm("ldmia sp!, {r12}");}
-void PPU_Write16(u32 addr, u16 val) {asm("stmdb sp!, {r12}");bprintf("PPU w16 21%02X %04X\n", addr, val);asm("ldmia sp!, {r12}");}
+void PPU_Write8(u32 addr, u8 val) {asm("stmdb sp!, {r12}");if(addr==0x0E)bprintf("PPU w8 21%02X %02X\n", addr, val);asm("ldmia sp!, {r12}");}
+void PPU_Write16(u32 addr, u16 val) {}
 u8 PPU_Read8(u32 addr) { return 0; }
 u16 PPU_Read16(u32 addr) { return 0; }
 

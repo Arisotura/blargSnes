@@ -61,6 +61,7 @@ int consoleidx = 0;
 int showconsole = 0;
 
 int running = 0;
+int pause = 0;
 
 
 void strncpy_u2a(char* dst, u16* src, int n)
@@ -519,23 +520,53 @@ void CPUThread(u32 blarg)
 }
 
 
-void PostEmuFrame()
+// return val: 1=continue running
+int PostEmuFrame()
 {
 	asm("stmdb sp!, {r12}");
 	
+	APP_STATUS status = aptGetStatus();
+	if (status == APP_EXITING)
+	{
+		asm("ldmia sp!, {r12}");
+		return 0;
+	}
+	else if(status == APP_SUSPENDING)
+	{
+		aptReturnToMenu();
+	}
+	else if(status == APP_SLEEPMODE)
+	{
+		aptWaitStatusEvent();
+	}
+	
+	// rudimentary way to pause
+	if (hidSharedMem[0xCC>>2])
+	{
+		pause = 1;
+		bprintf("pause\n");
+		asm("ldmia sp!, {r12}");
+		return 0;
+	}
+	
 	DrawConsole();
 	SwapBottomBuffers(0);
+	ClearBottomBuffer();
+	
+	// TODO: VSYNC
 	
 	asm("ldmia sp!, {r12}");
+	return 1;
 }
 
-void debugcrapo(u32 op)
+void debugcrapo(u32 op, u32 op2)
 {
 	asm("stmdb sp!, {r0-r3, r12}");
 	
-	bprintf("OP %02X\n", op);
+	bprintf("DBG: %08X %08X\n", op, op2);
 	DrawConsole();
 	SwapBottomBuffers(0);
+	ClearBottomBuffer();
 	
 	asm("ldmia sp!, {r0-r3, r12}");
 }
@@ -615,11 +646,11 @@ int main()
 			//u64 t1 = svc_getSystemTick();
 			ClearBottomBuffer();
 			
+			pad_cur = hidSharedMem[0x28>>2];
+			u32 press = pad_cur & ~pad_last;
+			
 			if (!running)
 			{
-				pad_cur = hidSharedMem[0x28>>2];
-				u32 press = pad_cur & ~pad_last;
-				
 				if (press & (PAD_A|PAD_B))
 				{
 					if (!showconsole)
@@ -660,6 +691,15 @@ int main()
 					menusel++;
 					if (menusel > nfiles-1) menusel = nfiles-1;
 					if (menusel-(MENU_MAX-1) > menuscroll) menuscroll = menusel-(MENU_MAX-1);
+				}
+			}
+			else if (pause)
+			{
+				if (press & (PAD_A|PAD_B))
+				{
+					pause = 0;
+					bprintf("resume\n");
+					CPU_Run();
 				}
 			}
 			

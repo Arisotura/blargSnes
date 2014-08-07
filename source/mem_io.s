@@ -21,7 +21,7 @@
 
 .include "cpu.inc"
 
-.section    .data, "aw", %progbits
+.section    .text, "awx", %progbits
 
 .align 4
 .global SNES_IORead8

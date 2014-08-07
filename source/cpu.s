@@ -611,13 +611,12 @@ CPU_TriggerIRQ:
 	add r3, r3, r2, lsr #0x13
 	bne irq_nostack
 	tst snesP, #flagE
-	streqb snesPBR, [r3]
-	subeq r3, r3, #1
+	streqb snesPBR, [r3, #4]
 	mov r0, snesPC, lsr #0x10
-	strb r0, [r3, #-1]
+	strb r0, [r3, #2]
 	mov r0, r0, lsr #0x8
-	strb r0, [r3]
-	strb snesP, [r3, #-2]
+	strb r0, [r3, #3]
+	strb snesP, [r3, #1]
 irq_nostack:
 	bic snesP, snesP, #(flagD|flagW)
 	orr snesP, snesP, #flagI
@@ -645,13 +644,12 @@ CPU_TriggerNMI:
 	add r3, r3, r2, lsr #0x13
 	bne nmi_nostack
 	tst snesP, #flagE
-	streqb snesPBR, [r3]
-	subeq r3, r3, #1
+	streqb snesPBR, [r3, #4]
 	mov r0, snesPC, lsr #0x10
-	strb r0, [r3, #-1]
+	strb r0, [r3, #2]
 	mov r0, r0, lsr #0x8
-	strb r0, [r3]
-	strb snesP, [r3, #-2]
+	strb r0, [r3, #3]
+	strb snesP, [r3, #1]
 nmi_nostack:
 	bic snesP, snesP, #(flagD|flagW)
 	orr snesP, snesP, #flagI
@@ -695,6 +693,7 @@ CPU_Cycles:
 .section    .text, "awx", %progbits
 	
 CPU_Run:
+	stmdb sp!, {r0-r12, lr}
 	LoadRegs
 
 frameloop:
@@ -785,7 +784,9 @@ irq_end:
 				subne snesPC, snesPC, #0x10000
 				
 				OpcodePrefetch8
-				bl debugcrapo
+				@mov r1, snesPC, lsr #0x10
+				@orr r1, r1, snesPBR, lsl #0x10
+				@bl debugcrapo
 				ldr pc, [opTable, r0, lsl #0x2]
 op_return:
 				cmp snesCycles, #0x00010000
@@ -822,9 +823,12 @@ vblank_notfirst:
 		ldr r1, =PPU_VCount
 		strh r0, [r1]
 		
-		@swi #0x50000 @ TODO find 3DS equivalent
 		bl PostEmuFrame
-		b frameloop
+		cmp r0, #1
+		beq frameloop
+		
+	StoreRegs
+	ldmia sp!, {r0-r12, pc}
 		
 .ltorg
 
