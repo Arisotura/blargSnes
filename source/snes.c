@@ -18,7 +18,7 @@
 
 #include "snes.h"
 #include "cpu.h"
-//#include "ppu.h"
+#include "ppu.h"
 
 #include <ctr/HID.h>
 
@@ -589,11 +589,5 @@ void SNES_Write16(u32 addr, u8 val)
 
 
 // TEMPORARY SHIT
-
-void PPU_Reset() {}
-void PPU_Write8(u32 addr, u8 val) {asm("stmdb sp!, {r12}");if(addr==0x0E)bprintf("PPU w8 21%02X %02X\n", addr, val);asm("ldmia sp!, {r12}");}
-void PPU_Write16(u32 addr, u16 val) {}
-u8 PPU_Read8(u32 addr) { return 0; }
-u16 PPU_Read16(u32 addr) { return 0; }
 
 u16 PPU_VCount;

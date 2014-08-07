@@ -702,6 +702,7 @@ frameloop:
 		mov r0, #0
 		ldr r1, =PPU_VCount
 		strh r0, [r1]
+		bl PPU_RenderScanline
 		@bl DMA_ReloadHDMA
 		b emuloop
 		
@@ -711,7 +712,9 @@ newline:
 			
 			ldr r0, =PPU_VCount
 			strh snesCycles, [r0]
-			@ TODO call PPU here
+			ldrh r0, [r0]
+			cmp r0, #0xE0
+			blle PPU_RenderScanline
 			
 emuloop:
 				mov r3, snesCycles, asr #0x10

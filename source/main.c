@@ -32,6 +32,7 @@
 #include "font.h"
 #include "logo.h"
 #include "mem.h"
+#include "ppu.h"
 
 
 u8* TopFBAddr[2];
@@ -56,7 +57,7 @@ u32 pad_cur, pad_last;
 
 
 #define CONSOLE_MAX 20
-char consolebuf[20][33];
+char consolebuf[CONSOLE_MAX][33];
 int consoleidx = 0;
 int showconsole = 0;
 
@@ -490,7 +491,7 @@ void bprintf(char* fmt, ...)
 void DrawConsole()
 {
 	int i, j, y;
-	
+
 	y = 0;
 	j = consoleidx;
 	for (i = 0; i < CONSOLE_MAX; i++)
@@ -525,6 +526,8 @@ int PostEmuFrame()
 {
 	asm("stmdb sp!, {r12}");
 	
+	SwapTopBuffers(0);
+	
 	APP_STATUS status = aptGetStatus();
 	if (status == APP_EXITING)
 	{
@@ -548,7 +551,7 @@ int PostEmuFrame()
 		asm("ldmia sp!, {r12}");
 		return 0;
 	}
-	
+
 	DrawConsole();
 	SwapBottomBuffers(0);
 	ClearBottomBuffer();
@@ -571,6 +574,12 @@ void debugcrapo(u32 op, u32 op2)
 	asm("ldmia sp!, {r0-r3, r12}");
 }
 
+void dbgcolor(u32 col)
+{
+	u32 regData=0x01000000|col;
+	GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
+}
+
 
 
 char temppath[300];
@@ -583,8 +592,22 @@ int main()
 	Handle cputhread;
 	u8* cputhreadstack;
 	
+	running = 0;
+	pause = 0;
+	showconsole = 0;
+	consoleidx = 0;
+	
 	for (i = 0; i < CONSOLE_MAX; i++)
 		consolebuf[i][0] = '\0';
+		
+	// map SNES 15bit color to 3DS 15bit
+	for (i = 0; i < 0x10000; i++)
+	{
+		int r = i & 0x001F;
+		int g = i & 0x03E0;
+		int b = i & 0x7C00;
+		PPU_ColorTable[i] = 0x0001 | (r << 11) | (g << 1) | (b >> 9);
+	}
 	
 	initSrv();
 		
@@ -644,6 +667,7 @@ int main()
 		if(status==APP_RUNNING)
 		{
 			//u64 t1 = svc_getSystemTick();
+			
 			ClearBottomBuffer();
 			
 			pad_cur = hidSharedMem[0x28>>2];
@@ -707,7 +731,7 @@ int main()
 				DrawConsole();
 			else
 				DrawROMList();
-				
+			
 			SwapBottomBuffers(0);
 			
 			pad_last = pad_cur;
