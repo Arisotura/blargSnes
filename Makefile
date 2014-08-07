@@ -2,8 +2,8 @@ CC = arm-none-eabi-gcc
 LINK = arm-none-eabi-ld
 OBJCOPY = arm-none-eabi-objcopy
 CTRULIB = ../libctru
-CFLAGS += -Wall -std=c99 -march=armv6 -O3 -I"$(CTRULIB)/include" -I$(DEVKITPRO)/libnds/include
-LDFLAGS += --script=ccd00.ld -L"$(DEVKITARM)/arm-none-eabi/lib" -L"$(CTRULIB)/lib"
+CFLAGS += -Wall -march=armv6 -O3 -I"$(CTRULIB)/include" -I$(DEVKITPRO)/libnds/include
+LDFLAGS += -T ccd00.ld -L"$(DEVKITARM)/arm-none-eabi/lib" -L"$(DEVKITARM)/lib/gcc/arm-none-eabi/4.7.1" -L"$(CTRULIB)/lib"
 
 CFILES = $(wildcard source/*.c)
 OFILES = $(CFILES:source/%.c=build/%.o)
@@ -23,7 +23,7 @@ $(PROJECTNAME).bin: $(PROJECTNAME).elf
 	$(OBJCOPY) -O binary $< $@
 
 $(PROJECTNAME).elf: $(OFILES)
-	$(LINK) $(LDFLAGS) -o $(PROJECTNAME).elf $(filter-out build/crt0.o, $(OFILES)) -lctru -lc
+	$(LINK) $(LDFLAGS) -o $(PROJECTNAME).elf $(filter-out build/crt0.o, $(OFILES)) -lctru -lc -lgcc -lsysbase
 
 clean:
 	@rm -f build/*.o build/*.d
@@ -37,5 +37,5 @@ build/%.o: source/%.c
 	@$(CC) -MM $< > build/$*.d
 
 build/%.o: source/%.s
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -I"./source" -c $< -o $@
 	@$(CC) -MM $< > build/$*.d

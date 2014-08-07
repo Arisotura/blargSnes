@@ -1,6 +1,25 @@
+/*
+    Copyright 2014 StapleButter
+
+    This file is part of blargSnes.
+
+    blargSnes is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    blargSnes is distributed in the hope that it will be useful, but WITHOUT ANY 
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS 
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along 
+    with blargSnes. If not, see http://www.gnu.org/licenses/.
+*/
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 #include <ctr/types.h>
 #include <ctr/srv.h>
 #include <ctr/APT.h>
@@ -9,6 +28,7 @@
 #include <ctr/HID.h>
 #include <ctr/FS.h>
 #include <ctr/svc.h>
+
 #include "font.h"
 #include "logo.h"
 #include "mem.h"
@@ -35,20 +55,37 @@ FS_archive sdmcArchive;
 u32 pad_cur, pad_last;
 
 
-int strlen_u(u16* str)
+#define CONSOLE_MAX 20
+char consolebuf[20][33];
+int consoleidx = 0;
+int showconsole = 0;
+
+int running = 0;
+
+
+void strncpy_u2a(char* dst, u16* src, int n)
 {
 	int i = 0;
-	while (str[i] != '\0') i++;
-	i--;
-	return i;
+	while (i < n && src[i] != '\0')
+	{
+		if (src[i] & 0xFF00)
+			dst[i] = 0x7F;
+		else
+			dst[i] = (char)src[i];
+		
+		i++;
+	}
+	
+	dst[i] = '\0';
 }
 
+// REMOVEME
 void derp_divmod(int num, int den, int* quo, int* rem)
 {
 	if (den == 0)
 	{
 		if (quo) *quo = 0xFFFFFFFF;
-		if (rem) *rem = 0xFFFFFFFF;
+		if (rem) *rem = num;
 		return;
 	}
 	
@@ -200,49 +237,6 @@ void DrawText(int x, int y, char* str)
 			continue;
 		}
 		
-		ptr = &font[(str[i]-0x20) << 4];
-		glyphsize = ptr[0];
-		if (!glyphsize)
-		{
-			x += 6;
-			continue;
-		}
-		
-		x++;
-		for (cy = 0; cy < 12; cy++)
-		{
-			unsigned short val = ptr[4+cy];
-			
-			for (cx = 0; cx < glyphsize; cx++)
-			{
-				if (val & (1 << cx))
-				{
-					int idx = ((x+cx)*240) + (239 - (y + cy));
-					BottomFB[idx*3+0] = 255;
-					BottomFB[idx*3+1] = 255;
-					BottomFB[idx*3+2] = 255;
-				}
-			}
-		}
-		x += glyphsize;
-		x++;
-	}
-}
-
-void DrawUnicodeText(int x, int y, u16* str)
-{
-	unsigned short* ptr;
-	unsigned short glyphsize;
-	int i, cx, cy;
-	
-	for (i = 0; str[i] != '\0'; i++)
-	{
-		if (str[i] < 0x21)
-		{
-			x += 6;
-			continue;
-		}
-		
 		u16 ch = str[i];
 		if (ch > 0x7E) ch = 0x7F;
 		
@@ -322,7 +316,7 @@ void DrawHex(int x, int y, unsigned int n)
 
 
 
-u16* filelist;
+char* filelist;
 int nfiles;
 
 bool IsGoodFile(u8* entry)
@@ -354,7 +348,7 @@ void LoadROMList()
 	}
 	FSDIR_Close(dirHandle);
 
-	filelist = (u16*)MemAlloc(0x20C * nfiles);
+	filelist = (char*)MemAlloc(0x106 * nfiles);
 	
 	// TODO: find out how to rewind it rather than reopening it?
 	FSUSER_OpenDirectory(fsuHandle, &dirHandle, sdmcArchive, dirPath);
@@ -367,8 +361,7 @@ void LoadROMList()
 		if (!IsGoodFile(entry)) continue;
 		
 		// dirty way to copy an Unicode string
-		memcpy(&filelist[0x106 * i], &entry[0], 0x20C);
-		filelist[(0x106 * i) + 0x105] = 0;
+		strncpy_u2a(&filelist[0x106 * i], (u16*)&entry[0], 0x105);
 		i++;
 	}
 	FSDIR_Close(dirHandle);
@@ -425,7 +418,7 @@ void DrawROMList()
 			}
 		}
 		
-		DrawUnicodeText(3, y, &filelist[0x106 * (menuscroll+i)]);
+		DrawText(3, y, &filelist[0x106 * (menuscroll+i)]);
 		y += 12;
 	}
 	
@@ -468,10 +461,99 @@ void DrawROMList()
 
 
 
+void bprintf(char* fmt, ...)
+{
+	char buf[256];
+	va_list args;
+	
+	va_start(args, fmt);
+	vsnprintf(buf, 255, fmt, args);
+	va_end(args);
+	
+	int i = 0, j = 0;
+	for (;;)
+	{
+		j = 0;
+		while (buf[i] != '\0' && buf[i] != '\n' && j<33)
+			consolebuf[consoleidx][j++] = buf[i++];
+		consolebuf[consoleidx][j] = '\0';
+		
+		consoleidx++;
+		if (consoleidx >= CONSOLE_MAX) consoleidx = 0;
+		
+		if (buf[i] == '\0' || buf[i+1] == '\0')
+			break;
+	}
+}
+
+void DrawConsole()
+{
+	int i, j, y;
+	
+	y = 0;
+	j = consoleidx;
+	for (i = 0; i < CONSOLE_MAX; i++)
+	{
+		if (consolebuf[j][0] != '\0')
+		{
+			DrawText(0, y, consolebuf[j]);
+			y += 12;
+		}
+		
+		j++;
+		if (j >= CONSOLE_MAX) j = 0;
+	}
+}
+
+
+
+void CPUThread(u32 blarg)
+{
+	u32 regData=0x0100FF00;
+	GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
+	
+	bprintf("ROM loaded, running...\n");
+	CPU_Reset();
+
+	CPU_Run();
+}
+
+
+void PostEmuFrame()
+{
+	asm("stmdb sp!, {r12}");
+	
+	DrawConsole();
+	SwapBottomBuffers(0);
+	
+	asm("ldmia sp!, {r12}");
+}
+
+void debugcrapo(u32 op)
+{
+	asm("stmdb sp!, {r0-r3, r12}");
+	
+	bprintf("OP %02X\n", op);
+	DrawConsole();
+	SwapBottomBuffers(0);
+	
+	asm("ldmia sp!, {r0-r3, r12}");
+}
+
+
+
+char temppath[300];
+
 int main() 
 {
 	int i, x, y;
 	u64 FrameTime;
+	
+	Handle cputhread;
+	u8* cputhreadstack;
+	
+	for (i = 0; i < CONSOLE_MAX; i++)
+		consolebuf[i][0] = '\0';
 	
 	initSrv();
 		
@@ -519,10 +601,11 @@ int main()
 	LoadROMList();
 	DrawROMList();
 	SwapBottomBuffers(0);
-	
-	
+
 	//u32 regData=0x01FF0000;
 	//GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
+	
+	cputhreadstack = MemAlloc(0x4000); // should be good enough for a stack
 	
 	APP_STATUS status;
 	while((status=aptGetStatus())!=APP_EXITING)
@@ -532,31 +615,60 @@ int main()
 			//u64 t1 = svc_getSystemTick();
 			ClearBottomBuffer();
 			
-			pad_cur = hidSharedMem[0x28>>2];
-			u32 press = pad_cur & ~pad_last;
+			if (!running)
+			{
+				pad_cur = hidSharedMem[0x28>>2];
+				u32 press = pad_cur & ~pad_last;
+				
+				if (press & (PAD_A|PAD_B))
+				{
+					if (!showconsole)
+					{
+						showconsole = 1;
+						bprintf("blargSnes console\n");
+
+						// load the ROM
+						strncpy(temppath, "/snes/", 6);
+						strncpy(&temppath[6], &filelist[0x106*menusel], 0x106);
+						temppath[6+0x106] = '\0';
+						bprintf("Loading %s...\n", temppath);
+						
+						if (!SNES_LoadROM(temppath))
+							bprintf("Failed to load this ROM\nPress A to return to menu\n");
+						else
+						{
+							//Result res = svc_createThread(&cputhread, &CPUThread, 0, cputhreadstack+0x4000, 16, 0);
+							running = 1;
+							
+							bprintf("ROM loaded, running...\n");
+
+							CPU_Reset();
+							CPU_Run();
+						}
+					}
+					else
+						showconsole = 0;
+				}
+				else if (pad_cur & 0x40000040) // up
+				{
+					menusel--;
+					if (menusel < 0) menusel = 0;
+					if (menusel < menuscroll) menuscroll = menusel;
+				}
+				else if (pad_cur & 0x80000080) // down
+				{
+					menusel++;
+					if (menusel > nfiles-1) menusel = nfiles-1;
+					if (menusel-(MENU_MAX-1) > menuscroll) menuscroll = menusel-(MENU_MAX-1);
+				}
+			}
 			
-			if (press & (PAD_A|PAD_B))
-			{
-				// TODO: start another thread and load the selected ROM
-			}
-			else if (pad_cur & 0x40000040) // up
-			{
-				menusel--;
-				if (menusel < 0) menusel = 0;
-				if (menusel < menuscroll) menuscroll = menusel;
-				
+			if (showconsole) 
+				DrawConsole();
+			else
 				DrawROMList();
-				SwapBottomBuffers(0);
-			}
-			else if (pad_cur & 0x80000080) // down
-			{
-				menusel++;
-				if (menusel > nfiles-1) menusel = nfiles-1;
-				if (menusel-(MENU_MAX-1) > menuscroll) menuscroll = menusel-(MENU_MAX-1);
 				
-				DrawROMList();
-				SwapBottomBuffers(0);
-			}
+			SwapBottomBuffers(0);
 			
 			pad_last = pad_cur;
 			
@@ -575,13 +687,22 @@ int main()
 			//regData=0x0100FFFF;
 			//GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
 			aptWaitStatusEvent();
+			
+			// nope, this isn't how you fix the lost buffers after closing/reopening the 3DS :(
+			/*GSPGPU_WriteHWRegs(NULL, 0x400468, (u32*)&TopFBAddr, 8);
+			GSPGPU_WriteHWRegs(NULL, 0x400494, (u32*)&TopFBAddr, 8);
+			GSPGPU_WriteHWRegs(NULL, 0x400568, (u32*)&BottomFBAddr, 8);
+			SwapTopBuffers(0);
+			SwapBottomBuffers(0);*/
 		}
 	}
 	
 	//regData=0x010000FF;
 	//GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
 	
-	MemFree(filelist, 0x20C*nfiles);
+	MemFree(cputhreadstack, 0x4000);
+	
+	MemFree(filelist, 0x106*nfiles);
 
 	svc_closeHandle(fsuHandle);
 	hidExit();
@@ -591,3 +712,6 @@ int main()
 
     return 0;
 }
+
+void* malloc(size_t size) { return NULL; }
+void free(void* ptr) {}
