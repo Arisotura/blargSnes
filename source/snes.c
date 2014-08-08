@@ -585,9 +585,3 @@ void SNES_Write16(u32 addr, u8 val)
 		mptr[addr + 1] = val >> 8;
 	}
 }
-
-
-
-// TEMPORARY SHIT
-
-u16 PPU_VCount;

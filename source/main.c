@@ -60,6 +60,7 @@ u32 pad_cur, pad_last;
 char consolebuf[CONSOLE_MAX][33];
 int consoleidx = 0;
 int showconsole = 0;
+int consoledirty = 0;
 
 int running = 0;
 int pause = 0;
@@ -486,6 +487,8 @@ void bprintf(char* fmt, ...)
 		if (buf[i] == '\0' || buf[i+1] == '\0')
 			break;
 	}
+	
+	consoledirty = 1;
 }
 
 void DrawConsole()
@@ -505,6 +508,8 @@ void DrawConsole()
 		j++;
 		if (j >= CONSOLE_MAX) j = 0;
 	}
+	
+	consoledirty = 0;
 }
 
 
@@ -552,9 +557,12 @@ int PostEmuFrame()
 		return 0;
 	}
 
-	DrawConsole();
-	SwapBottomBuffers(0);
-	ClearBottomBuffer();
+	if (consoledirty)
+	{
+		DrawConsole();
+		SwapBottomBuffers(0);
+		ClearBottomBuffer();
+	}
 	
 	// TODO: VSYNC
 	
