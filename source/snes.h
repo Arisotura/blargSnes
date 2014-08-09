@@ -69,6 +69,8 @@ extern u16 SNES_VMatch;
 extern u16 SNES_HMatch;
 extern u16 SNES_HCheck;
 
+extern u8 SPC_IOPorts[8];
+
 
 void ROM_MapBank(u32 bank, u8* ptr);
 void ROM_SpeedChanged();

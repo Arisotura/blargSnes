@@ -78,6 +78,20 @@ void ROM_ApplySpeedHacks(int banknum, u8* bank)
 		else
 			i++;
 	}
+	
+	// SMW SPECIFIC
+	if ((banknum&0x7F) == 0)
+	{
+		/*for (i = 0; i < 5; i++)
+		{
+			bank[0x82+i] = 0xEA;
+			bank[0x9A+i] = 0xEA;
+			bank[0xAA+i] = 0xEA;
+			bank[0xD3+i] = 0xEA;
+		}*/
+		bprintf("patching bank 0 spc\n");
+		bank[0x79] = 0x60;
+	}
 }
 
 

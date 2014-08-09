@@ -826,6 +826,8 @@ vblank_notfirst:
 		ldr r1, =PPU_VCount
 		strh r0, [r1]
 		
+		@bl SPC_Run
+		mov r0, snesPC
 		bl PostEmuFrame
 		cmp r0, #1
 		beq frameloop

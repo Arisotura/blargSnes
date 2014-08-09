@@ -25,6 +25,7 @@ extern u8* TopFB;
 
 
 u32 Mem_WRAMAddr = 0;
+u8 SPC_IOPorts[8];
 
 
 u16 PPU_VCount = 0;
@@ -211,10 +212,10 @@ u8 PPU_Read8(u32 addr)
 			PPU_OPVFlag = 0;
 			break;*/
 		
-		/*case 0x40: ret = IPC->SPC_IOPorts[4]; break;
-		case 0x41: ret = IPC->SPC_IOPorts[5]; break;
-		case 0x42: ret = IPC->SPC_IOPorts[6]; break;
-		case 0x43: ret = IPC->SPC_IOPorts[7]; break;*/
+		case 0x40: ret = SPC_IOPorts[4]; break;
+		case 0x41: ret = SPC_IOPorts[5]; break;
+		case 0x42: ret = SPC_IOPorts[6]; break;
+		case 0x43: ret = SPC_IOPorts[7]; break;
 		
 		case 0x80: ret = SNES_SysRAM[Mem_WRAMAddr++]; break;
 	}
@@ -233,8 +234,8 @@ u16 PPU_Read16(u32 addr)
 		// not in the right place, but well
 		// our I/O functions are mapped to the whole $21xx range
 		
-		/*case 0x40: ret = *(u16*)&IPC->SPC_IOPorts[4]; break;
-		case 0x42: ret = *(u16*)&IPC->SPC_IOPorts[6]; break;*/
+		case 0x40: ret = *(u16*)&SPC_IOPorts[4]; break;
+		case 0x42: ret = *(u16*)&SPC_IOPorts[6]; break;
 		
 		default:
 			ret = PPU_Read8(addr);
@@ -508,10 +509,10 @@ void PPU_Write8(u32 addr, u8 val)
 			if (val & 0x02) iprintf("!! SMALL SPRITES\n");
 			break;*/
 			
-		/*case 0x40: IPC->SPC_IOPorts[0] = val; break;
-		case 0x41: IPC->SPC_IOPorts[1] = val; break;
-		case 0x42: IPC->SPC_IOPorts[2] = val; break;
-		case 0x43: IPC->SPC_IOPorts[3] = val; break;*/
+		case 0x40: SPC_IOPorts[0] = val; break;
+		case 0x41: SPC_IOPorts[1] = val; break;
+		case 0x42: SPC_IOPorts[2] = val; break;
+		case 0x43: SPC_IOPorts[3] = val; break;
 		
 		case 0x80: SNES_SysRAM[Mem_WRAMAddr++] = val; break;
 		case 0x81: Mem_WRAMAddr = (Mem_WRAMAddr & 0x0001FF00) | val; break;
@@ -544,11 +545,11 @@ void PPU_Write16(u32 addr, u16 val)
 			PPU_VRAMAddr += PPU_VRAMStep;
 			break;
 			
-		/*case 0x40: *(u16*)&IPC->SPC_IOPorts[0] = val; break;
-		case 0x41: IPC->SPC_IOPorts[1] = val & 0xFF; IPC->SPC_IOPorts[2] = val >> 8; break;
-		case 0x42: *(u16*)&IPC->SPC_IOPorts[2] = val; break;
+		case 0x40: *(u16*)&SPC_IOPorts[0] = val; break;
+		case 0x41: *(u16*)&SPC_IOPorts[1] = val; break;
+		case 0x42: *(u16*)&SPC_IOPorts[2] = val; bprintf("SPC: %02X\n", val);break;
 		
-		case 0x43: iprintf("!! write $21%02X %04X\n", addr, val); break;*/
+		case 0x43: bprintf("!! write $21%02X %04X\n", addr, val); break;
 		
 		case 0x81: Mem_WRAMAddr = (Mem_WRAMAddr & 0x00010000) | val; break;
 		
@@ -628,7 +629,7 @@ void PPU_RenderBG_2bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal)
 		xoff++;
 		if (!(xoff & 0x7)) // reload tile if needed
 		{
-			idx = xoff >> 3;
+			idx = (xoff & 0xF8) >> 3;
 			if (xoff & 0x100)
 			{
 				if (bg->Size & 0x1)
@@ -713,7 +714,7 @@ void PPU_RenderBG_4bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal)
 		xoff++;
 		if (!(xoff & 0x7)) // reload tile if needed
 		{
-			idx = xoff >> 3;
+			idx = (xoff & 0xF8) >> 3;
 			if (xoff & 0x100)
 			{
 				if (bg->Size & 0x1)

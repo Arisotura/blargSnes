@@ -104,11 +104,10 @@ void derp_divmod(int num, int den, int* quo, int* rem)
 }
 
 
-void gspGpuInit()
+void setupFB()
 {
 	u32 regval;
-	gspInit();
-
+	
 	GSPGPU_AcquireRight(NULL, 0x0);
 	GSPGPU_SetLcdForceBlack(NULL, 0x0);
 
@@ -116,11 +115,9 @@ void gspGpuInit()
 	GSPGPU_ReadHWRegs(NULL, 0x400468, (u32*)&TopFBAddr, 8);
 	GSPGPU_ReadHWRegs(NULL, 0x400568, (u32*)&BottomFBAddr, 8);
 	
-	GSPGPU_WriteHWRegs(NULL, 0x400494, (u32*)&TopFBAddr, 8);
-	
 	GSPGPU_ReadHWRegs(NULL, 0x400470, &regval, 4);
-	regval &= 0xFFFFFFF8;
-	regval |= 3; // 15bit color
+	regval &= 0xFFFFFFD8;
+	regval |= 0x00000043; // 15bit color
 	GSPGPU_WriteHWRegs(NULL, 0x400470, &regval, 4);
 	regval = 480;
 	GSPGPU_WriteHWRegs(NULL, 0x400490, &regval, 4);
@@ -129,6 +126,13 @@ void gspGpuInit()
 	TopFBAddr[1] += 0x7000000;
 	BottomFBAddr[0] += 0x7000000;
 	BottomFBAddr[1] += 0x7000000;
+}
+
+void gspGpuInit()
+{
+	gspInit();
+
+	setupFB();
 	
 	//BottomFB = BottomFBAddr[0];
 
@@ -157,6 +161,8 @@ void gspGpuInit()
 
 void gspGpuExit()
 {
+	//GSPGPU_ReleaseRight(NULL);
+	
 	GSPGPU_UnregisterInterruptRelayQueue(NULL);
 
 	//unmap GSP shared mem
@@ -516,23 +522,20 @@ void DrawConsole()
 
 void CPUThread(u32 blarg)
 {
-	u32 regData=0x0100FF00;
-	GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
+	/*bprintf("ROM loaded, running...\n");
 	
-	bprintf("ROM loaded, running...\n");
 	CPU_Reset();
-
-	CPU_Run();
+	CPU_Run();*/
+	SPC_Reset();
+	SPC_Run();
 }
 
 
 // return val: 1=continue running
-int PostEmuFrame()
+int PostEmuFrame(u32 pc)
 {
 	asm("stmdb sp!, {r12}");
-	
-	SwapTopBuffers(0);
-	
+	//bprintf("%08X\n", pc);
 	APP_STATUS status = aptGetStatus();
 	if (status == APP_EXITING)
 	{
@@ -542,20 +545,28 @@ int PostEmuFrame()
 	else if(status == APP_SUSPENDING)
 	{
 		aptReturnToMenu();
+		
+		setupFB();
+		consoledirty = 1;
 	}
 	else if(status == APP_SLEEPMODE)
 	{
 		aptWaitStatusEvent();
+		
+		setupFB();
+		consoledirty = 1;
 	}
 	
 	// rudimentary way to pause
 	if (hidSharedMem[0xCC>>2])
 	{
 		pause = 1;
-		bprintf("pause\n");
+		bprintf("pause %08X\n", pc);
 		asm("ldmia sp!, {r12}");
 		return 0;
 	}
+	
+	SwapTopBuffers(0);
 
 	if (consoledirty)
 	{
@@ -700,12 +711,16 @@ int main()
 							bprintf("Failed to load this ROM\nPress A to return to menu\n");
 						else
 						{
-							//Result res = svc_createThread(&cputhread, &CPUThread, 0, cputhreadstack+0x4000, 16, 0);
+							// SPC700 thread
+							/*Result res = svc_createThread(&cputhread, CPUThread, 0, cputhreadstack+0x4000, 0x3F, ~0x1);
+							bprintf("spcthread=%08X\n", res);*/
 							running = 1;
 							
 							bprintf("ROM loaded, running...\n");
 
 							CPU_Reset();
+							SPC_Reset();
+							
 							CPU_Run();
 						}
 					}
@@ -750,22 +765,19 @@ int main()
 		}
 		else if(status == APP_SUSPENDING)
 		{
-			//regData=0x0100FF00;
-			//GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
 			aptReturnToMenu();
+			
+			/*setupFB();
+			SwapTopBuffers(0);
+			SwapBottomBuffers(0);*/
 		}
 		else if(status == APP_SLEEPMODE)
 		{
-			//regData=0x0100FFFF;
-			//GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
 			aptWaitStatusEvent();
 			
-			// nope, this isn't how you fix the lost buffers after closing/reopening the 3DS :(
-			/*GSPGPU_WriteHWRegs(NULL, 0x400468, (u32*)&TopFBAddr, 8);
-			GSPGPU_WriteHWRegs(NULL, 0x400494, (u32*)&TopFBAddr, 8);
-			GSPGPU_WriteHWRegs(NULL, 0x400568, (u32*)&BottomFBAddr, 8);
+			setupFB();
 			SwapTopBuffers(0);
-			SwapBottomBuffers(0);*/
+			SwapBottomBuffers(0);
 		}
 	}
 	

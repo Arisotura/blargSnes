@@ -256,10 +256,10 @@ inline u8 IO_ReadKeysLow()
 	u32 keys = hidSharedMem[0x28>>2];
 	u8 ret = 0;
 	
-	if (!(keys & PAD_A)) ret |= 0x80;
-	if (!(keys & PAD_X)) ret |= 0x40;
-	if (!(keys & PAD_L)) ret |= 0x20;
-	if (!(keys & PAD_R)) ret |= 0x10;
+	if (keys & PAD_A) ret |= 0x80;
+	if (keys & PAD_X) ret |= 0x40;
+	if (keys & PAD_L) ret |= 0x20;
+	if (keys & PAD_R) ret |= 0x10;
 	
 	return ret;
 }
@@ -269,14 +269,14 @@ inline u8 IO_ReadKeysHigh()
 	u32 keys = hidSharedMem[0x28>>2];
 	u8 ret = 0;
 	
-	if (!(keys & PAD_B)) 					ret |= 0x80;
-	if (!(keys & PAD_Y)) 					ret |= 0x40;
-	if (!(keys & PAD_SELECT)) 				ret |= 0x20;
-	if (!(keys & PAD_START)) 				ret |= 0x10;
-	if (!(keys & (PAD_UP|0x40000000))) 		ret |= 0x08;
-	if (!(keys & (PAD_DOWN|0x80000000))) 	ret |= 0x04;
-	if (!(keys & (PAD_LEFT|0x20000000))) 	ret |= 0x02;
-	if (!(keys & (PAD_RIGHT|0x10000000))) 	ret |= 0x01;
+	if (keys & PAD_B) 					ret |= 0x80;
+	if (keys & PAD_Y) 					ret |= 0x40;
+	if (keys & PAD_SELECT)				ret |= 0x20;
+	if (keys & PAD_START)				ret |= 0x10;
+	if (keys & (PAD_UP|0x40000000)) 	ret |= 0x08;
+	if (keys & (PAD_DOWN|0x80000000)) 	ret |= 0x04;
+	if (keys & (PAD_LEFT|0x20000000)) 	ret |= 0x02;
+	if (keys & (PAD_RIGHT|0x10000000)) 	ret |= 0x01;
 	
 	return ret;
 }
@@ -538,7 +538,7 @@ u8 SNES_Read8(u32 addr)
 	}
 	else
 	{
-		u8* mptr = (u8*)(ptr & 0x0FFFFFFF);
+		u8* mptr = (u8*)(ptr & 0xFFFFFFF0);
 		return mptr[addr & 0x1FFF];
 	}
 }
@@ -552,7 +552,7 @@ u16 SNES_Read16(u32 addr)
 	}
 	else
 	{
-		u8* mptr = (u8*)(ptr & 0x0FFFFFFF);
+		u8* mptr = (u8*)(ptr & 0xFFFFFFF0);
 		addr &= 0x1FFF;
 		return mptr[addr] | (mptr[addr + 1] << 8);
 	}
@@ -566,7 +566,7 @@ void SNES_Write8(u32 addr, u8 val)
 		SNES_IOWrite8(addr, val);
 	else
 	{
-		u8* mptr = (u8*)(ptr & 0x0FFFFFFF);
+		u8* mptr = (u8*)(ptr & 0xFFFFFFF0);
 		mptr[addr & 0x1FFF] = val;
 	}
 }
@@ -579,7 +579,7 @@ void SNES_Write16(u32 addr, u8 val)
 		SNES_IOWrite16(addr, val);
 	else
 	{
-		u8* mptr = (u8*)(ptr & 0x0FFFFFFF);
+		u8* mptr = (u8*)(ptr & 0xFFFFFFF0);
 		addr &= 0x1FFF;
 		mptr[addr] = val & 0xFF;
 		mptr[addr + 1] = val >> 8;
