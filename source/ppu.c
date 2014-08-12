@@ -45,6 +45,36 @@ u8 PPU_VRAMInc = 0;
 u8 PPU_VRAMStep = 0;
 u8 PPU_VRAM[0x10000];
 
+u16 PPU_OAMAddr = 0;
+u8 PPU_OAMVal = 0;
+u8 PPU_OAM[0x220];
+
+u8 PPU_OBJWidths[16] = 
+{
+	8, 16,
+	8, 32,
+	8, 64,
+	16, 32,
+	16, 64,
+	32, 64,
+	16, 32,
+	16, 32
+};
+u8 PPU_OBJHeights[16] = 
+{
+	8, 16,
+	8, 32,
+	8, 64,
+	16, 32,
+	16, 64,
+	32, 64,
+	32, 64,
+	32, 32
+};
+
+u8* PPU_OBJWidth;
+u8* PPU_OBJHeight;
+
 
 u16 PPU_SubBackdrop = 0;
 
@@ -62,11 +92,20 @@ typedef struct
 } PPU_Background;
 PPU_Background PPU_BG[4];
 
+u16* PPU_OBJTileset;
+u32 PPU_OBJGap;
+
 
 
 void PPU_Reset()
 {
 	int i;
+	
+	//PPU_MainBuffer = (u16*)MemAlloc(256 * 2);
+	
+	memset(PPU_VRAM, 0, 0x10000);
+	memset(PPU_CGRAM, 0, 0x200);
+	memset(PPU_OAM, 0, 0x220);
 	
 	memset(&PPU_BG[0], 0, sizeof(PPU_Background)*4);
 	
@@ -75,6 +114,11 @@ void PPU_Reset()
 		PPU_BG[i].Tileset = (u16*)PPU_VRAM;
 		PPU_BG[i].Tilemap = (u16*)PPU_VRAM;
 	}
+	
+	PPU_OBJTileset = (u16*)PPU_VRAM;
+	
+	PPU_OBJWidth = &PPU_OBJWidths[0];
+	PPU_OBJHeight = &PPU_OBJHeights[0];
 }
 
 
@@ -151,12 +195,12 @@ u8 PPU_Read8(u32 addr)
 		
 		case 0x37:
 			PPU_LatchHVCounters();
-			break;
+			break;*/
 			
 		case 0x38:
 			ret = PPU_OAM[PPU_OAMAddr];
 			PPU_OAMAddr++;
-			break;*/
+			break;
 		
 		case 0x39:
 			{
@@ -268,58 +312,36 @@ void PPU_Write8(u32 addr, u8 val)
 					
 				PPU_ScheduleLineChange(PPU_SetMasterBright, mb);
 			}
-			break;
+			break;*/
 			
 		case 0x01:
 			{
-				if (PPU_OBJSize != (val >> 5))
-				{
-					PPU_OBJSize = val >> 5;
-					PPU_OBJSizes = _PPU_OBJSizes + (PPU_OBJSize << 1);
-					PPU_UpdateOBJSize();
-				}
+				PPU_OBJWidth = &PPU_OBJWidths[(val & 0xE0) >> 4];
+				PPU_OBJHeight = &PPU_OBJHeights[(val & 0xE0) >> 4];
 				
-				u16 base = (val & 0x07) << 14;
-				u16 gap = (val & 0x18) << 10;
-				PPU_SetOBJCHR(base, gap);
-				//iprintf("OBJ base:%08X gap:%08X | %08X\n", base, gap, (u32)&PPU_VRAM + base);
+				PPU_OBJTileset = (u16*)&PPU_VRAM[(val & 0x03) << 14];
+				PPU_OBJGap = (val & 0x1C) << 9;
 			}
 			break;
 			
 		case 0x02:
 			PPU_OAMAddr = (PPU_OAMAddr & 0x200) | (val << 1);
-			PPU_OAMReload = PPU_OAMAddr;
+			//PPU_OAMReload = PPU_OAMAddr;
 			break;
 		case 0x03:
 			PPU_OAMAddr = (PPU_OAMAddr & 0x1FE) | ((val & 0x01) << 9);
-			PPU_OAMPrio = val & 0x80;
-			PPU_OAMReload = PPU_OAMAddr;
+			//PPU_OAMPrio = val & 0x80;
+			//PPU_OAMReload = PPU_OAMAddr;
 			break;
 			
 		case 0x04:
 			if (PPU_OAMAddr >= 0x200)
 			{
-				u16 addr = PPU_OAMAddr;
-				addr &= 0x21F;
-				
-				if (PPU_OAM[addr] != val)
-				{
-					PPU_OAM[addr] = val;
-					PPU_UpdateOAM(addr, val);
-					PPU_OAMDirty = 1;
-				}
+				PPU_OAM[PPU_OAMAddr & 0x21F] = val;
 			}
 			else if (PPU_OAMAddr & 0x1)
 			{
-				PPU_OAMVal |= (val << 8);
-				u16 addr = PPU_OAMAddr - 1;
-				
-				if (*(u16*)&PPU_OAM[addr] != PPU_OAMVal)
-				{
-					*(u16*)&PPU_OAM[addr] = PPU_OAMVal;
-					PPU_UpdateOAM(addr, PPU_OAMVal);
-					PPU_OAMDirty = 1;
-				}
+				*(u16*)&PPU_OAM[PPU_OAMAddr - 1] = PPU_OAMVal | (val << 8);
 			}
 			else
 			{
@@ -329,7 +351,7 @@ void PPU_Write8(u32 addr, u8 val)
 			PPU_OAMAddr &= 0x3FF;
 			break;
 			
-		case 0x05:
+		/*case 0x05:
 			PPU_ModeNow = val & 0x07;
 			if (PPU_ModeNow != PPU_Mode)
 			{
@@ -731,11 +753,100 @@ void PPU_RenderBG_4bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal)
 	}
 }
 
+
+void PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line, u16* pal)
+{
+	u16* tileset = PPU_OBJTileset;
+	s32 xoff;
+	u16 attrib;
+	u32 tilepixels;
+	u32 colorval;
+	u32 idx;
+	u32 i;
+	u8 width = PPU_OBJWidth[(oamextra & 0x2) >> 1];
+	
+	attrib = *(u16*)&oam[2];
+	
+	idx = (attrib & 0x01FF) << 4;
+	if (attrib & 0x8000)
+	{
+		idx += (7 - (line & 0x07)) | (((ymask - line) & 0x38) << 5);
+	}
+	else
+	{
+		idx += (line & 0x07) | ((line & 0x38) << 5);
+	}
+	
+	if (attrib & 0x4000)
+		idx += ((width-1) & 0x38) << 1;
+	
+	xoff = oam[0];
+	if (oamextra & 0x1) // xpos bit8, sign bit
+	{
+		xoff = 0x100 - xoff;
+		if (xoff >= width) return;
+		i = 0;
+		
+		if (attrib & 0x4000) 	idx -= ((xoff & 0x38) << 1);
+		else 					idx += ((xoff & 0x38) << 1);
+	}
+	else
+	{
+		i = xoff;
+		buffer += xoff;
+		xoff = 0;
+	}
+	
+	tilepixels = tileset[idx] | (tileset[idx+8] << 16);
+	if (attrib & 0x4000)	tilepixels >>= (xoff & 0x7);
+	else					tilepixels <<= (xoff & 0x7);
+	
+	pal += (oam[3] & 0x0E) << 3;
+	
+	while (xoff < width)
+	{
+		colorval = 0;
+		if (attrib & 0x4000) // hflip
+		{
+			if (tilepixels & 0x00000001) colorval |= 0x01;
+			if (tilepixels & 0x00000100) colorval |= 0x02;
+			if (tilepixels & 0x00010000) colorval |= 0x04;
+			if (tilepixels & 0x01000000) colorval |= 0x08;
+			tilepixels >>= 1;
+		}
+		else
+		{
+			if (tilepixels & 0x00000080) colorval |= 0x01;
+			if (tilepixels & 0x00008000) colorval |= 0x02;
+			if (tilepixels & 0x00800000) colorval |= 0x04;
+			if (tilepixels & 0x80000000) colorval |= 0x08;
+			tilepixels <<= 1;
+		}
+		
+		if (colorval)
+		{
+			*buffer = pal[colorval];
+		}
+		buffer++;
+		
+		i++;
+		if (i >= 256) return;
+		
+		xoff++;
+		if (!(xoff & 0x7)) // reload tile if needed
+		{
+			if (attrib & 0x4000) 	idx -= 16;
+			else 					idx += 16;
+			
+			tilepixels = tileset[idx] | (tileset[idx+8] << 16);
+		}
+	}
+}
+
+
 //int blarg=0;
 void PPU_RenderScanline(u32 line)
 {
-	asm("stmdb sp!, {r12}");
-	
 	// test frameskip code
 	/*if (line==0) blarg=!blarg;
 	if (blarg)
@@ -751,9 +862,33 @@ void PPU_RenderScanline(u32 line)
 	backdrop |= (backdrop << 16);
 	for (i = 0; i < 256; i += 2)
 		*(u32*)&buf[i] = backdrop;
+		
+	// render BGs (test)
 	
 	PPU_RenderBG_4bpp_8x8(&PPU_BG[0], buf, line, &PPU_CGRAM[0]);
 	PPU_RenderBG_2bpp_8x8(&PPU_BG[2], buf, line, &PPU_CGRAM[0]);
+	
+	// render sprites
+	
+	u8* oam = PPU_OAM;
+	u32* oam2 = (u32*)&PPU_OAM[0x200];
+	u32 oamextra = *oam2++;
+	for (i = 0; i < 128;)
+	{
+		u8 oy = oam[1] + 1;
+		u8 oh = PPU_OBJHeight[(oamextra & 0x2) >> 1];
+		
+		// TODO support multiple sizes
+		if (line >= oy && line < (oy+oh))
+			PPU_RenderOBJ(oam, oamextra, oh-1, buf, line-oy, &PPU_CGRAM[128]);
+		
+		oam += 4;
+		i++;
+		if (i & 0xF)
+			oamextra >>= 2;
+		else
+			oamextra = *oam2++;
+	}
 	
 	// copy to final framebuffer
 	u16* finalbuf = &((u16*)TopFB)[17512 - line];
@@ -762,6 +897,4 @@ void PPU_RenderScanline(u32 line)
 		*finalbuf = PPU_ColorTable[*buf++];
 		finalbuf += 240;
 	}
-	
-	asm("ldmia sp!, {r12}");
 }

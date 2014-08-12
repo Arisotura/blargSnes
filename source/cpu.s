@@ -20,6 +20,15 @@
 
 @ --- TODO --------------------------------------------------------------------
 @
+@ mildly high prio: wrap every call to a C function in an appropriate SafeCall
+@  so we don't need the ugly and risky ASM lines on the C side
+@
+@ rewrite 16bit accesses to use ldrh/strh since we're now on a CPU arch that
+@  supports unaligned accesses
+@
+@ eventually rewrite the memory mapping table to be a set of function pointers
+@  rather than the lolSnes ptr+flags system?
+@
 @ (low priority-- aka who cares)
 @ * for some addressing modes using X/Y, add 1 cycle if adding X/Y crosses page boundary
 @ * accessing I/O registers from 0x4000 to 0x4200 should take 12 cycles
@@ -691,6 +700,7 @@ CPU_Cycles:
 	.long 0
 	
 .section    .text, "awx", %progbits
+
 	
 CPU_Run:
 	stmdb sp!, {r0-r12, lr}
@@ -702,7 +712,7 @@ frameloop:
 		mov r0, #0
 		ldr r1, =PPU_VCount
 		strh r0, [r1]
-		bl PPU_RenderScanline
+		SafeCall PPU_RenderScanline
 		@bl DMA_ReloadHDMA
 		b emuloop
 		
@@ -714,7 +724,8 @@ newline:
 			strh snesCycles, [r0]
 			ldrh r0, [r0]
 			cmp r0, #0xE0
-			blle PPU_RenderScanline
+			bgt emuloop
+			SafeCall PPU_RenderScanline
 			
 emuloop:
 				mov r3, snesCycles, asr #0x10
