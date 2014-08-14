@@ -21,6 +21,15 @@
 
 extern u16 PPU_ColorTable[0x10000];
 
+extern u16 PPU_CGRAM[256];
+extern u8 PPU_VRAM[0x10000];
+extern u8 PPU_OAM[0x220];
+
+extern u16 PPU_CGRAMAddr;
+extern u16 PPU_VRAMAddr;
+extern u8 PPU_VRAMStep, PPU_VRAMInc;
+extern u16 PPU_OAMAddr;
+
 extern u16 PPU_VCount;
 
 void PPU_Reset();
@@ -31,5 +40,6 @@ void PPU_Write8(u32 addr, u8 val);
 void PPU_Write16(u32 addr, u16 val);
 
 void PPU_RenderScanline(u16 line);
+void PPU_VBlank();
 
 #endif

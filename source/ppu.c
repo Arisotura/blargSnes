@@ -35,6 +35,9 @@ u16 PPU_ColorTable[0x10000];
 u16 PPU_MainBuffer[256];
 u16 PPU_SubBuffer[256];
 
+u8 PPU_MainPrio[256];
+u8 PPU_SubPrio[256];
+
 u16 PPU_CGRAMAddr = 0;
 u8 PPU_CGRAMVal = 0;
 u16 PPU_CGRAM[256];
@@ -47,6 +50,8 @@ u8 PPU_VRAM[0x10000];
 
 u16 PPU_OAMAddr = 0;
 u8 PPU_OAMVal = 0;
+u8 PPU_OAMPrio = 0;
+u16 PPU_OAMReload = 0;
 u8 PPU_OAM[0x220];
 
 u8 PPU_OBJWidths[16] = 
@@ -74,6 +79,9 @@ u8 PPU_OBJHeights[16] =
 
 u8* PPU_OBJWidth;
 u8* PPU_OBJHeight;
+
+
+u8 PPU_Mode = 0;
 
 
 u16 PPU_SubBackdrop = 0;
@@ -184,8 +192,6 @@ inline void PPU_SetBGCHR(int nbg, u8 val)
 
 u8 PPU_Read8(u32 addr)
 {
-	asm("stmdb sp!, {r2-r3, r12}");
-	
 	u8 ret = 0;
 	switch (addr)
 	{
@@ -256,29 +262,26 @@ u8 PPU_Read8(u32 addr)
 			PPU_OPVFlag = 0;
 			break;*/
 		
-		case 0x40: ret = SPC_IOPorts[4]; break;
+		case 0x40: ret = SPC_IOPorts[0]; /*ret = SPC_IOPorts[4];*/ break;
 		case 0x41: ret = SPC_IOPorts[5]; break;
 		case 0x42: ret = SPC_IOPorts[6]; break;
 		case 0x43: ret = SPC_IOPorts[7]; break;
 		
 		case 0x80: ret = SNES_SysRAM[Mem_WRAMAddr++]; break;
 	}
-	
-	asm("ldmia sp!, {r2-r3, r12}");
+
 	return ret;
 }
 
 u16 PPU_Read16(u32 addr)
 {
-	asm("stmdb sp!, {r2-r3, r12}");
-	
 	u16 ret = 0;
 	switch (addr)
 	{
 		// not in the right place, but well
 		// our I/O functions are mapped to the whole $21xx range
 		
-		case 0x40: ret = *(u16*)&SPC_IOPorts[4]; break;
+		case 0x40: ret = 0xBBAA; /*ret = *(u16*)&SPC_IOPorts[4];*/ break;
 		case 0x42: ret = *(u16*)&SPC_IOPorts[6]; break;
 		
 		default:
@@ -286,15 +289,12 @@ u16 PPU_Read16(u32 addr)
 			ret |= (PPU_Read8(addr+1) << 8);
 			break;
 	}
-	
-	asm("ldmia sp!, {r2-r3, r12}");
+
 	return ret;
 }
 
 void PPU_Write8(u32 addr, u8 val)
 {
-	asm("stmdb sp!, {r2-r3, r12}");
-	
 	switch (addr)
 	{
 		/*case 0x00: // force blank/master brightness
@@ -326,12 +326,12 @@ void PPU_Write8(u32 addr, u8 val)
 			
 		case 0x02:
 			PPU_OAMAddr = (PPU_OAMAddr & 0x200) | (val << 1);
-			//PPU_OAMReload = PPU_OAMAddr;
+			PPU_OAMReload = PPU_OAMAddr;
 			break;
 		case 0x03:
 			PPU_OAMAddr = (PPU_OAMAddr & 0x1FE) | ((val & 0x01) << 9);
-			//PPU_OAMPrio = val & 0x80;
-			//PPU_OAMReload = PPU_OAMAddr;
+			PPU_OAMPrio = val & 0x80;
+			PPU_OAMReload = PPU_OAMAddr;
 			break;
 			
 		case 0x04:
@@ -348,29 +348,14 @@ void PPU_Write8(u32 addr, u8 val)
 				PPU_OAMVal = val;
 			}
 			PPU_OAMAddr++;
-			PPU_OAMAddr &= 0x3FF;
+			PPU_OAMAddr &= ~0x400;
 			break;
 			
-		/*case 0x05:
-			PPU_ModeNow = val & 0x07;
-			if (PPU_ModeNow != PPU_Mode)
-			{
-				if (PPU_Mode == 7) 
-				{
-					PPU_ScheduleLineChange(PPU_SwitchFromMode7, val);
-					break;
-				}
-				else if (PPU_ModeNow == 7) 
-				{
-					PPU_ScheduleLineChange(PPU_SwitchToMode7, 0);
-					break;
-				}
-			}
-			if (val & 0xF0) iprintf("!! 16x16 TILES NOT SUPPORTED\n");
-			PPU_ScheduleLineChange(PPU_SetBG3Prio, val);
+		case 0x05:
+			PPU_Mode = val;
 			break;
 			
-		case 0x06: // mosaic
+		/*case 0x06: // mosaic
 			{
 				if (PPU_ModeNow == 7)
 				{
@@ -545,14 +530,10 @@ void PPU_Write8(u32 addr, u8 val)
 			//iprintf("PPU_Write8(%08X, %08X)\n", addr, val);
 			break;
 	}
-	
-	asm("ldmia sp!, {r2-r3, r12}");
 }
 
 void PPU_Write16(u32 addr, u16 val)
 {
-	asm("stmdb sp!, {r2-r3, r12}");
-	
 	switch (addr)
 	{
 		// optimized route
@@ -581,13 +562,14 @@ void PPU_Write16(u32 addr, u16 val)
 			PPU_Write8(addr+1, val >> 8);
 			break;
 	}
-	
-	asm("ldmia sp!, {r2-r3, r12}");
 }
 
 
 
-void PPU_RenderBG_2bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal)
+#define PRIO_HIGH 0x2000
+#define PRIO_LOW 0
+
+void PPU_RenderBG_2bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal, u32 prio)
 {
 	u16* tileset = bg->Tileset;
 	u16* tilemap = bg->Tilemap;
@@ -625,8 +607,18 @@ void PPU_RenderBG_2bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal)
 	if (curtile & 0x4000)	tilepixels >>= (xoff & 0x7);
 	else					tilepixels <<= (xoff & 0x7);
 	
-	for (i = 0; i < 256; i++)
+	for (i = 0; i < 256;)
 	{
+		// simple way to skip tiles that don't have the wanted prio
+		if ((curtile ^ prio) & 0x2000)
+		{
+			u32 npix = 8 - (xoff & 0x7);
+			i += npix;
+			buffer += npix;
+			xoff += npix;
+			goto _8x8_2_newtile;
+		}
+		
 		colorval = 0;
 		if (curtile & 0x4000) // hflip
 		{
@@ -647,10 +639,12 @@ void PPU_RenderBG_2bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal)
 			*buffer = pal[colorval];
 		}
 		buffer++;
+		i++;
 		
 		xoff++;
 		if (!(xoff & 0x7)) // reload tile if needed
 		{
+_8x8_2_newtile:
 			idx = (xoff & 0xF8) >> 3;
 			if (xoff & 0x100)
 			{
@@ -668,7 +662,7 @@ void PPU_RenderBG_2bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal)
 	}
 }
 
-void PPU_RenderBG_4bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal)
+void PPU_RenderBG_4bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal, u32 prio)
 {
 	u16* tileset = bg->Tileset;
 	u16* tilemap = bg->Tilemap;
@@ -706,8 +700,18 @@ void PPU_RenderBG_4bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal)
 	if (curtile & 0x4000)	tilepixels >>= (xoff & 0x7);
 	else					tilepixels <<= (xoff & 0x7);
 	
-	for (i = 0; i < 256; i++)
+	for (i = 0; i < 256;)
 	{
+		// simple way to skip tiles that don't have the wanted prio
+		if ((curtile ^ prio) & 0x2000)
+		{
+			u32 npix = 8 - (xoff & 0x7);
+			i += npix;
+			buffer += npix;
+			xoff += npix;
+			goto _8x8_4_newtile;
+		}
+		
 		colorval = 0;
 		if (curtile & 0x4000) // hflip
 		{
@@ -732,10 +736,12 @@ void PPU_RenderBG_4bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal)
 			*buffer = pal[colorval];
 		}
 		buffer++;
+		i++;
 		
 		xoff++;
 		if (!(xoff & 0x7)) // reload tile if needed
 		{
+_8x8_4_newtile:
 			idx = (xoff & 0xF8) >> 3;
 			if (xoff & 0x100)
 			{
@@ -768,14 +774,9 @@ void PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line, u16*
 	attrib = *(u16*)&oam[2];
 	
 	idx = (attrib & 0x01FF) << 4;
-	if (attrib & 0x8000)
-	{
-		idx += (7 - (line & 0x07)) | (((ymask - line) & 0x38) << 5);
-	}
-	else
-	{
-		idx += (line & 0x07) | ((line & 0x38) << 5);
-	}
+	
+	if (attrib & 0x8000) line = ymask - line;
+	idx += (line & 0x07) | ((line & 0x38) << 5);
 	
 	if (attrib & 0x4000)
 		idx += ((width-1) & 0x38) << 1;
@@ -843,17 +844,42 @@ void PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line, u16*
 	}
 }
 
+inline void PPU_RenderOBJs(u16* buf, u32 line, u32 prio)
+{
+	int i = PPU_OAMPrio ? ((PPU_OAMAddr >> 1) & 0x7F) : 0;
+	i--;
+	if (i < 0) i = 127;
+	int last = i;
+	
+	do
+	{
+		u8* oam = &PPU_OAM[i << 2];
+		if ((oam[3] & 0x30) == prio)
+		{
+			u8 oamextra = PPU_OAM[0x200 + (i >> 2)] >> ((i & 0x03) << 1);
+			u8 oy = oam[1] + 1;
+			u8 oh = PPU_OBJHeight[(oamextra & 0x2) >> 1];
+			
+			if (line >= oy && line < (oy+oh))
+				PPU_RenderOBJ(oam, oamextra, oh-1, buf, line-oy, &PPU_CGRAM[128]);
+		}
+		
+		i--;
+		if (i < 0) i = 127;
+	}
+	while (i != last);
+}
 
-//int blarg=0;
+
+int blarg=0;
 void PPU_RenderScanline(u32 line)
 {
 	// test frameskip code
-	/*if (line==0) blarg=!blarg;
+	if (line==0) blarg=!blarg;
 	if (blarg)
 	{
-	asm("ldmia sp!, {r12}");
-	return;
-	}*/
+		return;
+	}
 	
 	int i;
 	u16* buf = &PPU_MainBuffer[0];
@@ -863,31 +889,28 @@ void PPU_RenderScanline(u32 line)
 	for (i = 0; i < 256; i += 2)
 		*(u32*)&buf[i] = backdrop;
 		
-	// render BGs (test)
-	
-	PPU_RenderBG_4bpp_8x8(&PPU_BG[0], buf, line, &PPU_CGRAM[0]);
-	PPU_RenderBG_2bpp_8x8(&PPU_BG[2], buf, line, &PPU_CGRAM[0]);
-	
-	// render sprites
-	
-	u8* oam = PPU_OAM;
-	u32* oam2 = (u32*)&PPU_OAM[0x200];
-	u32 oamextra = *oam2++;
-	for (i = 0; i < 128;)
+	switch (PPU_Mode & 0x07)
 	{
-		u8 oy = oam[1] + 1;
-		u8 oh = PPU_OBJHeight[(oamextra & 0x2) >> 1];
-		
-		// TODO support multiple sizes
-		if (line >= oy && line < (oy+oh))
-			PPU_RenderOBJ(oam, oamextra, oh-1, buf, line-oy, &PPU_CGRAM[128]);
-		
-		oam += 4;
-		i++;
-		if (i & 0xF)
-			oamextra >>= 2;
-		else
-			oamextra = *oam2++;
+		case 1:
+			PPU_RenderBG_2bpp_8x8(&PPU_BG[2], buf, line, &PPU_CGRAM[0], PRIO_LOW);
+			PPU_RenderOBJs(buf, line, 0x00);
+			
+			if (!(PPU_Mode & 0x08))
+				PPU_RenderBG_2bpp_8x8(&PPU_BG[2], buf, line, &PPU_CGRAM[0], PRIO_HIGH);
+			PPU_RenderOBJs(buf, line, 0x10);
+			
+			PPU_RenderBG_4bpp_8x8(&PPU_BG[1], buf, line, &PPU_CGRAM[0], PRIO_LOW);
+			PPU_RenderBG_4bpp_8x8(&PPU_BG[0], buf, line, &PPU_CGRAM[0], PRIO_LOW);
+			PPU_RenderOBJs(buf, line, 0x20);
+			
+			PPU_RenderBG_4bpp_8x8(&PPU_BG[1], buf, line, &PPU_CGRAM[0], PRIO_HIGH);
+			PPU_RenderBG_4bpp_8x8(&PPU_BG[0], buf, line, &PPU_CGRAM[0], PRIO_HIGH);
+			PPU_RenderOBJs(buf, line, 0x30);
+			
+			if (PPU_Mode & 0x08)
+				PPU_RenderBG_2bpp_8x8(&PPU_BG[2], buf, line, &PPU_CGRAM[0], PRIO_HIGH);
+			
+			break;
 	}
 	
 	// copy to final framebuffer
@@ -897,4 +920,9 @@ void PPU_RenderScanline(u32 line)
 		*finalbuf = PPU_ColorTable[*buf++];
 		finalbuf += 240;
 	}
+}
+
+void PPU_VBlank()
+{
+	PPU_OAMAddr = PPU_OAMReload;
 }

@@ -17,6 +17,7 @@
 */
 
 #include "snes.h"
+#include "ppu.h"
 
 
 u8 DMA_Chans[8*16];
@@ -27,45 +28,29 @@ u8 HDMA_Pause[8];
 
 u8 DMA_Read8(u32 addr)
 {
-	asm("stmdb sp!, {r12}");
-	
-	register u8 ret = (addr > 0x7F) ? 0 : DMA_Chans[addr];
-	
-	asm("ldmia sp!, {r12}");
+	u8 ret = (addr > 0x7F) ? 0 : DMA_Chans[addr];
 	return ret;
 }
 
 u16 DMA_Read16(u32 addr)
 {
-	asm("stmdb sp!, {r12}");
-	
 	u16 ret = (addr > 0x7F) ? 0 : (DMA_Chans[addr] | (DMA_Chans[addr+1] << 8));
-
-	asm("ldmia sp!, {r12}");
 	return ret;
 }
 
 void DMA_Write8(u32 addr, u8 val)
 {
-	asm("stmdb sp!, {r12}");
-	
 	if (addr < 0x80)
 		DMA_Chans[addr] = val;
-	
-	asm("ldmia sp!, {r12}");
 }
 
 void DMA_Write16(u32 addr, u16 val)
 {
-	asm("stmdb sp!, {r12}");
-	
 	if (addr < 0x80)
 	{
 		DMA_Chans[addr] = val & 0xFF;
 		DMA_Chans[addr + 1] = val >> 8;
 	}
-	
-	asm("ldmia sp!, {r12}");
 }
 
 void DMA_Enable(u8 flag)
@@ -96,122 +81,175 @@ void DMA_Enable(u8 flag)
 		
 		//bprintf("DMA%d %d %06X %s 21%02X | m:%d p:%d\n", c, bytecount, memaddr|membank, (params&0x80)?"<-":"->", ppuaddr, maddrinc, paddrinc);
 		
-		if (params & 0x80)
+		int shortcut = 0;
+		/*if ((params & 0x83) == 0x00 || (params & 0x83) == 0x02)
 		{
-			for (;;)
+			if (ppuaddr == 0x04)
 			{
-				switch (paddrinc)
+				while (bytecount > 0)
 				{
-					case 0:
-						SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
-						memaddr += maddrinc; bytecount--;
-						break;
-					case 1:
-						SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr+1));
-						memaddr += maddrinc; bytecount--;
-						break;
-					case 2:
-					case 6:
-						SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
-						memaddr += maddrinc; bytecount--;
-						break;
-					case 3:
-					case 7:
-						SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr+1));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr+1));
-						memaddr += maddrinc; bytecount--;
-						break;
-					case 4:
-						SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr+1));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr+2));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr+3));
-						memaddr += maddrinc; bytecount--;
-						break;
-					case 5:
-						SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr+1));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr+1));
-						memaddr += maddrinc; bytecount--;
-						break;
+					if (PPU_OAMAddr >= 0x200)
+					{
+						*(u16*)&PPU_OAM[PPU_OAMAddr & 0x21F] = SNES_Read16(membank|memaddr);
+					}
+					else
+					{
+						*(u16*)&PPU_OAM[PPU_OAMAddr] = SNES_Read16(membank|memaddr);
+					}
+					memaddr += maddrinc<<1;
+					bytecount -= 2;
+					PPU_OAMAddr += 2;
+					PPU_OAMAddr &= ~0x400;
 				}
-				
-				if (!bytecount) break;
+				shortcut = 1;
+			}
+			else if (ppuaddr == 0x22)
+			{
+				while (bytecount > 0)
+				{
+					PPU_CGRAM[PPU_CGRAMAddr >> 1] = SNES_Read16(membank|memaddr);
+					memaddr += maddrinc<<1;
+					bytecount -= 2;
+					PPU_CGRAMAddr += 2;
+					PPU_CGRAMAddr &= ~0x200;
+				}
+				shortcut = 1;
 			}
 		}
-		else
+		else if ((params & 0x83) == 0x01)
 		{
-			for (;;)
+			if (ppuaddr == 0x18)
 			{
-				switch (paddrinc)
+				while (bytecount > 0)
 				{
-					case 0:
-						PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
-						memaddr += maddrinc; bytecount--;
-						break;
-					case 1:
-						PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						PPU_Write8(ppuaddr+1, SNES_Read8(membank|memaddr));
-						memaddr += maddrinc; bytecount--;
-						break;
-					case 2:
-					case 6:
-						PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
-						memaddr += maddrinc; bytecount--;
-						break;
-					case 3:
-					case 7:
-						PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						PPU_Write8(ppuaddr+1, SNES_Read8(membank|memaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						PPU_Write8(ppuaddr+1, SNES_Read8(membank|memaddr));
-						memaddr += maddrinc; bytecount--;
-						break;
-					case 4:
-						PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						PPU_Write8(ppuaddr+1, SNES_Read8(membank|memaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						PPU_Write8(ppuaddr+2, SNES_Read8(membank|memaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						PPU_Write8(ppuaddr+3, SNES_Read8(membank|memaddr));
-						memaddr += maddrinc; bytecount--;
-						break;
-					case 5:
-						PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						PPU_Write8(ppuaddr+1, SNES_Read8(membank|memaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
-						memaddr += maddrinc; bytecount--; if (!bytecount) break;
-						PPU_Write8(ppuaddr+1, SNES_Read8(membank|memaddr));
-						memaddr += maddrinc; bytecount--;
-						break;
+					*(u16*)&PPU_VRAM[PPU_VRAMAddr] = SNES_Read16(membank|memaddr);
+					memaddr += maddrinc<<1;
+					bytecount -= 2;
+					PPU_VRAMAddr += PPU_VRAMStep;
 				}
-				
-				if (!bytecount) break;
+				shortcut = 1;
+			}
+		}*/
+		
+		if (!shortcut)
+		{
+			if (params & 0x80)
+			{
+				for (;;)
+				{
+					switch (paddrinc)
+					{
+						case 0:
+							SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
+							memaddr += maddrinc; bytecount--;
+							break;
+						case 1:
+							SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr+1));
+							memaddr += maddrinc; bytecount--;
+							break;
+						case 2:
+						case 6:
+							SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
+							memaddr += maddrinc; bytecount--;
+							break;
+						case 3:
+						case 7:
+							SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr+1));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr+1));
+							memaddr += maddrinc; bytecount--;
+							break;
+						case 4:
+							SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr+1));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr+2));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr+3));
+							memaddr += maddrinc; bytecount--;
+							break;
+						case 5:
+							SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr+1));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							SNES_Write8(membank|memaddr, PPU_Read8(ppuaddr+1));
+							memaddr += maddrinc; bytecount--;
+							break;
+					}
+					
+					if (!bytecount) break;
+				}
+			}
+			else
+			{
+				for (;;)
+				{
+					switch (paddrinc)
+					{
+						case 0:
+							PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
+							memaddr += maddrinc; bytecount--;
+							break;
+						case 1:
+							PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							PPU_Write8(ppuaddr+1, SNES_Read8(membank|memaddr));
+							memaddr += maddrinc; bytecount--;
+							break;
+						case 2:
+						case 6:
+							PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
+							memaddr += maddrinc; bytecount--;
+							break;
+						case 3:
+						case 7:
+							PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							PPU_Write8(ppuaddr+1, SNES_Read8(membank|memaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							PPU_Write8(ppuaddr+1, SNES_Read8(membank|memaddr));
+							memaddr += maddrinc; bytecount--;
+							break;
+						case 4:
+							PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							PPU_Write8(ppuaddr+1, SNES_Read8(membank|memaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							PPU_Write8(ppuaddr+2, SNES_Read8(membank|memaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							PPU_Write8(ppuaddr+3, SNES_Read8(membank|memaddr));
+							memaddr += maddrinc; bytecount--;
+							break;
+						case 5:
+							PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							PPU_Write8(ppuaddr+1, SNES_Read8(membank|memaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
+							memaddr += maddrinc; bytecount--; if (!bytecount) break;
+							PPU_Write8(ppuaddr+1, SNES_Read8(membank|memaddr));
+							memaddr += maddrinc; bytecount--;
+							break;
+					}
+					
+					if (!bytecount) break;
+				}
 			}
 		}
 		
@@ -225,8 +263,6 @@ void DMA_Enable(u8 flag)
 
 void DMA_ReloadHDMA()
 {
-	asm("stmdb sp!, {r12}");
-	
 	register u8 flag = DMA_HDMAFlag;
 	if (flag)
 	{
@@ -261,8 +297,6 @@ void DMA_ReloadHDMA()
 			HDMA_Pause[c] = 0;
 		}
 	}
-	
-	asm("ldmia sp!, {r12}");
 }
 
 extern u16 PPU_VCount;

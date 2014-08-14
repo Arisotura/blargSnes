@@ -21,6 +21,7 @@
 @ --- TODO --------------------------------------------------------------------
 @ * emulate dummy reads (trigger read-sensitive IO ports)
 @ * check the implementation of the H flag
+@ * REMOVE ASM STMDB/LDMIA IN C CODE!!!!!
 @
 @ search the code for 'todo' for more
 @ -----------------------------------------------------------------------------

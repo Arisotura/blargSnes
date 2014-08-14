@@ -30,87 +30,104 @@
 .global SNES_IOWrite16
 
 SNES_IORead8:
-	and r1, r0, #0xFF00
+	stmdb sp!, {r12, lr}
+	ldr lr, =ior8_ret
+	and r12, r0, #0xFF00
 	and r0, r0, #0xFF
 	
-	cmp r1, #0x2100
+	cmp r12, #0x2100
 	beq PPU_Read8
 	
-	cmp r1, #0x4200
+	cmp r12, #0x4200
 	beq SNES_GIORead8
 	
-	cmp r1, #0x4300
+	cmp r12, #0x4300
 	beq DMA_Read8
 	
-	cmp r1, #0x4000
+	cmp r12, #0x4000
 	subeq snesCycles, snesCycles, #0x60000
 	beq SNES_JoyRead8
 	
 	mov r0, #0
-	bx lr
+ior8_ret:
+	ldmia sp!, {r12, pc}
+	
 	
 SNES_IORead16:
-	and r1, r0, #0xFF00
+	stmdb sp!, {r12, lr}
+	ldr lr, =ior16_ret
+	and r12, r0, #0xFF00
 	and r0, r0, #0xFF
 	
-	cmp r1, #0x2100
+	cmp r12, #0x2100
 	beq PPU_Read16
 	
-	cmp r1, #0x4200
+	cmp r12, #0x4200
 	beq SNES_GIORead16
 	
-	cmp r1, #0x4300
+	cmp r12, #0x4300
 	beq DMA_Read16
 	
-	cmp r1, #0x4000
+	cmp r12, #0x4000
 	subeq snesCycles, snesCycles, #0xC0000
 	beq SNES_JoyRead16
 	
 	mov r0, #0
-	bx lr
+ior16_ret:
+	ldmia sp!, {r12, pc}
+	
 	
 SNES_IOWrite8:
-	and r2, r0, #0xFF00
+	stmdb sp!, {r12, lr}
+	ldr lr, =iow8_ret
+	and r12, r0, #0xFF00
 	and r0, r0, #0xFF
 	
-	cmp r2, #0x2100
+	cmp r12, #0x2100
 	beq PPU_Write8
 	
-	cmp r2, #0x4300
+	cmp r12, #0x4300
 	beq DMA_Write8
 	
-	cmp r2, #0x4000
+	cmp r12, #0x4000
 	subeq snesCycles, snesCycles, #0x60000
 	beq SNES_JoyWrite8
 	
-	cmp r2, #0x4200
-	bxne lr
+	cmp r12, #0x4200
+	ldmneia sp!, {r12, pc}
 	cmp r0, #0x00
 	bne SNES_GIOWrite8
 	tst r1, #0x80
 	bicne snesP, snesP, #flagI2
 	orreq snesP, snesP, #flagI2	
 	b SNES_GIOWrite8
+iow8_ret:
+	ldmia sp!, {r12, pc}
+
 	
 SNES_IOWrite16:
-	and r2, r0, #0xFF00
+	stmdb sp!, {r12, lr}
+	ldr lr, =iow16_ret
+	and r12, r0, #0xFF00
 	and r0, r0, #0xFF
 	
-	cmp r2, #0x2100
+	cmp r12, #0x2100
 	beq PPU_Write16
 	
-	cmp r2, #0x4300
+	cmp r12, #0x4300
 	beq DMA_Write16
 	
-	cmp r2, #0x4000
+	cmp r12, #0x4000
 	subeq snesCycles, snesCycles, #0xC0000
 	beq SNES_JoyWrite16
 	
-	cmp r2, #0x4200
-	bxne lr
+	cmp r12, #0x4200
+	ldmneia sp!, {r12, pc}
 	cmp r0, #0x00
 	bne SNES_GIOWrite16
 	tst r1, #0x80
 	bicne snesP, snesP, #flagI2
 	orreq snesP, snesP, #flagI2
 	b SNES_GIOWrite16
+iow16_ret:
+	ldmia sp!, {r12, pc}

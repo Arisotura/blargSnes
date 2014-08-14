@@ -20,9 +20,6 @@
 
 @ --- TODO --------------------------------------------------------------------
 @
-@ mildly high prio: wrap every call to a C function in an appropriate SafeCall
-@  so we don't need the ugly and risky ASM lines on the C side
-@
 @ rewrite 16bit accesses to use ldrh/strh since we're now on a CPU arch that
 @  supports unaligned accesses
 @
@@ -713,7 +710,7 @@ frameloop:
 		ldr r1, =PPU_VCount
 		strh r0, [r1]
 		SafeCall PPU_RenderScanline
-		@bl DMA_ReloadHDMA
+		@bl DMA_ReloadHDMA @ TODO SAFECALL!!!
 		b emuloop
 		
 newline:
@@ -798,9 +795,6 @@ irq_end:
 				subne snesPC, snesPC, #0x10000
 				
 				OpcodePrefetch8
-				@mov r1, snesPC, lsr #0x10
-				@orr r1, r1, snesPBR, lsl #0x10
-				@bl debugcrapo
 				ldr pc, [opTable, r0, lsl #0x2]
 op_return:
 				cmp snesCycles, #0x00010000
@@ -823,7 +817,7 @@ emulate_hardware:
 			
 vblank:
 			bne vblank_notfirst
-			@SafeCall PPU_SNESVBlank
+			SafeCall PPU_VBlank
 			tst snesP, #flagI2
 			beq CPU_TriggerNMI
 			
@@ -839,7 +833,7 @@ vblank_notfirst:
 		
 		@bl SPC_Run
 		mov r0, snesPC
-		bl PostEmuFrame
+		SafeCall PostEmuFrame
 		cmp r0, #1
 		beq frameloop
 		

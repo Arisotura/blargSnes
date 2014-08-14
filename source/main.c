@@ -563,12 +563,10 @@ void CPUThread(u32 blarg)
 // return val: 1=continue running
 int PostEmuFrame(u32 pc)
 {
-	asm("stmdb sp!, {r12}");
 	//bprintf("%08X\n", pc);
 	APP_STATUS status = aptGetStatus();
 	if (status == APP_EXITING)
 	{
-		asm("ldmia sp!, {r12}");
 		return 0;
 	}
 	else if(status == APP_SUSPENDING)
@@ -591,7 +589,6 @@ int PostEmuFrame(u32 pc)
 	{
 		pause = 1;
 		bprintf("pause %08X\n", pc);
-		asm("ldmia sp!, {r12}");
 		return 0;
 	}
 	
@@ -606,20 +603,15 @@ int PostEmuFrame(u32 pc)
 	
 	// TODO: VSYNC
 	
-	asm("ldmia sp!, {r12}");
 	return 1;
 }
 
 void debugcrapo(u32 op, u32 op2)
 {
-	asm("stmdb sp!, {r0-r3, r12}");
-	
 	bprintf("DBG: %08X %08X\n", op, op2);
 	DrawConsole();
 	SwapBottomBuffers(0);
 	ClearBottomBuffer();
-	
-	asm("ldmia sp!, {r0-r3, r12}");
 }
 
 void dbgcolor(u32 col)
@@ -743,6 +735,7 @@ int main()
 							// SPC700 thread
 							/*Result res = svc_createThread(&cputhread, CPUThread, 0, cputhreadstack+0x4000, 0x3F, ~0x1);
 							bprintf("spcthread=%08X\n", res);*/
+							
 							running = 1;
 							
 							bprintf("ROM loaded, running...\n");
