@@ -560,6 +560,8 @@ void CPUThread(u32 blarg)
 }
 
 
+u32 framecount = 0;
+
 // return val: 1=continue running
 int PostEmuFrame(u32 pc)
 {
@@ -591,6 +593,11 @@ int PostEmuFrame(u32 pc)
 		bprintf("pause %08X\n", pc);
 		return 0;
 	}
+	
+	// TODO: also save SRAM under certain circumstances (pausing, returning to home menu, etc)
+	framecount++;
+	if (!(framecount & 7))
+		SNES_SaveSRAM();
 	
 	SwapTopBuffers(0);
 

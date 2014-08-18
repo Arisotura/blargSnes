@@ -51,6 +51,7 @@ u8 PPU_VRAM[0x10000];
 u16 PPU_OAMAddr = 0;
 u8 PPU_OAMVal = 0;
 u8 PPU_OAMPrio = 0;
+u8 PPU_FirstOBJ = 0;
 u16 PPU_OAMReload = 0;
 u8 PPU_OAM[0x220];
 
@@ -327,11 +328,13 @@ void PPU_Write8(u32 addr, u8 val)
 		case 0x02:
 			PPU_OAMAddr = (PPU_OAMAddr & 0x200) | (val << 1);
 			PPU_OAMReload = PPU_OAMAddr;
+			PPU_FirstOBJ = PPU_OAMPrio ? ((PPU_OAMAddr >> 1) & 0x7F) : 0;
 			break;
 		case 0x03:
 			PPU_OAMAddr = (PPU_OAMAddr & 0x1FE) | ((val & 0x01) << 9);
 			PPU_OAMPrio = val & 0x80;
 			PPU_OAMReload = PPU_OAMAddr;
+			PPU_FirstOBJ = PPU_OAMPrio ? ((PPU_OAMAddr >> 1) & 0x7F) : 0;
 			break;
 			
 		case 0x04:
@@ -846,7 +849,7 @@ void PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line, u16*
 
 inline void PPU_RenderOBJs(u16* buf, u32 line, u32 prio)
 {
-	int i = PPU_OAMPrio ? ((PPU_OAMAddr >> 1) & 0x7F) : 0;
+	int i = PPU_FirstOBJ;
 	i--;
 	if (i < 0) i = 127;
 	int last = i;

@@ -37,8 +37,6 @@ u32 ROM_NumBanks;
 extern Handle fsuHandle;
 extern FS_archive sdmcArchive;
 
-int strlen_u(u16* str);
-
 
 // TODO find a better way to do speedhacks
 // (like, detecting branches with offset -4 or -5 at runtime)
