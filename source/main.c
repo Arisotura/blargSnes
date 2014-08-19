@@ -627,6 +627,36 @@ void dbgcolor(u32 col)
 	GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
 }
 
+void testthread(u32 derpp)
+{
+	for (;;) svc_sleepThread(1*1000*1000*1000);
+}
+
+
+
+extern Handle aptuHandle;
+
+Result APT_EnableSyscoreUsage(u32 max_percent)
+{
+	aptOpenSession();
+	
+	u32* cmdbuf=getThreadCommandBuffer();
+	cmdbuf[0]=0x4F0080; //request header code
+	cmdbuf[1]=0;
+	cmdbuf[2]=1;
+	cmdbuf[3]=max_percent;
+	
+	Result ret=0;
+	if((ret=svc_sendSyncRequest(aptuHandle)))
+	{
+		aptCloseSession();
+		return ret;
+	}
+
+	aptCloseSession();
+	return cmdbuf[1];
+}
+
 
 
 char temppath[300];
@@ -659,6 +689,7 @@ int main()
 	initSrv();
 		
 	aptInit(APPID_APPLICATION);
+	//Result blargderp = APT_EnableSyscoreUsage(30);
 
 	gspGpuInit();
 
@@ -744,6 +775,10 @@ int main()
 							bprintf("spcthread=%08X\n", res);*/
 							
 							running = 1;
+							
+							//Result res = svc_createThread(&cputhread, testthread, 0, cputhreadstack+0x4000, 0x3F, ~0x2);
+							//bprintf("spcthread=%08X\n", res);
+							//bprintf("%08X\n", blargderp);
 							
 							bprintf("ROM loaded, running...\n");
 
