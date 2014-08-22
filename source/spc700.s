@@ -104,21 +104,29 @@ SPC_UpdateMemMap:
 	.ifnc \addr, r0
 		mov r0, \addr
 	.endif
+	stmdb sp!, {r1-r3, r12}
 	bl SPC_IORead8
+	ldmia sp!, {r1-r3, r12}
 1:
 .endm
 
 .macro MemRead16 addr=r0
 	bic r3, \addr, #0x000F
 	cmp r3, #0x00F0
-	addne r3, memory, \addr
-	ldrneb r0, [r3]
-	ldrneb r3, [r3, #0x1]
-	orrne r0, r0, r3, lsl #0x8
+	beq 1f
+	add r3, memory, \addr
+	ldrb r0, [r3]
+	ldrb r3, [r3, #0x1]
+	orr r0, r0, r3, lsl #0x8
+	b 2f
+1:
 	.ifnc \addr, r0
-		moveq r0, \addr
+		mov r0, \addr
 	.endif
-	bleq SPC_IORead16
+	stmdb sp!, {r1-r3, r12}
+	bl SPC_IORead16
+	ldmia sp!, {r1-r3, r12}
+2:
 .endm
 
 .macro MemWrite8 addr=r0, val=r1
@@ -141,7 +149,9 @@ SPC_UpdateMemMap:
 	cmp r0, #0xF1
 	moveq r3, r1
 	bleq SPC_UpdateMemMap
+	stmdb sp!, {r1-r3, r12}
 	bl SPC_IOWrite8
+	ldmia sp!, {r1-r3, r12}
 2:
 .endm
 
@@ -166,14 +176,18 @@ SPC_UpdateMemMap:
 		mov r1, \val
 	.endif
 	cmp r0, #0xF0
-	moveq r3, r1, lsr #0x8
-	bleq SPC_UpdateMemMap
-	beq 3f
+	bne 4f
+	mov r3, r1, lsr #0x8
+	bl SPC_UpdateMemMap
+	b 3f
+4:
 	cmp r0, #0xF1
 	moveq r3, r1
 	bleq SPC_UpdateMemMap
 3:
+	stmdb sp!, {r1-r3, r12}
 	bl SPC_IOWrite16
+	ldmia sp!, {r1-r3, r12}
 2:
 .endm
 

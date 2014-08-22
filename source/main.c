@@ -510,7 +510,7 @@ void emergency_printf(char* fmt, ...)
 	for (;;)
 	{
 		j = 0;
-		while (buf[i] != '\0' && buf[i] != '\n' && j<33)
+		while (buf[i] != '\0' && buf[i] != '\n' && j<32)
 			consolebuf[consoleidx][j++] = buf[i++];
 		consolebuf[consoleidx][j] = '\0';
 		
@@ -549,14 +549,21 @@ void DrawConsole()
 
 
 
-void CPUThread(u32 blarg)
+void SPCThread(u32 blarg)
 {
-	/*bprintf("ROM loaded, running...\n");
-	
-	CPU_Reset();
-	CPU_Run();*/
 	SPC_Reset();
-	SPC_Run();
+	
+	for (;;)
+	{
+		SPC_Run();
+		
+		// HAX
+		if (pause)
+		{
+			svc_exitThread();
+			return;
+		}
+	}
 }
 
 
@@ -627,11 +634,6 @@ void dbgcolor(u32 col)
 	GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
 }
 
-void testthread(u32 derpp)
-{
-	for (;;) svc_sleepThread(1*1000*1000*1000);
-}
-
 
 
 extern Handle aptuHandle;
@@ -642,9 +644,8 @@ Result APT_EnableSyscoreUsage(u32 max_percent)
 	
 	u32* cmdbuf=getThreadCommandBuffer();
 	cmdbuf[0]=0x4F0080; //request header code
-	cmdbuf[1]=0;
-	cmdbuf[2]=1;
-	cmdbuf[3]=max_percent;
+	cmdbuf[1]=1;
+	cmdbuf[2]=max_percent;
 	
 	Result ret=0;
 	if((ret=svc_sendSyncRequest(aptuHandle)))
@@ -666,8 +667,8 @@ int main()
 	int i, x, y;
 	u64 FrameTime;
 	
-	Handle cputhread;
-	u8* cputhreadstack;
+	Handle spcthread;
+	u8* spcthreadstack;
 	
 	running = 0;
 	pause = 0;
@@ -686,10 +687,11 @@ int main()
 		PPU_ColorTable[i] = 0x0001 | (r << 11) | (g << 1) | (b >> 9);
 	}
 	
+	
 	initSrv();
 		
 	aptInit(APPID_APPLICATION);
-	//Result blargderp = APT_EnableSyscoreUsage(30);
+	APT_EnableSyscoreUsage(30);
 
 	gspGpuInit();
 
@@ -737,7 +739,24 @@ int main()
 	//u32 regData=0x01FF0000;
 	//GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
 	
-	cputhreadstack = MemAlloc(0x4000); // should be good enough for a stack
+	spcthreadstack = MemAlloc(0x4000); // should be good enough for a stack
+	
+	// TEST
+	s16* tempshiz = MemAlloc(2048*2);
+	for (i = 0; i < 2048; i += 8)
+	{
+		tempshiz[i+0] = 32767;
+		tempshiz[i+1] = 32767;
+		tempshiz[i+2] = 32767;
+		tempshiz[i+3] = 32767;
+		tempshiz[i+4] = -32768;
+		tempshiz[i+5] = -32768;
+		tempshiz[i+6] = -32768;
+		tempshiz[i+7] = -32768;
+	}
+	//Result ohshit = InitSound();
+	//CSND_playsound(8, 1, 1/*PCM16*/, 32000, tempshiz, tempshiz, 4096, 2, 0);
+	// TEST END
 	
 	APP_STATUS status;
 	while((status=aptGetStatus())!=APP_EXITING)
@@ -770,20 +789,16 @@ int main()
 							bprintf("Failed to load this ROM\nPress A to return to menu\n");
 						else
 						{
-							// SPC700 thread
-							/*Result res = svc_createThread(&cputhread, CPUThread, 0, cputhreadstack+0x4000, 0x3F, ~0x1);
-							bprintf("spcthread=%08X\n", res);*/
-							
 							running = 1;
-							
-							//Result res = svc_createThread(&cputhread, testthread, 0, cputhreadstack+0x4000, 0x3F, ~0x2);
-							//bprintf("spcthread=%08X\n", res);
-							//bprintf("%08X\n", blargderp);
+							//bprintf("%08X %08X\n", ohshit, &tempshiz[0]);
+							//bprintf("- %08X\n", derpo);
+							// SPC700 thread
+							Result res = svc_createThread(&spcthread, SPCThread, 0, spcthreadstack+0x4000, 0x3F, 1);
+							bprintf("spcthread=%08X\n", res);
 							
 							bprintf("ROM loaded, running...\n");
 
 							CPU_Reset();
-							SPC_Reset();
 							
 							CPU_Run();
 						}
@@ -848,7 +863,7 @@ int main()
 	//regData=0x010000FF;
 	//GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
 	
-	MemFree(cputhreadstack, 0x4000);
+	MemFree(spcthreadstack, 0x4000);
 	
 	MemFree(filelist, 0x106*nfiles);
 

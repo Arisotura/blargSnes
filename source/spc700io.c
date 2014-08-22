@@ -68,8 +68,6 @@ void SPC_InitMisc()
 
 u8 SPC_IORead8(u16 addr)
 {
-	asm("stmdb sp!, {r1-r3, r12}");
-	
 	u8 ret = 0;
 	switch (addr)
 	{
@@ -85,15 +83,12 @@ u8 SPC_IORead8(u16 addr)
 		case 0xFE: ret = SPC_Timers.Timer[1].Val; SPC_Timers.Timer[1].Val = 0; break;
 		case 0xFF: ret = SPC_Timers.Timer[2].Val; SPC_Timers.Timer[2].Val = 0; break;
 	}
-	
-	asm("ldmia sp!, {r1-r3, r12}");
+
 	return ret;
 }
 
 u16 SPC_IORead16(u16 addr)
 {
-	asm("stmdb sp!, {r1-r3, r12}");
-	
 	u16 ret = 0;
 	switch (addr)
 	{
@@ -105,15 +100,12 @@ u16 SPC_IORead16(u16 addr)
 			ret |= ((u16)SPC_IORead8(addr+1) << 8);
 			break;
 	}
-	
-	asm("ldmia sp!, {r1-r3, r12}");
+
 	return ret;
 }
 
 void SPC_IOWrite8(u16 addr, u8 val)
 {
-	asm("stmdb sp!, {r1-r3, r12}");
-	
 	switch (addr)
 	{
 		case 0xF1:
@@ -146,14 +138,10 @@ void SPC_IOWrite8(u16 addr, u8 val)
 		case 0xFB: SPC_Timers.Timer[1].Reload = val << 7; break;
 		case 0xFC: SPC_Timers.Timer[2].Reload = val << 4; break;
 	}
-	
-	asm("ldmia sp!, {r1-r3, r12}");
 }
 
 void SPC_IOWrite16(u16 addr, u16 val)
 {
-	asm("stmdb sp!, {r1-r3, r12}");
-	
 	switch (addr)
 	{
 		case 0xF4: *(u16*)&SPC_IOPorts[4] = val; break;
@@ -164,6 +152,4 @@ void SPC_IOWrite16(u16 addr, u16 val)
 			SPC_IOWrite8(addr+1, val >> 8);
 			break;
 	}
-	
-	asm("ldmia sp!, {r1-r3, r12}");
 }

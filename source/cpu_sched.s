@@ -17,6 +17,9 @@
 @ -----------------------------------------------------------------------------
 
 .arm
+.align 4
+
+.include "cpu.inc"
 
 @ cycles per scanline: 1364
 @ cycles per frame: 357368 (NTSC), 425568 (PAL)
@@ -28,3 +31,6 @@
 @ * VBlank start (and NMI)
 @ * VBlank end
 @ * IRQ (1 = every scanline, at pixel X; 2 = scanline Y, at pixel 0 (hbl end); 3 = scanline Y, at pixel X
+
+.section    .text, "awx", %progbits
+

@@ -60,6 +60,15 @@ CPU_Regs:
 
 .section    .text, "awx", %progbits
 
+.global derpolol
+.type derpolol, %function
+derpolol:
+	str r0, [sp,#-0x4]!
+	svc 0x2D
+	ldr r3, [sp], #4
+	str r1, [r3]
+	bx lr
+
 _MemRead8:
 	bic r3, r0, #0x1800
 	ldr r3, [memoryMap, r3, lsr #0xB]
