@@ -532,7 +532,7 @@ void PPU_Write8(u32 addr, u8 val)
 		case 0x42: SPC_IOPorts[2] = val; break;
 		case 0x43: SPC_IOPorts[3] = val; break;
 		
-		case 0x80: SNES_SysRAM[Mem_WRAMAddr++] = val; break;
+		case 0x80: SNES_SysRAM[Mem_WRAMAddr++] = val; Mem_WRAMAddr &= ~0x20000; break;
 		case 0x81: Mem_WRAMAddr = (Mem_WRAMAddr & 0x0001FF00) | val; break;
 		case 0x82: Mem_WRAMAddr = (Mem_WRAMAddr & 0x000100FF) | (val << 8); break;
 		case 0x83: Mem_WRAMAddr = (Mem_WRAMAddr & 0x0000FFFF) | ((val & 0x01) << 16); break;
@@ -999,7 +999,7 @@ inline void PPU_PrerenderOBJs(u16* buf, u32 line)
 		
 		if (line >= oy && line < (oy+oh))
 			PPU_RenderOBJ(oam, oamextra, oh-1, buf, line-oy);
-		/*else if (oy >= 192)
+		/*else if (oy >= 192) // should fix cases of sprites with Y<0 disappearing, but causes garbage to be rendered across the screen
 		{
 			oy -= 0x100;
 			if (line < (oy+oh))

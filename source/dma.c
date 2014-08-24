@@ -79,7 +79,7 @@ void DMA_Enable(u8 flag)
 		u32 membank = chan[4] << 16;
 		u16 bytecount = chan[5] | (chan[6] << 8);
 		
-		//emergency_printf("DMA%d %d %06X %s 21%02X | m:%d p:%d\n", c, bytecount, memaddr|membank, (params&0x80)?"<-":"->", ppuaddr, maddrinc, paddrinc);
+		//if (ppuaddr!=0x04)bprintf("DMA%d %d %06X %s 21%02X m:%d p:%d\n", c, bytecount, memaddr|membank, (params&0x80)?"<-":"->", ppuaddr, maddrinc, paddrinc);
 		
 		int shortcut = 0;
 		u8 scheck = params & 0x9F;

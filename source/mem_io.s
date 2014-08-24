@@ -48,7 +48,7 @@ SNES_IORead8:
 	subeq snesCycles, snesCycles, #0x60000
 	beq SNES_JoyRead8
 	
-	mov r0, #0
+	mov r0, r12, lsr #8	@ open bus
 ior8_ret:
 	ldmia sp!, {r12, pc}
 	
@@ -72,7 +72,7 @@ SNES_IORead16:
 	subeq snesCycles, snesCycles, #0xC0000
 	beq SNES_JoyRead16
 	
-	mov r0, #0
+	orr r0, r12, r12, lsr #8	@ open bus
 ior16_ret:
 	ldmia sp!, {r12, pc}
 	
