@@ -65,6 +65,11 @@ int consoledirty = 0;
 int running = 0;
 int pause = 0;
 
+u64 mstime = 0;
+u64 frametime = 0;
+u64 vsync_last = 0;
+u64 fps_last = 0;
+
 
 void strncpy_u2a(char* dst, u16* src, int n)
 {
@@ -80,27 +85,6 @@ void strncpy_u2a(char* dst, u16* src, int n)
 	}
 	
 	dst[i] = '\0';
-}
-
-// REMOVEME
-void derp_divmod(int num, int den, int* quo, int* rem)
-{
-	if (den == 0)
-	{
-		if (quo) *quo = 0xFFFFFFFF;
-		if (rem) *rem = num;
-		return;
-	}
-	
-	int i = 0;
-	while (num >= den)
-	{
-		num -= den;
-		i++;
-	}
-	
-	if (quo) *quo = i;
-	if (rem) *rem = num;
 }
 
 
@@ -437,11 +421,9 @@ void DrawROMList()
 		int shownheight = 240-menuy;
 		int fullheight = 12*nfiles;
 		
-		int sbheight = shownheight * shownheight;
-		derp_divmod(sbheight, fullheight, &sbheight, NULL);
+		int sbheight = (shownheight * shownheight) / fullheight;
 		
-		int sboffset = menuscroll * 12 * shownheight;
-		derp_divmod(sboffset, fullheight, &sboffset, NULL);
+		int sboffset = (menuscroll * 12 * shownheight) / fullheight;
 		if ((sboffset+sbheight) > shownheight)
 			sboffset = shownheight-sbheight;
 		
@@ -568,6 +550,7 @@ void SPCThread(u32 blarg)
 
 
 u32 framecount = 0;
+u32 last_fc = 0;
 
 // return val: 1=continue running
 int PostEmuFrame(u32 pc)
@@ -601,6 +584,19 @@ int PostEmuFrame(u32 pc)
 		return 0;
 	}
 	
+	/*u64 t = svc_getSystemTick();
+	if ((t - fps_last) >= (1000*mstime))
+	{
+		u32 nframes = framecount-last_fc;
+		char fpsdisp[32];
+		sprintf(fpsdisp, "%d FPS", nframes);
+		DrawText(320-(6*12), 240-12, fpsdisp);
+		consoledirty = 1;
+		
+		fps_last = t;
+		last_fc = framecount;
+	}*/
+	
 	// TODO: also save SRAM under certain circumstances (pausing, returning to home menu, etc)
 	framecount++;
 	if (!(framecount & 7))
@@ -615,7 +611,14 @@ int PostEmuFrame(u32 pc)
 		ClearBottomBuffer();
 	}
 	
-	// TODO: VSYNC
+	/*t = svc_getSystemTick();
+	if ((t - vsync_last) < frametime)
+	{
+		u64 timetowait = frametime - (t-vsync_last);
+		timetowait = (timetowait * 1 * 1000 * 1000) / mstime;
+		svc_sleepThread(timetowait);
+	}
+	vsync_last = svc_getSystemTick();*/
 	
 	return 1;
 }
@@ -718,15 +721,23 @@ int main()
 	
 	aptSetupEventHandler();
 	
-	FrameTime = 0ULL;
+	/*for (i = 0; i < 16; i++)
+	{
+		u64 t1 = svc_getSystemTick();
+		svc_sleepThread(1 * 1000 * 1000);
+		u64 t2 = svc_getSystemTick();
+		mstime += (t2-t1);
+	}
+	mstime >>= 4ULL;
 	for (i = 0; i < 16; i++)
 	{
 		u64 t1 = svc_getSystemTick();
 		svc_sleepThread(16666667);
 		u64 t2 = svc_getSystemTick();
-		FrameTime += (t2-t1);
+		frametime += (t2-t1);
 	}
-	FrameTime >>= 4ULL;
+	frametime >>= 4ULL;
+	fps_last = vsync_last = svc_getSystemTick();*/
 	
 
 	sdmcArchive = (FS_archive){0x9, (FS_path){PATH_EMPTY, 1, (u8*)""}};
@@ -855,8 +866,8 @@ int main()
 			aptWaitStatusEvent();
 			
 			setupFB();
-			SwapTopBuffers(0);
-			SwapBottomBuffers(0);
+			//SwapTopBuffers(0);
+			//SwapBottomBuffers(0);
 		}
 	}
 	

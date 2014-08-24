@@ -414,12 +414,17 @@ void SNES_GIOWrite8(u32 addr, u8 val)
 			SNES_DivA = (SNES_DivA & 0x00FF) | (val << 8);
 			break;
 		case 0x06:
-			// TODO: this is not nice, needs better method, but in the meantime it'll work
 			{
-				int rem, quo;
-				derp_divmod(SNES_DivA, val, &rem, &quo);
-				SNES_DivRes = (u16)rem;
-				SNES_MulRes = (u16)quo;
+				if (val == 0)
+				{
+					SNES_DivRes = 0xFFFF;
+					SNES_MulRes = SNES_DivA;
+				}
+				else
+				{
+					SNES_DivRes = (u16)(SNES_DivA / val);
+					SNES_MulRes = (u16)(SNES_DivA % val);
+				}
 			}
 			break;
 			
