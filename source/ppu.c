@@ -602,60 +602,12 @@ void PPU_RenderBG_2bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal, 
 	}
 	
 	xoff = bg->XScroll;
-	idx = (xoff & 0xF8) >> 3;
-	if (xoff & 0x100)
-	{
-		if (bg->Size & 0x1)
-			idx += 1024;
-	}
-	curtile = tilemap[idx];
-	
-	idx = (curtile & 0x3FF) << 3;
-	if (curtile & 0x8000) 	idx += (7 - tiley);
-	else					idx += tiley;
-	
-	tilepixels = tileset[idx];
-	if (curtile & 0x4000)	tilepixels >>= (xoff & 0x7);
-	else					tilepixels <<= (xoff & 0x7);
 	
 	for (i = 0; i < 256;)
 	{
-		// simple way to skip tiles that don't have the wanted prio
-		if ((curtile ^ prio) & 0x2000)
+		// determine the next tile
+		for (;;)
 		{
-			u32 npix = 8 - (xoff & 0x7);
-			i += npix;
-			buffer += npix;
-			xoff += npix;
-			goto _8x8_2_newtile;
-		}
-		
-		colorval = 0;
-		if (curtile & 0x4000) // hflip
-		{
-			if (tilepixels & 0x0001) colorval |= 0x01;
-			if (tilepixels & 0x0100) colorval |= 0x02;
-			tilepixels >>= 1;
-		}
-		else
-		{
-			if (tilepixels & 0x0080) colorval |= 0x01;
-			if (tilepixels & 0x8000) colorval |= 0x02;
-			tilepixels <<= 1;
-		}
-		
-		if (colorval)
-		{
-			colorval |= (curtile & 0x1C00) >> 8;
-			*buffer = pal[colorval];
-		}
-		buffer++;
-		i++;
-		
-		xoff++;
-		if (!(xoff & 0x7)) // reload tile if needed
-		{
-_8x8_2_newtile:
 			idx = (xoff & 0xF8) >> 3;
 			if (xoff & 0x100)
 			{
@@ -664,12 +616,64 @@ _8x8_2_newtile:
 			}
 			curtile = tilemap[idx];
 			
+			// skip tiles that don't have the wanted prio
+			if ((curtile ^ prio) & 0x2000)
+			{
+				u32 npix = 8 - (xoff & 0x7);
+				i += npix;
+				if (i >= 256) return;
+				xoff += npix;
+				continue;
+			}
+			
 			idx = (curtile & 0x3FF) << 3;
 			if (curtile & 0x8000) 	idx += (7 - tiley);
 			else					idx += tiley;
 			
 			tilepixels = tileset[idx];
+			if (!tilepixels)	// skip empty tiles
+			{
+				u32 npix = 8 - (xoff & 0x7);
+				i += npix;
+				if (i >= 256) return;
+				xoff += npix;
+				continue;
+			}
+			
+			if (curtile & 0x4000)	tilepixels >>= (xoff & 0x7);
+			else					tilepixels <<= (xoff & 0x7);
+			
+			break;
 		}
+		
+		// render all the possible pixels
+		do
+		{
+			colorval = 0;
+			if (curtile & 0x4000) // hflip
+			{
+				if (tilepixels & 0x0001) colorval |= 0x01;
+				if (tilepixels & 0x0100) colorval |= 0x02;
+				tilepixels >>= 1;
+			}
+			else
+			{
+				if (tilepixels & 0x0080) colorval |= 0x01;
+				if (tilepixels & 0x8000) colorval |= 0x02;
+				tilepixels <<= 1;
+			}
+			
+			if (colorval)
+			{
+				colorval |= (curtile & 0x1C00) >> 8;
+				buffer[i] = pal[colorval];
+			}
+			i++;
+			if (i >= 256) return;
+			
+			xoff++;
+		}
+		while (xoff & 0x7);
 	}
 }
 
@@ -695,64 +699,12 @@ void PPU_RenderBG_4bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal, 
 	}
 	
 	xoff = bg->XScroll;
-	idx = (xoff & 0xF8) >> 3;
-	if (xoff & 0x100)
-	{
-		if (bg->Size & 0x1)
-			idx += 1024;
-	}
-	curtile = tilemap[idx];
-	
-	idx = (curtile & 0x3FF) << 4;
-	if (curtile & 0x8000) 	idx += (7 - tiley);
-	else					idx += tiley;
-	
-	tilepixels = tileset[idx] | (tileset[idx+8] << 16);
-	if (curtile & 0x4000)	tilepixels >>= (xoff & 0x7);
-	else					tilepixels <<= (xoff & 0x7);
 	
 	for (i = 0; i < 256;)
 	{
-		// simple way to skip tiles that don't have the wanted prio
-		if ((curtile ^ prio) & 0x2000)
+		// determine the next tile
+		for (;;)
 		{
-			u32 npix = 8 - (xoff & 0x7);
-			i += npix;
-			buffer += npix;
-			xoff += npix;
-			goto _8x8_4_newtile;
-		}
-		
-		colorval = 0;
-		if (curtile & 0x4000) // hflip
-		{
-			if (tilepixels & 0x00000001) colorval |= 0x01;
-			if (tilepixels & 0x00000100) colorval |= 0x02;
-			if (tilepixels & 0x00010000) colorval |= 0x04;
-			if (tilepixels & 0x01000000) colorval |= 0x08;
-			tilepixels >>= 1;
-		}
-		else
-		{
-			if (tilepixels & 0x00000080) colorval |= 0x01;
-			if (tilepixels & 0x00008000) colorval |= 0x02;
-			if (tilepixels & 0x00800000) colorval |= 0x04;
-			if (tilepixels & 0x80000000) colorval |= 0x08;
-			tilepixels <<= 1;
-		}
-		
-		if (colorval)
-		{
-			colorval |= (curtile & 0x1C00) >> 6;
-			*buffer = pal[colorval];
-		}
-		buffer++;
-		i++;
-		
-		xoff++;
-		if (!(xoff & 0x7)) // reload tile if needed
-		{
-_8x8_4_newtile:
 			idx = (xoff & 0xF8) >> 3;
 			if (xoff & 0x100)
 			{
@@ -761,12 +713,68 @@ _8x8_4_newtile:
 			}
 			curtile = tilemap[idx];
 			
+			// skip tiles that don't have the wanted prio
+			if ((curtile ^ prio) & 0x2000)
+			{
+				u32 npix = 8 - (xoff & 0x7);
+				i += npix;
+				if (i >= 256) return;
+				xoff += npix;
+				continue;
+			}
+			
 			idx = (curtile & 0x3FF) << 4;
 			if (curtile & 0x8000) 	idx += (7 - tiley);
 			else					idx += tiley;
 			
 			tilepixels = tileset[idx] | (tileset[idx+8] << 16);
+			if (!tilepixels)	// skip empty tiles
+			{
+				u32 npix = 8 - (xoff & 0x7);
+				i += npix;
+				if (i >= 256) return;
+				xoff += npix;
+				continue;
+			}
+			
+			if (curtile & 0x4000)	tilepixels >>= (xoff & 0x7);
+			else					tilepixels <<= (xoff & 0x7);
+			
+			break;
 		}
+		
+		// render all the possible pixels
+		do
+		{
+			colorval = 0;
+			if (curtile & 0x4000) // hflip
+			{
+				if (tilepixels & 0x00000001) colorval |= 0x01;
+				if (tilepixels & 0x00000100) colorval |= 0x02;
+				if (tilepixels & 0x00010000) colorval |= 0x04;
+				if (tilepixels & 0x01000000) colorval |= 0x08;
+				tilepixels >>= 1;
+			}
+			else
+			{
+				if (tilepixels & 0x00000080) colorval |= 0x01;
+				if (tilepixels & 0x00008000) colorval |= 0x02;
+				if (tilepixels & 0x00800000) colorval |= 0x04;
+				if (tilepixels & 0x80000000) colorval |= 0x08;
+				tilepixels <<= 1;
+			}
+			
+			if (colorval)
+			{
+				colorval |= (curtile & 0x1C00) >> 6;
+				buffer[i] = pal[colorval];
+			}
+			i++;
+			if (i >= 256) return;
+			
+			xoff++;
+		}
+		while (xoff & 0x7);
 	}
 }
 
@@ -792,82 +800,12 @@ void PPU_RenderBG_8bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal, 
 	}
 	
 	xoff = bg->XScroll;
-	idx = (xoff & 0xF8) >> 3;
-	if (xoff & 0x100)
-	{
-		if (bg->Size & 0x1)
-			idx += 1024;
-	}
-	curtile = tilemap[idx];
-	
-	idx = (curtile & 0x3FF) << 5;
-	if (curtile & 0x8000) 	idx += (7 - tiley);
-	else					idx += tiley;
-	
-	tilepixels1 = tileset[idx] | (tileset[idx+8] << 16);
-	tilepixels2 = tileset[idx+16] | (tileset[idx+24] << 16);
-	if (curtile & 0x4000)
-	{
-		tilepixels1 >>= (xoff & 0x7);
-		tilepixels2 >>= (xoff & 0x7);
-	}
-	else
-	{
-		tilepixels1 <<= (xoff & 0x7);
-		tilepixels2 <<= (xoff & 0x7);
-	}
 	
 	for (i = 0; i < 256;)
 	{
-		// simple way to skip tiles that don't have the wanted prio
-		if ((curtile ^ prio) & 0x2000)
+		// determine the next tile
+		for (;;)
 		{
-			u32 npix = 8 - (xoff & 0x7);
-			i += npix;
-			buffer += npix;
-			xoff += npix;
-			goto _8x8_8_newtile;
-		}
-		
-		colorval = 0;
-		if (curtile & 0x4000) // hflip
-		{
-			if (tilepixels1 & 0x00000001) colorval |= 0x01;
-			if (tilepixels1 & 0x00000100) colorval |= 0x02;
-			if (tilepixels1 & 0x00010000) colorval |= 0x04;
-			if (tilepixels1 & 0x01000000) colorval |= 0x08;
-			if (tilepixels2 & 0x00000001) colorval |= 0x10;
-			if (tilepixels2 & 0x00000100) colorval |= 0x20;
-			if (tilepixels2 & 0x00010000) colorval |= 0x40;
-			if (tilepixels2 & 0x01000000) colorval |= 0x80;
-			tilepixels1 >>= 1;
-			tilepixels2 >>= 1;
-		}
-		else
-		{
-			if (tilepixels1 & 0x00000080) colorval |= 0x01;
-			if (tilepixels1 & 0x00008000) colorval |= 0x02;
-			if (tilepixels1 & 0x00800000) colorval |= 0x04;
-			if (tilepixels1 & 0x80000000) colorval |= 0x08;
-			if (tilepixels2 & 0x00000080) colorval |= 0x10;
-			if (tilepixels2 & 0x00008000) colorval |= 0x20;
-			if (tilepixels2 & 0x00800000) colorval |= 0x40;
-			if (tilepixels2 & 0x80000000) colorval |= 0x80;
-			tilepixels1 <<= 1;
-			tilepixels2 <<= 1;
-		}
-		
-		if (colorval)
-		{
-			*buffer = pal[colorval];
-		}
-		buffer++;
-		i++;
-		
-		xoff++;
-		if (!(xoff & 0x7)) // reload tile if needed
-		{
-_8x8_8_newtile:
 			idx = (xoff & 0xF8) >> 3;
 			if (xoff & 0x100)
 			{
@@ -876,13 +814,86 @@ _8x8_8_newtile:
 			}
 			curtile = tilemap[idx];
 			
+			// skip tiles that don't have the wanted prio
+			if ((curtile ^ prio) & 0x2000)
+			{
+				u32 npix = 8 - (xoff & 0x7);
+				i += npix;
+				if (i >= 256) return;
+				xoff += npix;
+				continue;
+			}
+			
 			idx = (curtile & 0x3FF) << 5;
 			if (curtile & 0x8000) 	idx += (7 - tiley);
 			else					idx += tiley;
 			
 			tilepixels1 = tileset[idx] | (tileset[idx+8] << 16);
 			tilepixels2 = tileset[idx+16] | (tileset[idx+24] << 16);
+			if (!(tilepixels1|tilepixels2))	// skip empty tiles
+			{
+				u32 npix = 8 - (xoff & 0x7);
+				i += npix;
+				if (i >= 256) return;
+				xoff += npix;
+				continue;
+			}
+			
+			if (curtile & 0x4000)
+			{
+				tilepixels1 >>= (xoff & 0x7);
+				tilepixels2 >>= (xoff & 0x7);
+			}
+			else
+			{
+				tilepixels1 <<= (xoff & 0x7);
+				tilepixels2 <<= (xoff & 0x7);
+			}
+			
+			break;
 		}
+		
+		// render all the possible pixels
+		do
+		{
+			colorval = 0;
+			if (curtile & 0x4000) // hflip
+			{
+				if (tilepixels1 & 0x00000001) colorval |= 0x01;
+				if (tilepixels1 & 0x00000100) colorval |= 0x02;
+				if (tilepixels1 & 0x00010000) colorval |= 0x04;
+				if (tilepixels1 & 0x01000000) colorval |= 0x08;
+				if (tilepixels2 & 0x00000001) colorval |= 0x10;
+				if (tilepixels2 & 0x00000100) colorval |= 0x20;
+				if (tilepixels2 & 0x00010000) colorval |= 0x40;
+				if (tilepixels2 & 0x01000000) colorval |= 0x80;
+				tilepixels1 >>= 1;
+				tilepixels2 >>= 1;
+			}
+			else
+			{
+				if (tilepixels1 & 0x00000080) colorval |= 0x01;
+				if (tilepixels1 & 0x00008000) colorval |= 0x02;
+				if (tilepixels1 & 0x00800000) colorval |= 0x04;
+				if (tilepixels1 & 0x80000000) colorval |= 0x08;
+				if (tilepixels2 & 0x00000080) colorval |= 0x10;
+				if (tilepixels2 & 0x00008000) colorval |= 0x20;
+				if (tilepixels2 & 0x00800000) colorval |= 0x40;
+				if (tilepixels2 & 0x80000000) colorval |= 0x80;
+				tilepixels1 <<= 1;
+				tilepixels2 <<= 1;
+			}
+			
+			if (colorval)
+			{
+				buffer[i] = pal[colorval];
+			}
+			i++;
+			if (i >= 256) return;
+			
+			xoff++;
+		}
+		while (xoff & 0x7);
 	}
 }
 

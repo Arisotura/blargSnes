@@ -79,10 +79,11 @@ void DMA_Enable(u8 flag)
 		u32 membank = chan[4] << 16;
 		u16 bytecount = chan[5] | (chan[6] << 8);
 		
-		//bprintf("DMA%d %d %06X %s 21%02X | m:%d p:%d\n", c, bytecount, memaddr|membank, (params&0x80)?"<-":"->", ppuaddr, maddrinc, paddrinc);
+		//emergency_printf("DMA%d %d %06X %s 21%02X | m:%d p:%d\n", c, bytecount, memaddr|membank, (params&0x80)?"<-":"->", ppuaddr, maddrinc, paddrinc);
 		
 		int shortcut = 0;
-		/*if ((params & 0x83) == 0x00 || (params & 0x83) == 0x02)
+		u8 scheck = params & 0x9F;
+		if (scheck == 0x00 || scheck == 0x02)
 		{
 			if (ppuaddr == 0x04)
 			{
@@ -116,7 +117,7 @@ void DMA_Enable(u8 flag)
 				shortcut = 1;
 			}
 		}
-		else if ((params & 0x83) == 0x01)
+		else if (scheck == 0x01)
 		{
 			if (ppuaddr == 0x18)
 			{
@@ -129,7 +130,7 @@ void DMA_Enable(u8 flag)
 				}
 				shortcut = 1;
 			}
-		}*/
+		}
 		
 		if (!shortcut)
 		{

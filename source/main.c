@@ -483,7 +483,7 @@ void bprintf(char* fmt, ...)
 	for (;;)
 	{
 		j = 0;
-		while (buf[i] != '\0' && buf[i] != '\n' && j<33)
+		while (buf[i] != '\0' && buf[i] != '\n' && j<32)
 			consolebuf[consoleidx][j++] = buf[i++];
 		consolebuf[consoleidx][j] = '\0';
 		
@@ -754,7 +754,7 @@ int main()
 		tempshiz[i+6] = -32768;
 		tempshiz[i+7] = -32768;
 	}
-	//Result ohshit = InitSound();
+	//Result ohshit = CSND_initialize(NULL);
 	//CSND_playsound(8, 1, 1/*PCM16*/, 32000, tempshiz, tempshiz, 4096, 2, 0);
 	// TEST END
 	
@@ -790,7 +790,7 @@ int main()
 						else
 						{
 							running = 1;
-							//bprintf("%08X %08X\n", ohshit, &tempshiz[0]);
+							//bprintf("- %08X %08X\n", ohshit, &tempshiz[0]);
 							//bprintf("- %08X\n", derpo);
 							// SPC700 thread
 							Result res = svc_createThread(&spcthread, SPCThread, 0, spcthreadstack+0x4000, 0x3F, 1);
