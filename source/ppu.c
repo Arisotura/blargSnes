@@ -97,6 +97,15 @@ s16 PPU_MulA = 0;
 s8 PPU_MulB = 0;
 s32 PPU_MulResult = 0;
 
+s16 PPU_M7A = 0;
+s16 PPU_M7B = 0;
+s16 PPU_M7C = 0;
+s16 PPU_M7D = 0;
+s16 PPU_M7RefX = 0;
+s16 PPU_M7RefY = 0;
+s16 PPU_M7XScroll = 0;
+s16 PPU_M7YScroll = 0;
+
 
 typedef struct
 {
@@ -141,19 +150,11 @@ void PPU_Reset()
 
 inline void PPU_SetXScroll(int nbg, u8 val)
 {
-	/*u32 m7stuff = 0;
-	
 	if (nbg == 0)
 	{
-		m7stuff = (val << 8) | PPU_M7Old;
+		PPU_M7XScroll = (s16)((val << 8) | PPU_M7Old);
 		PPU_M7Old = val;
-		
-		if (PPU_ModeNow == 7)
-		{
-			PPU_ScheduleLineChange(PPU_SetM7ScrollX, m7stuff);
-			return;
-		}
-	}*/
+	}
 	
 	PPU_Background* bg = &PPU_BG[nbg];
 	
@@ -163,19 +164,11 @@ inline void PPU_SetXScroll(int nbg, u8 val)
 
 inline void PPU_SetYScroll(int nbg, u8 val)
 {
-	/*u32 m7stuff = 0;
-	
 	if (nbg == 0)
 	{
-		m7stuff = (val << 8) | PPU_M7Old;
+		PPU_M7YScroll = (s16)((val << 8) | PPU_M7Old);
 		PPU_M7Old = val;
-		
-		if (PPU_ModeNow == 7)
-		{
-			PPU_ScheduleLineChange(PPU_SetM7ScrollY, m7stuff);
-			return;
-		}
-	}*/
+	}
 	
 	PPU_Background* bg = &PPU_BG[nbg];
 	
@@ -213,8 +206,12 @@ u8 PPU_Read8(u32 addr)
 			break;*/
 			
 		case 0x38:
-			ret = PPU_OAM[PPU_OAMAddr];
+			if (PPU_OAMAddr >= 0x200)
+				ret = PPU_OAM[PPU_OAMAddr & 0x21F];
+			else
+				ret = PPU_OAM[PPU_OAMAddr];
 			PPU_OAMAddr++;
+			PPU_OAMAddr &= ~0x400;
 			break;
 		
 		case 0x39:
@@ -276,7 +273,7 @@ u8 PPU_Read8(u32 addr)
 		case 0x42: ret = SPC_IOPorts[6]; break;
 		case 0x43: ret = SPC_IOPorts[7]; break;
 		
-		case 0x80: ret = SNES_SysRAM[Mem_WRAMAddr++]; break;
+		case 0x80: ret = SNES_SysRAM[Mem_WRAMAddr++]; Mem_WRAMAddr &= ~0x20000; break;
 	}
 
 	return ret;
@@ -458,33 +455,33 @@ void PPU_Write8(u32 addr, u8 val)
 				u16 fval = (u16)(PPU_M7Old | (val << 8));
 				PPU_MulA = (s16)fval;
 				PPU_MulResult = (s32)PPU_MulA * (s32)PPU_MulB;
-				//PPU_ScheduleLineChange(PPU_SetM7A, fval);
+				PPU_M7A = (s16)fval;
 				PPU_M7Old = val;
 			}
 			break;
 		case 0x1C:
-			//PPU_ScheduleLineChange(PPU_SetM7B, (val << 8) | PPU_M7Old);
+			PPU_M7B = (s16)((val << 8) | PPU_M7Old);
 			PPU_M7Old = val;
 			PPU_MulB = (s8)val;
 			PPU_MulResult = (s32)PPU_MulA * (s32)PPU_MulB;
 			break;
-		/*case 0x1D:
-			PPU_ScheduleLineChange(PPU_SetM7C, (val << 8) | PPU_M7Old);
+		case 0x1D:
+			PPU_M7C = (s16)((val << 8) | PPU_M7Old);
 			PPU_M7Old = val;
 			break;
 		case 0x1E:
-			PPU_ScheduleLineChange(PPU_SetM7D, (val << 8) | PPU_M7Old);
+			PPU_M7D = (s16)((val << 8) | PPU_M7Old);
 			PPU_M7Old = val;
 			break;
 			
 		case 0x1F: // mode7 center
-			PPU_ScheduleLineChange(PPU_SetM7RefX, (val << 8) | PPU_M7Old);
+			PPU_M7RefX = (s16)((val << 8) | PPU_M7Old);
 			PPU_M7Old = val;
 			break;
 		case 0x20:
-			PPU_ScheduleLineChange(PPU_SetM7RefY, (val << 8) | PPU_M7Old);
+			PPU_M7RefY = (s16)((val << 8) | PPU_M7Old);
 			PPU_M7Old = val;
-			break;*/
+			break;
 			
 		case 0x21:
 			PPU_CGRAMAddr = val << 1;
@@ -898,6 +895,31 @@ void PPU_RenderBG_8bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal, 
 }
 
 
+void PPU_RenderBG_Mode7(u16* buffer, u32 line, u16* pal)
+{
+	s32 x = (PPU_M7A * (PPU_M7XScroll-PPU_M7RefX)) + (PPU_M7B * (line+PPU_M7YScroll-PPU_M7RefY)) + (PPU_M7RefX << 8);
+	s32 y = (PPU_M7C * (PPU_M7XScroll-PPU_M7RefX)) + (PPU_M7D * (line+PPU_M7YScroll-PPU_M7RefY)) + (PPU_M7RefY << 8);
+	int i;
+	u32 tileidx;
+	u8 tilepixels;
+	
+	for (i = 0; i < 256; i++)
+	{
+		tileidx = ((x & 0x3F800) >> 10) + ((y & 0x3F800) >> 3);
+		
+		tileidx = PPU_VRAM[tileidx] << 7;
+		tileidx += ((x & 0x700) >> 7) + ((y & 0x700) >> 4) + 1;
+		tilepixels = PPU_VRAM[tileidx];
+		
+		if (tilepixels)
+			buffer[i] = pal[tilepixels];
+		
+		x += PPU_M7A;
+		y += PPU_M7C;
+	}
+}
+
+
 void PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line)
 {
 	u16* tileset = PPU_OBJTileset;
@@ -1129,6 +1151,20 @@ void PPU_RenderMode4(u16* buf, u32 line, u8 screen)
 	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x3000);
 }
 
+void PPU_RenderMode7(u16* buf, u32 line, u8 screen)
+{
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x0000);
+	
+	if (screen & 0x01) PPU_RenderBG_Mode7(buf, line, &PPU_CGRAM[0]);
+	
+	if (screen & 0x10)
+	{
+		PPU_RenderOBJs(buf, line, 0x1000);
+		PPU_RenderOBJs(buf, line, 0x2000);
+		PPU_RenderOBJs(buf, line, 0x3000);
+	}
+}
+
 
 int blarg=0;
 void PPU_RenderScanline(u32 line)
@@ -1185,7 +1221,10 @@ void PPU_RenderScanline(u32 line)
 			
 		// TODO: mode 5/6 (hires)
 		
-		// TODO: mode 7
+		case 7:
+			PPU_RenderMode7(buf, line, PPU_SubScreen);
+			PPU_RenderMode7(buf, line, PPU_MainScreen);
+			break;
 	}
 	
 	// copy to final framebuffer
