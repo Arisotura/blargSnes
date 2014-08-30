@@ -35,12 +35,18 @@
 #include "ppu.h"
 
 
+Result svc_createTimer(Handle* timer, int resettype);
+Result svc_setTimer(Handle timer, s64 initial, s64 interval);
+Result svc_clearTimer(Handle timer);
+
+
 u8* TopFBAddr[2];
 u8* BottomFBAddr[2];
 u8* TopFB;
 u8* BottomFB;
 
-#define TOPBUF_SIZE 0x2EE00
+#define TOPBUF_SIZE 0x2EE00 // 15bit
+//#define TOPBUF_SIZE 0x46500 // 24bit
 #define BOTTOMBUF_SIZE 0x38400
 
 u8* gspHeap;
@@ -64,6 +70,7 @@ int consoledirty = 0;
 
 int running = 0;
 int pause = 0;
+int exitemu = 0;
 
 u64 mstime = 0;
 u64 frametime = 0;
@@ -102,6 +109,8 @@ void setupFB()
 	GSPGPU_ReadHWRegs(NULL, 0x400470, &regval, 4);
 	regval &= 0xFFFFFFD8;
 	regval |= 0x00000043; // 15bit color
+	//regval &= 0xFFFFFFDF;
+	//regval |= 0x00000040;
 	GSPGPU_WriteHWRegs(NULL, 0x400470, &regval, 4);
 	regval = 480;
 	GSPGPU_WriteHWRegs(NULL, 0x400490, &regval, 4);
@@ -117,12 +126,6 @@ void gspGpuInit()
 	gspInit();
 
 	setupFB();
-	
-	//BottomFB = BottomFBAddr[0];
-
-	//convert PA to VA (assuming FB in VRAM)
-	/*topLeftFramebuffers[0]+=0x7000000;
-	topLeftFramebuffers[1]+=0x7000000;*/
 
 	//setup our gsp shared mem section
 	u8 threadID;
@@ -531,21 +534,22 @@ void DrawConsole()
 
 
 
+Handle SPCSync;
+
 void SPCThread(u32 blarg)
 {
-	SPC_Reset();
-	
 	for (;;)
 	{
-		SPC_Run();
+		if (!pause)
+			SPC_Run();
 		
-		// HAX
-		if (pause)
-		{
-			svc_exitThread();
-			return;
-		}
+		if (exitemu)
+			break;
+		
+		svc_waitSynchronization1(SPCSync, (s64)(17*1000*1000));
 	}
+	
+	svc_exitThread();
 }
 
 
@@ -559,11 +563,14 @@ int PostEmuFrame(u32 pc)
 	APP_STATUS status = aptGetStatus();
 	if (status == APP_EXITING)
 	{
+		exitemu = 1;
 		return 0;
 	}
 	else if(status == APP_SUSPENDING)
 	{
+		pause = 1;
 		aptReturnToMenu();
+		pause = 0;
 		
 		setupFB();
 		consoledirty = 1;
@@ -620,6 +627,7 @@ int PostEmuFrame(u32 pc)
 	}
 	vsync_last = svc_getSystemTick();*/
 	
+	svc_signalEvent(SPCSync);
 	return 1;
 }
 
@@ -675,6 +683,7 @@ int main()
 	
 	running = 0;
 	pause = 0;
+	exitemu = 0;
 	showconsole = 0;
 	consoleidx = 0;
 	
@@ -688,6 +697,8 @@ int main()
 		int g = i & 0x03E0;
 		int b = i & 0x7C00;
 		PPU_ColorTable[i] = 0x0001 | (r << 11) | (g << 1) | (b >> 9);
+		//u32 val = (r << 19) | (g << 6) | (b >> 7);
+		//PPU_ColorTable[i] = val | ((val >> 5) & 0x00070707);
 	}
 	
 	
@@ -746,14 +757,12 @@ int main()
 	LoadROMList();
 	DrawROMList();
 	SwapBottomBuffers(0);
-
-	//u32 regData=0x01FF0000;
-	//GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
 	
 	spcthreadstack = MemAlloc(0x4000); // should be good enough for a stack
+	svc_createEvent(&SPCSync, 0);
 	
 	// TEST
-	s16* tempshiz = MemAlloc(2048*2);
+	/*s16* tempshiz = MemAlloc(2048*2);
 	for (i = 0; i < 2048; i += 8)
 	{
 		tempshiz[i+0] = 32767;
@@ -764,7 +773,7 @@ int main()
 		tempshiz[i+5] = -32768;
 		tempshiz[i+6] = -32768;
 		tempshiz[i+7] = -32768;
-	}
+	}*/
 	//Result ohshit = CSND_initialize(NULL);
 	//CSND_playsound(8, 1, 1/*PCM16*/, 32000, tempshiz, tempshiz, 4096, 2, 0);
 	// TEST END
@@ -774,6 +783,7 @@ int main()
 	{
 		if(status==APP_RUNNING)
 		{
+			svc_signalEvent(SPCSync);
 			//u64 t1 = svc_getSystemTick();
 			
 			ClearBottomBuffer();
@@ -801,17 +811,22 @@ int main()
 						else
 						{
 							running = 1;
-							//bprintf("- %08X %08X\n", ohshit, &tempshiz[0]);
-							//bprintf("- %08X\n", derpo);
-							// SPC700 thread
+							
+							SPC_Reset();
+
+							// SPC700 thread (running on syscore)
 							Result res = svc_createThread(&spcthread, SPCThread, 0, spcthreadstack+0x4000, 0x3F, 1);
-							bprintf("spcthread=%08X\n", res);
+							if (res)
+							{
+								bprintf("Failed to create SPC700 thread:\n -> %08X\n", res);
+							}
 							
 							bprintf("ROM loaded, running...\n");
 
 							CPU_Reset();
 							
 							CPU_Run();
+							if (exitemu) break;
 						}
 					}
 					else
@@ -837,6 +852,7 @@ int main()
 					pause = 0;
 					bprintf("resume\n");
 					CPU_Run();
+					if (exitemu) break;
 				}
 			}
 			

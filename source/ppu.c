@@ -32,7 +32,7 @@ u16 PPU_VCount = 0;
 
 u16 PPU_ColorTable[0x10000];
 
-u16 PPU_ColorBuffer[256];
+u16 PPU_ColorBuffer[256*2]; // interleaved color buffer; even=main, odd=sub
 u16 PPU_OBJBuffer[256];
 
 u8 PPU_MainPrio[256];
@@ -122,6 +122,12 @@ u16* PPU_OBJTileset;
 u32 PPU_OBJGap;
 
 
+/*Handle fbCopyThread = NULL;
+u8 fbCopyThreadStack[0x400]; // that thread isn't going to need a huge stack
+void PPU_FBCopyThread(u32 arg);
+int fbCopy = 0;*/
+
+
 
 void PPU_Reset()
 {
@@ -145,6 +151,12 @@ void PPU_Reset()
 	
 	PPU_OBJWidth = &PPU_OBJWidths[0];
 	PPU_OBJHeight = &PPU_OBJHeights[0];
+	
+	/*fbCopy = 0;
+	Result res;
+	if (!fbCopyThread)
+		res = svc_createThread(&fbCopyThread, PPU_FBCopyThread, 0, (u32*)&fbCopyThreadStack[0x400], 0x3F, 1);
+	bprintf("copythread=%08X\n", res);*/
 }
 
 
@@ -775,6 +787,156 @@ void PPU_RenderBG_4bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal, 
 	}
 }
 
+void PPU_RenderBG_4bpp_16x16(PPU_Background* bg, u16* buffer, u32 line, u16* pal, u32 prio)
+{
+	u16* tileset = bg->Tileset;
+	u16* tilemap = bg->Tilemap;
+	u32 xoff;
+	u32 tiley;
+	u16 curtile;
+	u32 tilepixels;
+	u32 colorval;
+	u32 i;
+	u32 idx;
+	
+	line += bg->YScroll;
+	tiley = (line & 0x07);
+	tilemap += (line & 0x1F0) << 1;
+	if (line & 0x200)
+	{
+		if (bg->Size & 0x2)
+			tilemap += (bg->Size & 0x1) ? 2048 : 1024;
+	}
+	
+	xoff = bg->XScroll;
+	
+	for (i = 0; i < 256;)
+	{
+		// determine the next tile
+		for (;;)
+		{
+			idx = (xoff & 0x1F0) >> 4;
+			if (xoff & 0x200)
+			{
+				if (bg->Size & 0x1)
+					idx += 1024;
+			}
+			curtile = tilemap[idx];
+			
+			// skip tiles that don't have the wanted prio
+			if ((curtile ^ prio) & 0x2000)
+			{
+				u32 npix = 16 - (xoff & 0xF);
+				i += npix;
+				if (i >= 256) return;
+				xoff += npix;
+				continue;
+			}
+			
+			idx = (curtile & 0x3FF) << 4;
+			if (curtile & 0x8000) 
+			{
+				idx += (7 - tiley);
+				if (!(line & 0x08)) idx += 256;
+			}
+			else
+			{
+				idx += tiley;
+				if (line & 0x08) idx += 256;
+			}
+			
+			if ((curtile & 0x4000) ^ ((xoff & 0x8) << 11)) idx += 16;
+			tilepixels = tileset[idx] | (tileset[idx+8] << 16);
+			/*if (!tilepixels)	// skip empty tiles
+			{
+				u32 npix = 8 - (xoff & 0x7);
+				i += npix;
+				if (i >= 256) return;
+				xoff += npix;
+				continue;
+			}*/
+			
+			if (curtile & 0x4000)	tilepixels >>= (xoff & 0x7);
+			else					tilepixels <<= (xoff & 0x7);
+			
+			break;
+		}
+		
+		// render all the possible pixels
+		do
+		{
+			colorval = 0;
+			if (curtile & 0x4000) // hflip
+			{
+				if (tilepixels & 0x00000001) colorval |= 0x01;
+				if (tilepixels & 0x00000100) colorval |= 0x02;
+				if (tilepixels & 0x00010000) colorval |= 0x04;
+				if (tilepixels & 0x01000000) colorval |= 0x08;
+				tilepixels >>= 1;
+			}
+			else
+			{
+				if (tilepixels & 0x00000080) colorval |= 0x01;
+				if (tilepixels & 0x00008000) colorval |= 0x02;
+				if (tilepixels & 0x00800000) colorval |= 0x04;
+				if (tilepixels & 0x80000000) colorval |= 0x08;
+				tilepixels <<= 1;
+			}
+			
+			if (colorval)
+			{
+				colorval |= (curtile & 0x1C00) >> 6;
+				buffer[i] = pal[colorval];
+			}
+			i++;
+			if (i >= 256) return;
+			
+			xoff++;
+		}
+		while (xoff & 0x7);
+		
+		// load next tile
+		if (curtile & 0x4000) idx -= 16;
+		else idx += 16;
+		tilepixels = tileset[idx] | (tileset[idx+8] << 16);
+		
+		if (curtile & 0x4000)	tilepixels >>= (xoff & 0x7);
+		else					tilepixels <<= (xoff & 0x7);
+		
+		do
+		{
+			colorval = 0;
+			if (curtile & 0x4000) // hflip
+			{
+				if (tilepixels & 0x00000001) colorval |= 0x01;
+				if (tilepixels & 0x00000100) colorval |= 0x02;
+				if (tilepixels & 0x00010000) colorval |= 0x04;
+				if (tilepixels & 0x01000000) colorval |= 0x08;
+				tilepixels >>= 1;
+			}
+			else
+			{
+				if (tilepixels & 0x00000080) colorval |= 0x01;
+				if (tilepixels & 0x00008000) colorval |= 0x02;
+				if (tilepixels & 0x00800000) colorval |= 0x04;
+				if (tilepixels & 0x80000000) colorval |= 0x08;
+				tilepixels <<= 1;
+			}
+			
+			if (colorval)
+			{
+				colorval |= (curtile & 0x1C00) >> 6;
+				buffer[i] = pal[colorval];
+			}
+			i++;
+			if (i >= 256) return;
+			
+			xoff++;
+		}
+		while (xoff & 0x7);
+	}
+}
+
 void PPU_RenderBG_8bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal, u32 prio)
 {
 	u16* tileset = bg->Tileset;
@@ -955,7 +1117,6 @@ void PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line)
 	else
 	{
 		i = xoff;
-		buffer += xoff;
 		xoff = 0;
 	}
 	
@@ -987,9 +1148,8 @@ void PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line)
 		
 		if (colorval)
 		{
-			*buffer = colorval | paloffset | ((oam[3] & 0x30) << 8);
+			buffer[i] = colorval | paloffset | ((oam[3] & 0x30) << 8);
 		}
-		buffer++;
 		
 		i++;
 		if (i >= 256) return;
@@ -1195,35 +1355,35 @@ void PPU_RenderScanline(u32 line)
 	switch (PPU_Mode & 0x07)
 	{
 		case 0:
-			PPU_RenderMode0(buf, line, PPU_SubScreen);
-			PPU_RenderMode0(buf, line, PPU_MainScreen);
+			PPU_RenderMode0(&buf[0], line, PPU_SubScreen);
+			PPU_RenderMode0(&buf[0], line, PPU_MainScreen);
 			break;
 			
 		case 1:
-			PPU_RenderMode1(buf, line, PPU_SubScreen);
-			PPU_RenderMode1(buf, line, PPU_MainScreen);
+			PPU_RenderMode1(&buf[0], line, PPU_SubScreen);
+			PPU_RenderMode1(&buf[0], line, PPU_MainScreen);
 			break;
 		
 		case 2:
-			PPU_RenderMode2(buf, line, PPU_SubScreen);
-			PPU_RenderMode2(buf, line, PPU_MainScreen);
+			PPU_RenderMode2(&buf[0], line, PPU_SubScreen);
+			PPU_RenderMode2(&buf[0], line, PPU_MainScreen);
 			break;
 			
 		case 3:
-			PPU_RenderMode3(buf, line, PPU_SubScreen);
-			PPU_RenderMode3(buf, line, PPU_MainScreen);
+			PPU_RenderMode3(&buf[0], line, PPU_SubScreen);
+			PPU_RenderMode3(&buf[0], line, PPU_MainScreen);
 			break;
 			
 		case 4:
-			PPU_RenderMode4(buf, line, PPU_SubScreen);
-			PPU_RenderMode4(buf, line, PPU_MainScreen);
+			PPU_RenderMode4(&buf[0], line, PPU_SubScreen);
+			PPU_RenderMode4(&buf[0], line, PPU_MainScreen);
 			break;
 			
 		// TODO: mode 5/6 (hires)
 		
 		case 7:
-			PPU_RenderMode7(buf, line, PPU_SubScreen);
-			PPU_RenderMode7(buf, line, PPU_MainScreen);
+			PPU_RenderMode7(&buf[0], line, PPU_SubScreen);
+			PPU_RenderMode7(&buf[0], line, PPU_MainScreen);
 			break;
 	}
 	
@@ -1231,10 +1391,50 @@ void PPU_RenderScanline(u32 line)
 	u16* finalbuf = &((u16*)TopFB)[17512 - line];
 	for (i = 0; i < 256; i++)
 	{
-		*finalbuf = PPU_ColorTable[*buf++];
+		/*u16 maincol = buf[i];
+		u16 subcol = buf[i+1];
+		
+		// color addition
+		u16 xor = maincol ^ subcol;
+		u16 finalcol = maincol + subcol;
+		/*xor = (xor ^ finalcol) & 0x8420;
+		if (xor & 0x0020) finalcol |= 0x001F;
+		if (xor & 0x0400) finalcol |= 0x03E0;
+		if (xor & 0x8000) finalcol |= 0x7C00;
+		finalcol ^= xor;*-/
+		finalcol >>= 1;
+		
+		*finalbuf = PPU_ColorTable[finalcol];*/
+		*finalbuf = PPU_ColorTable[buf[i]];
 		finalbuf += 240;
 	}
+	
+	//svc_signalEvent(fbCopyEvent);
+	//fbCopy = 1;
 }
+
+/*void PPU_FBCopyThread(u32 arg)
+{
+	int i;
+	u16* buf = &PPU_ColorBuffer[0];
+	u16* finalbuf;
+	
+	for (;;)
+	{
+		// TODO better wait loop
+		while (!fbCopy);
+		
+		finalbuf = &((u16*)TopFB)[17512 - PPU_VCount];
+		for (i = 0; i < 256; i++)
+		{
+			*finalbuf = PPU_ColorTable[buf[i]];
+			finalbuf += 240;
+		}
+		
+		//svc_clearEvent(fbCopyEvent);
+		fbCopy = 0;
+	}
+}*/
 
 void PPU_VBlank()
 {

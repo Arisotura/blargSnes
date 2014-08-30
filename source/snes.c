@@ -35,7 +35,7 @@ u32 SNES_SRAMMask;
 u8* SNES_SRAM = NULL;
 u32 SNES_OldSRAMSize;
 
-char SNES_SRAMPath[256];
+char SNES_SRAMPath[300];
 extern Handle fsuHandle;
 extern FS_archive sdmcArchive;
 

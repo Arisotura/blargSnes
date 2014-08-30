@@ -34,7 +34,7 @@ u8 DMA_Read8(u32 addr)
 
 u16 DMA_Read16(u32 addr)
 {
-	u16 ret = (addr > 0x7F) ? 0 : (DMA_Chans[addr] | (DMA_Chans[addr+1] << 8));
+	u16 ret = (addr > 0x7F) ? 0 : *(u16*)&DMA_Chans[addr];
 	return ret;
 }
 
@@ -48,11 +48,10 @@ void DMA_Write16(u32 addr, u16 val)
 {
 	if (addr < 0x80)
 	{
-		DMA_Chans[addr] = val & 0xFF;
-		DMA_Chans[addr + 1] = val >> 8;
+		*(u16*)&DMA_Chans[addr] = val;
 	}
 }
-
+u32 loldebug;
 void DMA_Enable(u8 flag)
 {
 	int c;
@@ -75,19 +74,19 @@ void DMA_Enable(u8 flag)
 		u8 paddrinc = params & 0x07;
 		
 		u8 ppuaddr = chan[1];
-		u16 memaddr = chan[2] | (chan[3] << 8);
+		u16 memaddr = *(u16*)&chan[2];
 		u32 membank = chan[4] << 16;
-		u16 bytecount = chan[5] | (chan[6] << 8);
+		u32 bytecount = *(u16*)&chan[5];
+		if (!bytecount) bytecount = 0x10000;
 		
-		//if (ppuaddr!=0x04)bprintf("DMA%d %d %06X %s 21%02X m:%d p:%d\n", c, bytecount, memaddr|membank, (params&0x80)?"<-":"->", ppuaddr, maddrinc, paddrinc);
+		//emergency_printf("DMA%d %d %06X %s 21%02X m:%d p:%d\n", c, bytecount, memaddr|membank, (params&0x80)?"<-":"->", ppuaddr, maddrinc, paddrinc);
 		
-		int shortcut = 0;
 		u8 scheck = params & 0x9F;
 		if (scheck == 0x00 || scheck == 0x02)
 		{
 			if (ppuaddr == 0x04)
 			{
-				while (bytecount > 0)
+				while (bytecount > 1)
 				{
 					if (PPU_OAMAddr >= 0x200)
 					{
@@ -102,11 +101,10 @@ void DMA_Enable(u8 flag)
 					PPU_OAMAddr += 2;
 					PPU_OAMAddr &= ~0x400;
 				}
-				shortcut = 1;
 			}
 			else if (ppuaddr == 0x22)
 			{
-				while (bytecount > 0)
+				while (bytecount > 1)
 				{
 					PPU_CGRAM[PPU_CGRAMAddr >> 1] = SNES_Read16(membank|memaddr);
 					memaddr += maddrinc<<1;
@@ -114,25 +112,23 @@ void DMA_Enable(u8 flag)
 					PPU_CGRAMAddr += 2;
 					PPU_CGRAMAddr &= ~0x200;
 				}
-				shortcut = 1;
 			}
 		}
 		else if (scheck == 0x01)
 		{
 			if (ppuaddr == 0x18)
 			{
-				while (bytecount > 0)
+				while (bytecount > 1)
 				{
 					*(u16*)&PPU_VRAM[PPU_VRAMAddr] = SNES_Read16(membank|memaddr);
 					memaddr += maddrinc<<1;
 					bytecount -= 2;
 					PPU_VRAMAddr += PPU_VRAMStep;
 				}
-				shortcut = 1;
 			}
 		}
 		
-		if (!shortcut)
+		if (bytecount > 0)
 		{
 			if (params & 0x80)
 			{
@@ -254,11 +250,8 @@ void DMA_Enable(u8 flag)
 			}
 		}
 		
-		chan[2] = memaddr & 0xFF;
-		chan[3] = memaddr >> 8;
-		
-		chan[5] = 0;
-		chan[6] = 0;
+		*(u16*)&chan[2] = memaddr;
+		*(u16*)&chan[5] = 0;
 	}
 }
 
@@ -276,7 +269,7 @@ void DMA_ReloadHDMA()
 			u8* chan = &DMA_Chans[c << 4];
 			
 			// reload table address
-			u16 tableaddr = chan[2] | (chan[3] << 8);
+			u16 tableaddr = *(u16*)&chan[2];
 			u32 tablebank = chan[4] << 16;
 			
 			// load first repeatflag
@@ -286,14 +279,12 @@ void DMA_ReloadHDMA()
 			if (chan[0] & 0x40)
 			{
 				u16 memaddr = SNES_Read16(tableaddr|tablebank);
-				chan[5] = memaddr & 0xFF;
-				chan[6] = memaddr >> 8;
+				*(u16*)&chan[5] = memaddr;
 				
 				tableaddr += 2;
 			}
 			
-			chan[8] = tableaddr & 0xFF;
-			chan[9] = tableaddr >> 8;
+			*(u16*)&chan[8] = tableaddr;
 			
 			HDMA_Pause[c] = 0;
 		}
@@ -316,7 +307,7 @@ void DMA_DoHDMA()
 			
 			u8* chan = &DMA_Chans[c << 4];
 			
-			u16 tableaddr = chan[8] | (chan[9] << 8);
+			u16 tableaddr = *(u16*)&chan[8];
 			u32 tablebank = chan[4] << 16;
 			
 			u8 repeatflag = chan[10];
@@ -337,7 +328,7 @@ void DMA_DoHDMA()
 				
 				if (params & 0x40)
 				{
-					memaddr = chan[5] | (chan[6] << 8);
+					memaddr = *(u16*)&chan[5];
 					membank = chan[7] << 16;
 				}
 				else
@@ -449,8 +440,7 @@ void DMA_DoHDMA()
 				else
 				{
 					memaddr++;
-					chan[5] = memaddr & 0xFF;
-					chan[6] = memaddr >> 8;
+					*(u16*)&chan[5] = memaddr;
 				}
 			}
 			
@@ -465,8 +455,7 @@ void DMA_DoHDMA()
 					if (chan[0] & 0x40)
 					{
 						u16 maddr = SNES_Read16(tableaddr|tablebank);
-						chan[5] = maddr & 0xFF;
-						chan[6] = maddr >> 8;
+						*(u16*)&chan[5] = maddr;
 						
 						tableaddr += 2;
 					}
@@ -489,8 +478,7 @@ void DMA_DoHDMA()
 					if (chan[0] & 0x40)
 					{
 						u16 maddr = SNES_Read16(tableaddr|tablebank);
-						chan[5] = maddr & 0xFF;
-						chan[6] = maddr >> 8;
+						*(u16*)&chan[5] = maddr;
 						
 						tableaddr += 2;
 					}
@@ -499,8 +487,7 @@ void DMA_DoHDMA()
 					chan[10] = repeatflag;
 			}
 			
-			chan[8] = tableaddr & 0xFF;
-			chan[9] = tableaddr >> 8;
+			*(u16*)&chan[8] = tableaddr;
 		}
 	}
 }
