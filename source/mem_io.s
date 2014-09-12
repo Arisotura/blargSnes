@@ -19,7 +19,7 @@
 .arm
 .align 4
 
-.include "cpu.inc"
+#include "cpu.inc"
 
 .section    .text, "awx", %progbits
 

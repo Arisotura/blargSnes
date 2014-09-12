@@ -19,7 +19,7 @@
 .arm
 .align 4
 
-.include "cpu.inc"
+#include "cpu.inc"
 
 @ cycles per scanline: 1364
 @ cycles per frame: 357368 (NTSC), 425568 (PAL)

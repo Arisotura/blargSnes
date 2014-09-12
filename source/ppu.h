@@ -19,8 +19,6 @@
 #ifndef PPU_H
 #define PPU_H
 
-extern u16 PPU_ColorTable[0x10000];
-
 extern u16 PPU_CGRAM[256];
 extern u8 PPU_VRAM[0x10000];
 extern u8 PPU_OAM[0x220];
@@ -32,6 +30,7 @@ extern u16 PPU_OAMAddr;
 
 extern u16 PPU_VCount;
 
+void PPU_Init();
 void PPU_Reset();
 
 u8 PPU_Read8(u32 addr);

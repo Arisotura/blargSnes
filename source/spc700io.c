@@ -16,7 +16,7 @@
     with blargSnes. If not, see http://www.gnu.org/licenses/.
 */
 
-#include <ctr/types.h>
+#include <3ds/types.h>
 
 #include "snes.h"
 #include "spc700.h"

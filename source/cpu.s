@@ -20,20 +20,18 @@
 
 @ --- TODO --------------------------------------------------------------------
 @
-@ rewrite 16bit accesses to use ldrh/strh since we're now on a CPU arch that
-@  supports unaligned accesses
-@
 @ eventually rewrite the memory mapping table to be a set of function pointers
-@  rather than the lolSnes ptr+flags system?
+@  rather than the lolSnes ptr+flags system? (would probably not give a speedup though)
 @
 @ (low priority-- aka who cares)
 @ * for some addressing modes using X/Y, add 1 cycle if adding X/Y crosses page boundary
 @ * accessing I/O registers from 0x4000 to 0x4200 should take 12 cycles
+@   (already done in mem_io.s although it could cause issues)
 @
 @ search the code for 'todo' for more
 @ -----------------------------------------------------------------------------
 
-.include "cpu.inc"
+#include "cpu.inc"
 
 .section    .data, "aw", %progbits
 
@@ -476,21 +474,22 @@ OpTableStart:
 
 @ --- Misc. functions ---------------------------------------------------------
 
-.global svc_createTimer
-.global svc_setTimer
-.global svc_clearTimer
+@ TODO put that somewhere else (or get rid of it? will we even need it?)
+.global svcCreateTimer
+.global svcSetTimer
+.global svcClearTimer
 
-svc_createTimer:
+svcCreateTimer:
 	sub sp, sp, #4
 	str r0, [sp]
 	svc #0x1A
 	ldr r2, [sp], #4
 	str r1, [r2]
 	bx lr
-svc_setTimer:
+svcSetTimer:
 	svc #0x1B
 	bx lr
-svc_clearTimer:
+svcClearTimer:
 	svc #0x1B
 	bx lr
 	
@@ -650,7 +649,7 @@ debugpc:
 
 	
 CPU_Run:
-	stmdb sp!, {r0-r12, lr}
+	stmdb sp!, {r4-r11, lr}
 	LoadRegs
 
 frameloop:
@@ -743,6 +742,13 @@ irq_trigger:
 irq_end:
 				tst snesP, #flagW
 				subne snesPC, snesPC, #0x10000
+				
+				@ debug code
+				mov r0, snesPC, lsr #0x10
+				orr r0, r0, snesPBR, lsl #0x10
+				ldr r1, =debugpc
+				str r0, [r1]
+				@ debug code end
 
 				OpcodePrefetch8
 				ldr pc, [opTable, r0, lsl #0x2]
@@ -781,15 +787,8 @@ vblank_notfirst:
 		ldr r1, =PPU_VCount
 		strh r0, [r1]
 		
-		@bl SPC_Run
-		mov r0, snesPC, lsr #0x10
-		orr r0, r0, snesPBR, lsl #0x10
-		SafeCall PostEmuFrame
-		cmp r0, #1
-		beq frameloop
-		
 	StoreRegs
-	ldmia sp!, {r0-r12, pc}
+	ldmia sp!, {r4-r11, pc}
 		
 .ltorg
 

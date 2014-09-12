@@ -51,7 +51,7 @@ void DMA_Write16(u32 addr, u16 val)
 		*(u16*)&DMA_Chans[addr] = val;
 	}
 }
-u32 loldebug;
+
 void DMA_Enable(u8 flag)
 {
 	int c;

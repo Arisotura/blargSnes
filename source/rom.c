@@ -19,9 +19,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <ctr/types.h>
-#include <ctr/FS.h>
-#include <ctr/svc.h>
+#include <3ds/types.h>
+#include <3ds/services/fs.h>
+#include <3ds/svc.h>
 
 #include "cpu.h"
 #include "snes.h"
@@ -34,7 +34,6 @@ u32 ROM_BaseOffset;
 u32 ROM_HeaderOffset;
 u32 ROM_NumBanks;
 
-extern Handle fsuHandle;
 extern FS_archive sdmcArchive;
 
 
@@ -175,7 +174,7 @@ bool ROM_LoadFile(char* name)
 	filePath.size = strlen(name) + 1;
 	filePath.data = (u8*)name;
 	
-	Result res = FSUSER_OpenFile(fsuHandle, &fileHandle, sdmcArchive, filePath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(NULL, &fileHandle, sdmcArchive, filePath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
 	if ((res & 0xFFFC03FF) != 0)
 	{
 		bprintf("Error %08X while opening file\n", res);

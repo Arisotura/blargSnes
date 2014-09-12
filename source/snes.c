@@ -20,8 +20,8 @@
 #include "cpu.h"
 #include "ppu.h"
 
-#include <ctr/HID.h>
-#include <ctr/FS.h>
+#include <3ds/services/hid.h>
+#include <3ds/services/fs.h>
 
 
 u8* ROM_Bank0;
@@ -36,7 +36,6 @@ u8* SNES_SRAM = NULL;
 u32 SNES_OldSRAMSize;
 
 char SNES_SRAMPath[300];
-extern Handle fsuHandle;
 extern FS_archive sdmcArchive;
 
 // addressing: BBBBBBBB:AAAaaaaa:aaaaaaaa
@@ -76,13 +75,6 @@ extern u8 DMA_HDMAFlag;
 
 
 
-void reportBRK(u32 pc)
-{
-	bprintf("BRK @ %02X:%04X | %08X\n", pc>>16, pc&0xFFFF, MEM_PTR(pc>>16, pc&0xFFFF));
-	for(;;);
-}
-
-
 bool SNES_LoadROM(char* path)
 {
 	SNES_Status = &_Mem_PtrTable[0];
@@ -119,10 +111,10 @@ bool SNES_LoadROM(char* path)
 		sramPath.size = strlen(SNES_SRAMPath) + 1;
 		sramPath.data = (u8*)SNES_SRAMPath;
 	
-		Result res = FSUSER_OpenFile(fsuHandle, &sram, sdmcArchive, sramPath, FS_OPEN_READ|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+		Result res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_READ|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
 		if ((res & 0xFFFC03FF) != 0)
 		{
-			res = FSUSER_OpenFile(fsuHandle, &sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_READ|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+			res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_READ|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
 			if ((res & 0xFFFC03FF) != 0)
 				bprintf("Error %08X while trying to open the savefile.\nMake sure it isn't read-only.\n");
 			else
@@ -165,7 +157,7 @@ void SNES_Reset()
 		sramPath.size = strlen(SNES_SRAMPath) + 1;
 		sramPath.data = (u8*)SNES_SRAMPath;
 	
-		Result res = FSUSER_OpenFile(fsuHandle, &sram, sdmcArchive, sramPath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
+		Result res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
 		if ((res & 0xFFFC03FF) == 0)
 		{
 			u32 bytesread = 0;
@@ -254,7 +246,7 @@ void SNES_SaveSRAM()
 	sramPath.size = strlen(SNES_SRAMPath) + 1;
 	sramPath.data = (u8*)SNES_SRAMPath;
 	
-	Result res = FSUSER_OpenFile(fsuHandle, &sram, sdmcArchive, sramPath, FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
 	if ((res & 0xFFFC03FF) == 0)
 	{
 		u32 byteswritten = 0;
@@ -284,30 +276,30 @@ void report_unk_lol(u32 op, u32 pc)
 
 inline u8 IO_ReadKeysLow()
 {
-	u32 keys = hidSharedMem[0x28>>2];
+	u32 keys = hidKeysHeld();
 	u8 ret = 0;
 	
-	if (keys & PAD_A) ret |= 0x80;
-	if (keys & PAD_X) ret |= 0x40;
-	if (keys & PAD_L) ret |= 0x20;
-	if (keys & PAD_R) ret |= 0x10;
+	if (keys & KEY_A) ret |= 0x80;
+	if (keys & KEY_X) ret |= 0x40;
+	if (keys & KEY_L) ret |= 0x20;
+	if (keys & KEY_R) ret |= 0x10;
 	
 	return ret;
 }
 
 inline u8 IO_ReadKeysHigh()
 {
-	u32 keys = hidSharedMem[0x28>>2];
+	u32 keys =  hidKeysHeld();
 	u8 ret = 0;
 	
-	if (keys & PAD_B) 					ret |= 0x80;
-	if (keys & PAD_Y) 					ret |= 0x40;
-	if (keys & PAD_SELECT)				ret |= 0x20;
-	if (keys & PAD_START)				ret |= 0x10;
-	if (keys & (PAD_UP|0x40000000)) 	ret |= 0x08;
-	if (keys & (PAD_DOWN|0x80000000)) 	ret |= 0x04;
-	if (keys & (PAD_LEFT|0x20000000)) 	ret |= 0x02;
-	if (keys & (PAD_RIGHT|0x10000000)) 	ret |= 0x01;
+	if (keys & KEY_B) 		ret |= 0x80;
+	if (keys & KEY_Y) 		ret |= 0x40;
+	if (keys & KEY_SELECT)	ret |= 0x20;
+	if (keys & KEY_START)	ret |= 0x10;
+	if (keys & KEY_UP) 		ret |= 0x08;
+	if (keys & KEY_DOWN) 	ret |= 0x04;
+	if (keys & KEY_LEFT) 	ret |= 0x02;
+	if (keys & KEY_RIGHT) 	ret |= 0x01;
 	
 	return ret;
 }
@@ -353,9 +345,11 @@ u8 SNES_GIORead8(u32 addr)
 			break;
 			
 		case 0x18:
+			hidScanInput();
 			ret = IO_ReadKeysLow();
 			break;
 		case 0x19:
+			hidScanInput();
 			ret = IO_ReadKeysHigh();
 			break;
 	}
@@ -377,6 +371,7 @@ u16 SNES_GIORead16(u32 addr)
 			break;
 			
 		case 0x18:
+			hidScanInput();
 			ret = IO_ReadKeysLow() | (IO_ReadKeysHigh() << 8);
 			break;
 			

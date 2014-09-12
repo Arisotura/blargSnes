@@ -1,4 +1,6 @@
 build/
 blargSnes.bin
 blargSnes.elf
+blargSnes_s.elf
 blargSnes.3ds
+blargSnes.3dsx

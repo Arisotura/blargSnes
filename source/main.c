@@ -19,518 +19,38 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <stdarg.h>
-#include <ctr/types.h>
-#include <ctr/srv.h>
-#include <ctr/APT.h>
-#include <ctr/GSP.h>
-#include <ctr/GX.h>
-#include <ctr/HID.h>
-#include <ctr/FS.h>
-#include <ctr/svc.h>
+#include <3ds.h>
 
-#include "font.h"
-#include "logo.h"
+#include "ui.h"
+
 #include "mem.h"
+#include "cpu.h"
+#include "spc700.h"
 #include "ppu.h"
+#include "snes.h"
+
+#include "logo.h"
+#include "blarg_shbin.h"
 
 
-Result svc_createTimer(Handle* timer, int resettype);
-Result svc_setTimer(Handle timer, s64 initial, s64 interval);
-Result svc_clearTimer(Handle timer);
+Result svcCreateTimer(Handle* timer, int resettype);
+Result svcSetTimer(Handle timer, s64 initial, s64 interval);
+Result svcClearTimer(Handle timer);
 
 
-u8* TopFBAddr[2];
-u8* BottomFBAddr[2];
-u8* TopFB;
-u8* BottomFB;
+extern u32* gxCmdBuf;
+u32* gpuOut = (u32*)0x1F119400;
+u32* gpuDOut = (u32*)0x1F370800;
+DVLB_s* shader;
 
-#define TOPBUF_SIZE 0x2EE00 // 15bit
-//#define TOPBUF_SIZE 0x46500 // 24bit
-#define BOTTOMBUF_SIZE 0x38400
-
-u8* gspHeap;
-u32* gxCmdBuf;
-
-int curTopBuffer, curBottomBuffer;
-
-Handle gspEvent, gspSharedMemHandle;
-
-Handle fsuHandle;
 FS_archive sdmcArchive;
 
-u32 pad_cur, pad_last;
-
-
-#define CONSOLE_MAX 20
-char consolebuf[CONSOLE_MAX][33];
-int consoleidx = 0;
-int showconsole = 0;
-int consoledirty = 0;
 
 int running = 0;
 int pause = 0;
 int exitemu = 0;
 
-u64 mstime = 0;
-u64 frametime = 0;
-u64 vsync_last = 0;
-u64 fps_last = 0;
 
-
-void strncpy_u2a(char* dst, u16* src, int n)
-{
-	int i = 0;
-	while (i < n && src[i] != '\0')
-	{
-		if (src[i] & 0xFF00)
-			dst[i] = 0x7F;
-		else
-			dst[i] = (char)src[i];
-		
-		i++;
-	}
-	
-	dst[i] = '\0';
-}
-
-
-void setupFB()
-{
-	u32 regval;
-	
-	GSPGPU_AcquireRight(NULL, 0x0);
-	GSPGPU_SetLcdForceBlack(NULL, 0x0);
-
-	//grab main left screen framebuffer addresses
-	GSPGPU_ReadHWRegs(NULL, 0x400468, (u32*)&TopFBAddr, 8);
-	GSPGPU_ReadHWRegs(NULL, 0x400568, (u32*)&BottomFBAddr, 8);
-	
-	GSPGPU_ReadHWRegs(NULL, 0x400470, &regval, 4);
-	regval &= 0xFFFFFFD8;
-	regval |= 0x00000043; // 15bit color
-	//regval &= 0xFFFFFFDF;
-	//regval |= 0x00000040;
-	GSPGPU_WriteHWRegs(NULL, 0x400470, &regval, 4);
-	regval = 480;
-	GSPGPU_WriteHWRegs(NULL, 0x400490, &regval, 4);
-	
-	TopFBAddr[0] += 0x7000000;
-	TopFBAddr[1] += 0x7000000;
-	BottomFBAddr[0] += 0x7000000;
-	BottomFBAddr[1] += 0x7000000;
-}
-
-void gspGpuInit()
-{
-	gspInit();
-
-	setupFB();
-
-	//setup our gsp shared mem section
-	u8 threadID;
-	svc_createEvent(&gspEvent, 0x0);
-	GSPGPU_RegisterInterruptRelayQueue(NULL, gspEvent, 0x1, &gspSharedMemHandle, &threadID);
-	svc_mapMemoryBlock(gspSharedMemHandle, 0x10002000, 0x3, 0x10000000);
-
-	//map GSP heap
-	svc_controlMemory((u32*)&gspHeap, 0x0, 0x0, 0x2000000, 0x10003, 0x3);
-	
-	TopFB = &gspHeap[0];
-	BottomFB = &gspHeap[TOPBUF_SIZE];
-
-	//wait until we can write stuff to it
-	svc_waitSynchronization1(gspEvent, 0x55bcb0);
-
-	//GSP shared mem : 0x2779F000
-	gxCmdBuf=(u32*)(0x10002000+0x800+threadID*0x200);
-}
-
-void gspGpuExit()
-{
-	//GSPGPU_ReleaseRight(NULL);
-	
-	GSPGPU_UnregisterInterruptRelayQueue(NULL);
-
-	//unmap GSP shared mem
-	svc_unmapMemoryBlock(gspSharedMemHandle, 0x10002000);
-	svc_closeHandle(gspSharedMemHandle);
-	svc_closeHandle(gspEvent);
-	
-	gspExit();
-
-	//free GSP heap
-	svc_controlMemory((u32*)&gspHeap, (u32)gspHeap, 0x0, 0x2000000, MEMOP_FREE, 0x0);
-}
-
-
-void CopyTopBuffer()
-{
-	GSPGPU_FlushDataCache(NULL, TopFB, TOPBUF_SIZE);
-	GX_RequestDma(gxCmdBuf, (u32*)TopFB, (u32*)TopFBAddr[curTopBuffer], TOPBUF_SIZE);
-}
-
-void CopyBottomBuffer()
-{
-	GSPGPU_FlushDataCache(NULL, BottomFB, BOTTOMBUF_SIZE);
-	GX_RequestDma(gxCmdBuf, (u32*)BottomFB, (u32*)BottomFBAddr[curBottomBuffer], BOTTOMBUF_SIZE);
-}
-
-void SwapTopBuffers(int doswap)
-{
-	CopyTopBuffer();
-	
-	u32 regData;
-	GSPGPU_ReadHWRegs(NULL, 0x400478, &regData, 4);
-	regData &= 0xFFFFFFFE;
-	regData |= curTopBuffer;
-	GSPGPU_WriteHWRegs(NULL, 0x400478, &regData, 4);
-	
-	if (doswap) curTopBuffer ^= 1;
-}
-
-void SwapBottomBuffers(int doswap)
-{
-	CopyBottomBuffer();
-	
-	u32 regData;
-	GSPGPU_ReadHWRegs(NULL, 0x400578, &regData, 4);
-	regData &= 0xFFFFFFFE;
-	regData |= curBottomBuffer;
-	GSPGPU_WriteHWRegs(NULL, 0x400578, &regData, 4);
-	
-	if (doswap) curBottomBuffer ^= 1;
-}
-
-
-void ClearBottomBuffer()
-{
-	int x, y;
-	
-	for (y = 0; y < 240; y++)
-	{
-		for (x = 0; x < 320; x++)
-		{
-			int idx = (x*240) + (239-y);
-			BottomFB[idx*3+0] = 32;
-			BottomFB[idx*3+1] = 0;
-			BottomFB[idx*3+2] = 0;
-		}
-	}
-}
-
-void DrawText(int x, int y, char* str)
-{
-	unsigned short* ptr;
-	unsigned short glyphsize;
-	int i, cx, cy;
-	
-	for (i = 0; str[i] != '\0'; i++)
-	{
-		if (str[i] < 0x21)
-		{
-			x += 6;
-			continue;
-		}
-		
-		u16 ch = str[i];
-		if (ch > 0x7E) ch = 0x7F;
-		
-		ptr = &font[(ch-0x20) << 4];
-		glyphsize = ptr[0];
-		if (!glyphsize)
-		{
-			x += 6;
-			continue;
-		}
-		
-		x++;
-		for (cy = 0; cy < 12; cy++)
-		{
-			unsigned short val = ptr[4+cy];
-			
-			for (cx = 0; cx < glyphsize; cx++)
-			{
-				if ((x+cx) >= 320) break;
-				
-				if (val & (1 << cx))
-				{
-					int idx = ((x+cx)*240) + (239 - (y + cy));
-					BottomFB[idx*3+0] = 255;
-					BottomFB[idx*3+1] = 255;
-					BottomFB[idx*3+2] = 255;
-				}
-			}
-		}
-		x += glyphsize;
-		x++;
-		if (x >= 320) break;
-	}
-}
-
-void DrawHex(int x, int y, unsigned int n)
-{
-	unsigned short* ptr;
-	unsigned short glyphsize;
-	int i, cx, cy;
-	
-	for (i = 0; i < 8; i++)
-	{
-		int digit = (n >> (28-(i*4))) & 0xF;
-		int lolz;
-		if (digit < 10) lolz = digit+'0';
-		else lolz = digit+'A'-10;
-		
-		ptr = &font[(lolz-0x20) << 4];
-		glyphsize = ptr[0];
-		if (!glyphsize)
-		{
-			x += 6;
-			continue;
-		}
-		
-		x++;
-		for (cy = 0; cy < 12; cy++)
-		{
-			unsigned short val = ptr[4+cy];
-			
-			for (cx = 0; cx < glyphsize; cx++)
-			{
-				if (val & (1 << cx))
-				{
-					int idx = ((x+cx)*240) + (239 - (y + cy));
-					BottomFB[idx*3+0] = 255;
-					BottomFB[idx*3+1] = 255;
-					BottomFB[idx*3+2] = 0;
-				}
-			}
-		}
-		x += glyphsize;
-		x++;
-	}
-}
-
-
-
-char* filelist;
-int nfiles;
-
-bool IsGoodFile(u8* entry)
-{
-	if (entry[0x21E] != 0x01) return false;
-	
-	char* ext = (char*)&entry[0x216];
-	if (strncmp(ext, "SMC", 3) && strncmp(ext, "SFC", 3)) return false;
-	
-	return true;
-}
-
-void LoadROMList()
-{
-	Handle dirHandle;
-	FS_path dirPath = (FS_path){PATH_CHAR, 6, (u8*)"/snes"};
-	u8 entry[0x228];
-	int i;
-	
-	FSUSER_OpenDirectory(fsuHandle, &dirHandle, sdmcArchive, dirPath);
-	nfiles = 0;
-	for (;;)
-	{
-		u32 nread = 0;
-		FSDIR_Read(dirHandle, &nread, 1, (u16*)entry);
-		if (!nread) break;
-		if (!IsGoodFile(entry)) continue;
-		nfiles++;
-	}
-	FSDIR_Close(dirHandle);
-
-	filelist = (char*)MemAlloc(0x106 * nfiles);
-	
-	// TODO: find out how to rewind it rather than reopening it?
-	FSUSER_OpenDirectory(fsuHandle, &dirHandle, sdmcArchive, dirPath);
-	i = 0;
-	for (;;)
-	{
-		u32 nread = 0;
-		FSDIR_Read(dirHandle, &nread, 1, (u16*)entry);
-		if (!nread) break;
-		if (!IsGoodFile(entry)) continue;
-		
-		// dirty way to copy an Unicode string
-		strncpy_u2a(&filelist[0x106 * i], (u16*)&entry[0], 0x105);
-		i++;
-	}
-	FSDIR_Close(dirHandle);
-}
-
-int menusel = 0;
-int menuscroll = 0;
-#define MENU_MAX 18
-
-void DrawROMList()
-{
-	int i, x, y, y2;
-	int maxfile;
-	int menuy;
-	
-	DrawText(0, 0, "blargSnes 1.0 - by StapleButter");
-	
-	y = 13;
-	for (x = 0; x < 320; x++)
-	{
-		int idx = (x*240) + (239-y);
-		BottomFB[idx*3+0] = 255;
-		BottomFB[idx*3+1] = 255;
-		BottomFB[idx*3+2] = 0;
-	}
-	y++;
-	for (x = 0; x < 320; x++)
-	{
-		int idx = (x*240) + (239-y);
-		BottomFB[idx*3+0] = 255;
-		BottomFB[idx*3+1] = 128;
-		BottomFB[idx*3+2] = 0;
-	}
-	y += 5;
-	menuy = y;
-	
-	if ((nfiles - menuscroll) <= MENU_MAX) maxfile = (nfiles - menuscroll);
-	else maxfile = MENU_MAX;
-	
-	for (i = 0; i < maxfile; i++)
-	{
-		// blue highlight for the selected ROM
-		if ((menuscroll+i) == menusel)
-		{
-			for (y2 = y; y2 < (y+12); y2++)
-			{
-				for (x = 0; x < 320; x++)
-				{
-					int idx = (x*240) + (239-y2);
-					BottomFB[idx*3+0] = 255;
-					BottomFB[idx*3+1] = 0;
-					BottomFB[idx*3+2] = 0;
-				}
-			}
-		}
-		
-		DrawText(3, y, &filelist[0x106 * (menuscroll+i)]);
-		y += 12;
-	}
-	
-	// scrollbar
-	if (nfiles > MENU_MAX)
-	{
-		int shownheight = 240-menuy;
-		int fullheight = 12*nfiles;
-		
-		int sbheight = (shownheight * shownheight) / fullheight;
-		
-		int sboffset = (menuscroll * 12 * shownheight) / fullheight;
-		if ((sboffset+sbheight) > shownheight)
-			sboffset = shownheight-sbheight;
-		
-		for (y = menuy; y < 240; y++)
-		{
-			for (x = 308; x < 320; x++)
-			{
-				int idx = (x*240) + (239-y);
-				
-				if (y >= sboffset+menuy && y <= sboffset+menuy+sbheight)
-				{
-					BottomFB[idx*3+0] = 255;
-					BottomFB[idx*3+1] = 255;
-					BottomFB[idx*3+2] = 0;
-				}
-				else
-				{
-					BottomFB[idx*3+0] = 64;
-					BottomFB[idx*3+1] = 0;
-					BottomFB[idx*3+2] = 0;
-				}
-			}
-		}
-	}
-}
-
-
-
-void bprintf(char* fmt, ...)
-{
-	char buf[256];
-	va_list args;
-	
-	va_start(args, fmt);
-	vsnprintf(buf, 255, fmt, args);
-	va_end(args);
-	
-	int i = 0, j = 0;
-	for (;;)
-	{
-		j = 0;
-		while (buf[i] != '\0' && buf[i] != '\n' && j<32)
-			consolebuf[consoleidx][j++] = buf[i++];
-		consolebuf[consoleidx][j] = '\0';
-		
-		consoleidx++;
-		if (consoleidx >= CONSOLE_MAX) consoleidx = 0;
-		
-		if (buf[i] == '\0' || buf[i+1] == '\0')
-			break;
-	}
-	
-	consoledirty = 1;
-}
-
-void emergency_printf(char* fmt, ...)
-{
-	char buf[256];
-	va_list args;
-	
-	va_start(args, fmt);
-	vsnprintf(buf, 255, fmt, args);
-	va_end(args);
-	
-	int i = 0, j = 0;
-	for (;;)
-	{
-		j = 0;
-		while (buf[i] != '\0' && buf[i] != '\n' && j<32)
-			consolebuf[consoleidx][j++] = buf[i++];
-		consolebuf[consoleidx][j] = '\0';
-		
-		consoleidx++;
-		if (consoleidx >= CONSOLE_MAX) consoleidx = 0;
-		
-		if (buf[i] == '\0' || buf[i+1] == '\0')
-			break;
-	}
-	
-	DrawConsole();
-	SwapBottomBuffers(0);
-	ClearBottomBuffer();
-}
-
-void DrawConsole()
-{
-	int i, j, y;
-
-	y = 0;
-	j = consoleidx;
-	for (i = 0; i < CONSOLE_MAX; i++)
-	{
-		if (consolebuf[j][0] != '\0')
-		{
-			DrawText(0, y, consolebuf[j]);
-			y += 12;
-		}
-		
-		j++;
-		if (j >= CONSOLE_MAX) j = 0;
-	}
-	
-	consoledirty = 0;
-}
 
 
 
@@ -546,97 +66,21 @@ void SPCThread(u32 blarg)
 		if (exitemu)
 			break;
 		
-		svc_waitSynchronization1(SPCSync, (s64)(17*1000*1000));
+		svcWaitSynchronization(SPCSync, (s64)(17*1000*1000));
 	}
 	
-	svc_exitThread();
+	svcExitThread();
 }
 
 
 u32 framecount = 0;
-u32 last_fc = 0;
-
-// return val: 1=continue running
-int PostEmuFrame(u32 pc)
-{
-	//bprintf("%08X\n", pc);
-	APP_STATUS status = aptGetStatus();
-	if (status == APP_EXITING)
-	{
-		exitemu = 1;
-		return 0;
-	}
-	else if(status == APP_SUSPENDING)
-	{
-		pause = 1;
-		aptReturnToMenu();
-		pause = 0;
-		
-		setupFB();
-		consoledirty = 1;
-	}
-	else if(status == APP_SLEEPMODE)
-	{
-		aptWaitStatusEvent();
-		
-		setupFB();
-		consoledirty = 1;
-	}
-	
-	// rudimentary way to pause
-	if (hidSharedMem[0xCC>>2])
-	{
-		pause = 1;
-		bprintf("pause %08X\n", pc);
-		return 0;
-	}
-	
-	/*u64 t = svc_getSystemTick();
-	if ((t - fps_last) >= (1000*mstime))
-	{
-		u32 nframes = framecount-last_fc;
-		char fpsdisp[32];
-		sprintf(fpsdisp, "%d FPS", nframes);
-		DrawText(320-(6*12), 240-12, fpsdisp);
-		consoledirty = 1;
-		
-		fps_last = t;
-		last_fc = framecount;
-	}*/
-	
-	// TODO: also save SRAM under certain circumstances (pausing, returning to home menu, etc)
-	framecount++;
-	if (!(framecount & 7))
-		SNES_SaveSRAM();
-	
-	SwapTopBuffers(0);
-
-	if (consoledirty)
-	{
-		DrawConsole();
-		SwapBottomBuffers(0);
-		ClearBottomBuffer();
-	}
-	
-	/*t = svc_getSystemTick();
-	if ((t - vsync_last) < frametime)
-	{
-		u64 timetowait = frametime - (t-vsync_last);
-		timetowait = (timetowait * 1 * 1000 * 1000) / mstime;
-		svc_sleepThread(timetowait);
-	}
-	vsync_last = svc_getSystemTick();*/
-	
-	svc_signalEvent(SPCSync);
-	return 1;
-}
 
 void debugcrapo(u32 op, u32 op2)
 {
 	bprintf("DBG: %08X %08X\n", op, op2);
 	DrawConsole();
-	SwapBottomBuffers(0);
-	ClearBottomBuffer();
+	//SwapBottomBuffers(0);
+	//ClearBottomBuffer();
 }
 
 void dbgcolor(u32 col)
@@ -659,7 +103,7 @@ Result APT_EnableSyscoreUsage(u32 max_percent)
 	cmdbuf[2]=max_percent;
 	
 	Result ret=0;
-	if((ret=svc_sendSyncRequest(aptuHandle)))
+	if((ret=svcSendSyncRequest(aptuHandle)))
 	{
 		aptCloseSession();
 		return ret;
@@ -671,95 +115,279 @@ Result APT_EnableSyscoreUsage(u32 max_percent)
 
 
 
-char temppath[300];
+float topProjMatrix[16] = 
+{
+	2.0f/240.0f, 0, 0, -1,
+	0, 2.0f/400.0f, 0, -1,
+	0, 0, 1, -1,
+	0, 0, 0, 1
+};
+
+float bottomProjMatrix[16] = 
+{
+	2.0f/240.0f, 0, 0, -1,
+	0, 2.0f/320.0f, 0, -1,
+	0, 0, 1, -1,
+	0, 0, 0, 1
+};
+
+float mvMatrix[16] = 
+{
+	1, 0, 0, 0,
+	0, 1, 0, 0, 
+	0, 0, 1, 0, 
+	0, 0, 0, 1
+};
+
+float _blargvert[] = 
+{
+	0.0, 0.0, 0.5,      1.0, 0.9375,
+	240.0, 0.0, 0.5,    1.0, 0,
+	240.0, 400.0, 0.5,  0, 0,
+	
+	0.0, 0.0, 0.5,      1.0, 0.9375,
+	240.0, 400.0, 0.5,  0, 0,
+	0.0, 400.0, 0.5,    0, 0.9375,
+};
+float* blargvert;
+
+u8* blargtex;
+
+void setUniformMatrix(u32 startreg, float* m)
+{
+	float param[16];
+	param[0x0]=m[3]; //w
+	param[0x1]=m[2]; //z
+	param[0x2]=m[1]; //y
+	param[0x3]=m[0]; //x
+	param[0x4]=m[7];
+	param[0x5]=m[6];
+	param[0x6]=m[5];
+	param[0x7]=m[4];
+	param[0x8]=m[11];
+	param[0x9]=m[10];
+	param[0xa]=m[9];
+	param[0xb]=m[8];
+	param[0xc]=m[15];
+	param[0xd]=m[14];
+	param[0xe]=m[13];
+	param[0xf]=m[12];
+	GPU_SetUniform(startreg, (u32*)param, 4);
+}
+
+int derpo = 0;
+
+void doFrameBlarg(u32* colorbuf, int width)
+{
+	// 000F0101 -- alpha blending
+	// 0-7: color blend equation
+	// 8-15: alpha blend equation
+	// 16-19: color src factor
+	// 20-23: color dst factor
+	// 24-27: alpha src factor
+	// 28-31: alpha dst factor
+	
+	// blend equation:
+	// 0 = GL_FUNC_ADD
+	// 1 = GL_FUNC_SUBTRACT
+	// 2 = GL_FUNC_REVERSE_SUBTRACT
+	// 3 = GL_MIN
+	// 4 = GL_MAX
+	
+	// src/dst factor:
+	// 0 = GL_ZERO (?)
+	// 1 = GL_ONE (?)
+	// 2 = GL_SRC_COLOR (?)
+	// 3 = GL_ONE_MINUS_SRC_COLOR
+	// 4 = GL_DST_COLOR
+	// 5 = GL_ONE_MINUS_DST_COLOR
+	// 6 = GL_SRC_ALPHA
+	// 7 = GL_ONE_MINUS_SRC_ALPHA
+	// 8 = GL_DST_ALPHA
+	// 9 = GL_ONE_MINUS_DST_ALPHA
+	// 10 = GL_CONSTANT_COLOR (?)
+	// 11 = GL_ONE_MINUS_CONSTANT_COLOR (?)
+	// 12 = GL_CONSTANT_ALPHA (?)
+	// 13 = GL_ONE_MINUS_CONSTANT_ALPHA (?)
+	// 14 = GL_SRC_ALPHA_SATURATE
+	
+	// set to 01010000 to disable.
+	
+	//general setup
+	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)colorbuf),0,0,240*2,width);
+	GPU_DepthRange(-1.0f, 0.0f);
+	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
+	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00);
+	GPU_SetDepthTest(true, GPU_GREATER, 0x1F);
+	
+	// ?
+	GPUCMD_AddSingleParam(0x00010062, 0x00000000); //param always 0x0 according to code
+	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+	
+	//setup shader
+	SHDR_UseProgram(shader, 0);
+		
+	//?
+	GPUCMD_AddSingleParam(0x000F0100, 0x00E40100);
+	GPUCMD_AddSingleParam(0x000F0101, 0x01010000);
+	GPUCMD_AddSingleParam(0x000F0104, 0x00000010);
+	
+	//texturing stuff
+	GPUCMD_AddSingleParam(0x0002006F, 0x00000100);
+	GPUCMD_AddSingleParam(0x000F0080, 0x00011001); //enables/disables texturing
+	//texenv
+	GPU_SetTexEnv(3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00000000);
+	GPU_SetTexEnv(4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00000000);
+	GPU_SetTexEnv(5, GPU_TEVSOURCES(GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR), GPU_TEVSOURCES(GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR),
+	GPU_TEVOPERANDS(0,0,0), GPU_TEVOPERANDS(0,0,0), GPU_MODULATE, GPU_MODULATE, 0xFFFFFFFF);
+	//texturing stuff
+	GPU_SetTexture((u32*)osConvertVirtToPhys((u32)blargtex),256,256,0x6,GPU_RGBA8);
+	
+	//setup matrices
+	setUniformMatrix(0x24, mvMatrix);
+	setUniformMatrix(0x20, topProjMatrix);
+
+	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)blargvert),
+		GPU_ATTRIBFMT(0, 3, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT),
+		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
+	
+	//draw model
+	GPU_DrawArray(GPU_TRIANGLES, 2*3);
+}
+
+
+
+Handle spcthread;
+u8* spcthreadstack;
+
+bool StartROM(char* path)
+{
+	char temppath[300];
+	
+	// load the ROM
+	strncpy(temppath, "/snes/", 6);
+	strncpy(&temppath[6], path, 0x106);
+	temppath[6+0x106] = '\0';
+	bprintf("Loading %s...\n", temppath);
+	
+	if (!SNES_LoadROM(temppath))
+		return false;
+
+	running = 1;
+	framecount = 0;
+	
+	SPC_Reset();
+
+	// SPC700 thread (running on syscore)
+	Result res = svcCreateThread(&spcthread, SPCThread, 0, (u32*)(spcthreadstack+0x400), 0x3F, 1);
+	if (res)
+	{
+		bprintf("Failed to create SPC700 thread:\n -> %08X\n", res);
+	}
+	
+	bprintf("ROM loaded, running...\n");
+
+	CPU_Reset();
+	return true;
+}
+
 
 int main() 
 {
-	int i, x, y;
-	u64 FrameTime;
+	int i;
 	
-	Handle spcthread;
-	u8* spcthreadstack;
+	touchPosition lastTouch;
+	u32 repeatkeys = 0;
+	int repeatstate = 0;
+	int repeatcount = 0;
 	
 	running = 0;
 	pause = 0;
 	exitemu = 0;
-	showconsole = 0;
-	consoleidx = 0;
 	
-	for (i = 0; i < CONSOLE_MAX; i++)
-		consolebuf[i][0] = '\0';
+	
 		
-	// map SNES 15bit color to 3DS 15bit
-	for (i = 0; i < 0x10000; i++)
-	{
-		int r = i & 0x001F;
-		int g = i & 0x03E0;
-		int b = i & 0x7C00;
-		PPU_ColorTable[i] = 0x0001 | (r << 11) | (g << 1) | (b >> 9);
-		//u32 val = (r << 19) | (g << 6) | (b >> 7);
-		//PPU_ColorTable[i] = val | ((val >> 5) & 0x00070707);
-	}
+	PPU_Init();
 	
 	
-	initSrv();
+	srvInit();
 		
-	aptInit(APPID_APPLICATION);
+	aptInit();
 	APT_EnableSyscoreUsage(30);
 
-	gspGpuInit();
-
+	gfxInit();
 	hidInit(NULL);
-	pad_cur = pad_last = 0;
-
-	srv_getServiceHandle(NULL, &fsuHandle, "fs:USER");
-	FSUSER_Initialize(fsuHandle);
+	fsInit();
 	
-	curTopBuffer = 0;
-	curBottomBuffer = 0;
-	ClearBottomBuffer();
-	SwapBottomBuffers(0);
+	GPU_Init(NULL);
+	u32 gpuCmdSize = 0x40000;
+	u32* gpuCmd = (u32*)MemAlloc(gpuCmdSize*4);
+	GPU_Reset(gxCmdBuf, gpuCmd, gpuCmdSize);
 	
-	for (y = 0; y < 240; y++)
+	shader = SHDR_ParseSHBIN((u32*)blarg_shbin, blarg_shbin_size);
+	
+	GX_SetMemoryFill(gxCmdBuf, (u32*)gpuOut, 0x404040FF, (u32*)&gpuOut[0x2EE00], 0x201, (u32*)gpuDOut, 0x00000000, (u32*)&gpuDOut[0x2EE00], 0x201);
+	gfxSwapBuffersGpu();
+	
+	UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
+	
+	// TODO port me
+	/*for (y = 0; y < 240; y++)
 	{
 		for (x = 0; x < 400; x++)
 		{
 			int idx = (x*240) + (239-y);
 			((u16*)TopFB)[idx] = logo[(y*400)+x];
 		}
+	}*/
+	//SwapTopBuffers(0);
+	
+	blargvert = MemAlloc(5*3*2*4);
+	for (i = 0; i < 5*3*2; i++)
+	{
+		blargvert[i] = _blargvert[i];
 	}
-	SwapTopBuffers(0);
+	GSPGPU_FlushDataCache(NULL, blargvert, 5*3*2*4);
+	
+	blargtex = MemAlloc(256*256*4);
+	for (i = 0; i < 256*256; i++)
+	{
+		int x = i & 0xFF;
+		int y = i >> 8;
+		
+		int j;
+		
+		j = x & 0x1;
+		j += (y & 0x1) << 1;
+		j += (x & 0x2) << 1;
+		j += (y & 0x2) << 2;
+		j += (x & 0x4) << 2;
+		j += (y & 0x4) << 3;
+		j += (x & 0xF8) << 3;
+		j += ((y & 0xF8) << 3) * 32;
+		
+		if (x < 128)
+			((u32*)blargtex)[j] = 0xFFFF00FF;
+		else
+		{
+			if (y < 160) 
+				((u32*)blargtex)[j] = 0xFF00FFFF;
+			else
+				((u32*)blargtex)[j] = (i&0x100) ? 0x00FF00FF : 0x0000FFFF;
+		}
+	}
+	GSPGPU_FlushDataCache(NULL, blargtex, 256*256*4);
 	
 	aptSetupEventHandler();
 	
-	/*for (i = 0; i < 16; i++)
-	{
-		u64 t1 = svc_getSystemTick();
-		svc_sleepThread(1 * 1000 * 1000);
-		u64 t2 = svc_getSystemTick();
-		mstime += (t2-t1);
-	}
-	mstime >>= 4ULL;
-	for (i = 0; i < 16; i++)
-	{
-		u64 t1 = svc_getSystemTick();
-		svc_sleepThread(16666667);
-		u64 t2 = svc_getSystemTick();
-		frametime += (t2-t1);
-	}
-	frametime >>= 4ULL;
-	fps_last = vsync_last = svc_getSystemTick();*/
-	
 
 	sdmcArchive = (FS_archive){0x9, (FS_path){PATH_EMPTY, 1, (u8*)""}};
-	FSUSER_OpenArchive(fsuHandle, &sdmcArchive);
+	FSUSER_OpenArchive(NULL, &sdmcArchive);
 	
-	LoadROMList();
-	DrawROMList();
-	SwapBottomBuffers(0);
+	UI_Switch(&UI_ROMMenu);
 	
-	spcthreadstack = MemAlloc(0x4000); // should be good enough for a stack
-	svc_createEvent(&SPCSync, 0);
+	spcthreadstack = MemAlloc(0x400); // should be good enough for a stack
+	svcCreateEvent(&SPCSync, 0);
 	
 	// TEST
 	/*s16* tempshiz = MemAlloc(2048*2);
@@ -783,125 +411,109 @@ int main()
 	{
 		if(status==APP_RUNNING)
 		{
-			svc_signalEvent(SPCSync);
-			//u64 t1 = svc_getSystemTick();
+			svcSignalEvent(SPCSync);
 			
-			ClearBottomBuffer();
+			hidScanInput();
+			u32 press = hidKeysDown();
+			u32 held = hidKeysHeld();
+			u32 release = hidKeysUp();
 			
-			pad_cur = hidSharedMem[0x28>>2];
-			u32 press = pad_cur & ~pad_last;
-			
-			if (!running)
+			if (running)
 			{
-				if (press & (PAD_A|PAD_B))
-				{
-					if (!showconsole)
-					{
-						showconsole = 1;
-						bprintf("blargSnes console\n");
-
-						// load the ROM
-						strncpy(temppath, "/snes/", 6);
-						strncpy(&temppath[6], &filelist[0x106*menusel], 0x106);
-						temppath[6+0x106] = '\0';
-						bprintf("Loading %s...\n", temppath);
-						
-						if (!SNES_LoadROM(temppath))
-							bprintf("Failed to load this ROM\nPress A to return to menu\n");
-						else
-						{
-							running = 1;
-							
-							SPC_Reset();
-
-							// SPC700 thread (running on syscore)
-							Result res = svc_createThread(&spcthread, SPCThread, 0, spcthreadstack+0x4000, 0x3F, 1);
-							if (res)
-							{
-								bprintf("Failed to create SPC700 thread:\n -> %08X\n", res);
-							}
-							
-							bprintf("ROM loaded, running...\n");
-
-							CPU_Reset();
-							
-							CPU_Run();
-							if (exitemu) break;
-						}
-					}
-					else
-						showconsole = 0;
-				}
-				else if (pad_cur & 0x40000040) // up
-				{
-					menusel--;
-					if (menusel < 0) menusel = 0;
-					if (menusel < menuscroll) menuscroll = menusel;
-				}
-				else if (pad_cur & 0x80000080) // down
-				{
-					menusel++;
-					if (menusel > nfiles-1) menusel = nfiles-1;
-					if (menusel-(MENU_MAX-1) > menuscroll) menuscroll = menusel-(MENU_MAX-1);
-				}
+				// emulate
+				
+				CPU_Run(); // runs the SNES for one frame. Handles PPU rendering.
+				
+				// SRAM autosave check
+				// TODO: also save SRAM under certain circumstances (pausing, returning to home menu, etc)
+				framecount++;
+				if (!(framecount & 7))
+					SNES_SaveSRAM();
+					
+				UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
+				UI_Render();
 			}
-			else if (pause)
-			{
-				if (press & (PAD_A|PAD_B))
-				{
-					pause = 0;
-					bprintf("resume\n");
-					CPU_Run();
-					if (exitemu) break;
-				}
-			}
-			
-			if (showconsole) 
-				DrawConsole();
 			else
-				DrawROMList();
+			{
+				// update UI
+				
+				if (held & KEY_TOUCH)
+				{
+					hidTouchRead(&lastTouch);
+					UI_Touch(true, lastTouch.px, lastTouch.py);
+					held &= ~KEY_TOUCH;
+				}
+				else if (release & KEY_TOUCH)
+				{
+					UI_Touch(false, lastTouch.px, lastTouch.py);
+					release &= ~KEY_TOUCH;
+				}
+				
+				if (press)
+				{
+					UI_ButtonPress(press);
+					
+					// key repeat
+					repeatkeys = press & (KEY_UP|KEY_DOWN|KEY_LEFT|KEY_RIGHT);
+					repeatstate = 1;
+					repeatcount = 15;
+				}
+				else if (held == repeatkeys)
+				{
+					repeatcount--;
+					if (!repeatcount)
+					{
+						repeatcount = 7;
+						if (repeatstate == 2)
+							UI_ButtonPress(repeatkeys);
+						else
+							repeatstate = 2;
+					}
+				}
+				
+				UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
+				UI_Render();
+			}
+			svcSleepThread(100000);
+
+			// PICA200 TEST ZONE
 			
-			SwapBottomBuffers(0);
+			GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
+			doFrameBlarg(gpuOut, 400);
+			GPUCMD_Finalize();
+			GPUCMD_Run(gxCmdBuf);
+			gfxSwapBuffersGpu();
 			
-			pad_last = pad_cur;
+			// END
+				
 			
-			//u64 t2 = svc_getSystemTick();
-			//svc_sleepThread(FrameTime - (t2-t1));
-			svc_sleepThread(150 * 1000 * 1000);
+			
+			//SwapBottomBuffers(0);
+			
+			//svcSleepThread(150 * 1000 * 1000);
+			gspWaitForVBlank();
+			GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
+			svcSleepThread(100000);
+			GX_SetMemoryFill(gxCmdBuf, gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
+			svcSleepThread(100000);
 		}
-		else if(status == APP_SUSPENDING)
+		/*else if(status == APP_SUSPENDING)
 		{
 			aptReturnToMenu();
-			
-			/*setupFB();
-			SwapTopBuffers(0);
-			SwapBottomBuffers(0);*/
 		}
 		else if(status == APP_SLEEPMODE)
 		{
 			aptWaitStatusEvent();
-			
-			setupFB();
-			//SwapTopBuffers(0);
-			//SwapBottomBuffers(0);
-		}
+		}*/
 	}
 	
-	//regData=0x010000FF;
-	//GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
-	
-	MemFree(spcthreadstack, 0x4000);
-	
-	MemFree(filelist, 0x106*nfiles);
+	MemFree(gpuCmd, gpuCmdSize*4);
+	MemFree(spcthreadstack, 0x400);
 
-	svc_closeHandle(fsuHandle);
+	fsExit();
 	hidExit();
-	gspGpuExit();
 	aptExit();
-	svc_exitProcess();
+	svcExitProcess();
 
     return 0;
 }
-
-void* malloc(size_t size) { return NULL; }
-void free(void* ptr) {}

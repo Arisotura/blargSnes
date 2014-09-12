@@ -16,12 +16,10 @@
     with blargSnes. If not, see http://www.gnu.org/licenses/.
 */
 
-#include <ctr/types.h>
-
 #include "snes.h"
 
 
-extern u8* TopFB;
+//extern u8* TopFB;
 
 
 u32 Mem_WRAMAddr = 0;
@@ -32,7 +30,22 @@ u16 PPU_VCount = 0;
 
 u16 PPU_ColorTable[0x10000];
 
-u16 PPU_ColorBuffer[256*2]; // interleaved color buffer; even=main, odd=sub
+u16 PPU_Planar2BPP[0x10000];
+u32 PPU_Planar4BPP[0x10000];
+u32 PPU_Planar8BPP[0x20000];
+
+// 16+256+16: we leave 16 extra pixels on both sides so we don't have to handle tiles that are partially offscreen
+//
+// rendering order: sub screen is rendered above main screen.
+// sub screen alpha: 128 if color divide is enabled, 255 otherwise
+// main screen alpha: 
+//  0: no color math
+//  128: color math, color divide
+//  255: color math
+//
+// sub screen blending: 1*mainscreen +/- (mainscreen alpha)*subscreen
+// src: dstalpha, dst: one
+u16 PPU_ColorBuffer[(16+256+16)*2];
 u16 PPU_OBJBuffer[256];
 
 u8 PPU_MainPrio[256];
@@ -129,6 +142,68 @@ int fbCopy = 0;*/
 
 
 
+void PPU_Init()
+{
+	int i;
+	
+	// map SNES 15bit color to 3DS 15bit
+	for (i = 0; i < 0x10000; i++)
+	{
+		int r = i & 0x001F;
+		int g = i & 0x03E0;
+		int b = i & 0x7C00;
+		PPU_ColorTable[i] = 0x0001 | (r << 11) | (g << 1) | (b >> 9);
+		//u32 val = (r << 19) | (g << 6) | (b >> 7);
+		//PPU_ColorTable[i] = val | ((val >> 5) & 0x00070707);
+	}
+	
+	for (i = 0; i < 0x10000; i++)
+	{
+		u16 val = 0;
+		if (i & 0x0001) val |= 0x0001;
+		if (i & 0x0100) val |= 0x0002;
+		if (i & 0x0002) val |= 0x0004;
+		if (i & 0x0200) val |= 0x0008;
+		if (i & 0x0004) val |= 0x0010;
+		if (i & 0x0400) val |= 0x0020;
+		if (i & 0x0008) val |= 0x0040;
+		if (i & 0x0800) val |= 0x0080;
+		if (i & 0x0010) val |= 0x0100;
+		if (i & 0x1000) val |= 0x0200;
+		if (i & 0x0020) val |= 0x0400;
+		if (i & 0x2000) val |= 0x0800;
+		if (i & 0x0040) val |= 0x1000;
+		if (i & 0x4000) val |= 0x2000;
+		if (i & 0x0080) val |= 0x4000;
+		if (i & 0x8000) val |= 0x8000;
+		
+		PPU_Planar2BPP[i] = val;
+	}
+	
+	for (i = 0; i < 0x10000; i++)
+	{
+		u32 val = 0;
+		if (i & 0x0001) val |= 0x00000001;
+		if (i & 0x0100) val |= 0x00000002;
+		if (i & 0x0002) val |= 0x00000010;
+		if (i & 0x0200) val |= 0x00000020;
+		if (i & 0x0004) val |= 0x00000100;
+		if (i & 0x0400) val |= 0x00000200;
+		if (i & 0x0008) val |= 0x00001000;
+		if (i & 0x0800) val |= 0x00002000;
+		if (i & 0x0010) val |= 0x00010000;
+		if (i & 0x1000) val |= 0x00020000;
+		if (i & 0x0020) val |= 0x00100000;
+		if (i & 0x2000) val |= 0x00200000;
+		if (i & 0x0040) val |= 0x01000000;
+		if (i & 0x4000) val |= 0x02000000;
+		if (i & 0x0080) val |= 0x10000000;
+		if (i & 0x8000) val |= 0x20000000;
+		
+		PPU_Planar4BPP[i] = val;
+	}
+}
+
 void PPU_Reset()
 {
 	int i;
@@ -155,7 +230,7 @@ void PPU_Reset()
 	/*fbCopy = 0;
 	Result res;
 	if (!fbCopyThread)
-		res = svc_createThread(&fbCopyThread, PPU_FBCopyThread, 0, (u32*)&fbCopyThreadStack[0x400], 0x3F, 1);
+		res = svcCreateThread(&fbCopyThread, PPU_FBCopyThread, 0, (u32*)&fbCopyThreadStack[0x400], 0x3F, 1);
 	bprintf("copythread=%08X\n", res);*/
 }
 
@@ -203,7 +278,7 @@ inline void PPU_SetBGCHR(int nbg, u8 val)
 	bg->Tileset = (u16*)&PPU_VRAM[val << 13];
 }
 
-
+extern u32 debugpc;
 u8 PPU_Read8(u32 addr)
 {
 	u8 ret = 0;
@@ -414,7 +489,7 @@ void PPU_Write8(u32 addr, u8 val)
 			break;
 			
 		
-		case 0x0D: PPU_SetXScroll(0, val); break;
+		case 0x0D: bprintf("BG1X %04X %06X\n", PPU_BG[0].XScroll, debugpc); PPU_SetXScroll(0, val); break;
 		case 0x0E: PPU_SetYScroll(0, val); break;
 		case 0x0F: PPU_SetXScroll(1, val); break;
 		case 0x10: PPU_SetYScroll(1, val); break;
@@ -598,7 +673,7 @@ void PPU_RenderBG_2bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal, 
 	u16 curtile;
 	u32 tilepixels;
 	u32 colorval;
-	u32 i;
+	s32 i;
 	u32 idx;
 	
 	line += bg->YScroll;
@@ -611,78 +686,62 @@ void PPU_RenderBG_2bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal, 
 	}
 	
 	xoff = bg->XScroll;
+	i = -(xoff & 0x7);
 	
-	for (i = 0; i < 256;)
+	for (; i < 256;)
 	{
-		// determine the next tile
-		for (;;)
+		idx = (xoff & 0xF8) >> 3;
+		if (xoff & 0x100)
 		{
-			idx = (xoff & 0xF8) >> 3;
-			if (xoff & 0x100)
-			{
-				if (bg->Size & 0x1)
-					idx += 1024;
-			}
-			curtile = tilemap[idx];
-			
-			// skip tiles that don't have the wanted prio
-			if ((curtile ^ prio) & 0x2000)
-			{
-				u32 npix = 8 - (xoff & 0x7);
-				i += npix;
-				if (i >= 256) return;
-				xoff += npix;
-				continue;
-			}
-			
-			idx = (curtile & 0x3FF) << 3;
-			if (curtile & 0x8000) 	idx += (7 - tiley);
-			else					idx += tiley;
-			
-			tilepixels = tileset[idx];
-			if (!tilepixels)	// skip empty tiles
-			{
-				u32 npix = 8 - (xoff & 0x7);
-				i += npix;
-				if (i >= 256) return;
-				xoff += npix;
-				continue;
-			}
-			
-			if (curtile & 0x4000)	tilepixels >>= (xoff & 0x7);
-			else					tilepixels <<= (xoff & 0x7);
-			
-			break;
+			if (bg->Size & 0x1)
+				idx += 1024;
+		}
+		curtile = tilemap[idx];
+		
+		// skip tiles that don't have the wanted prio
+		if ((curtile ^ prio) & 0x2000)
+		{
+			i += 8;
+			xoff += 8;
+			continue;
 		}
 		
+		idx = (curtile & 0x3FF) << 3;
+		if (curtile & 0x8000) 	idx += (7 - tiley);
+		else					idx += tiley;
+		
+		tilepixels = tileset[idx];
+		if (!tilepixels)	// skip empty tiles
+		{
+			i += 8;
+			xoff += 8;
+			continue;
+		}
+		tilepixels = PPU_Planar2BPP[tilepixels];
+		
 		// render all the possible pixels
-		do
+		for (idx = 0; idx < 8; idx++)
 		{
 			colorval = 0;
 			if (curtile & 0x4000) // hflip
 			{
-				if (tilepixels & 0x0001) colorval |= 0x01;
-				if (tilepixels & 0x0100) colorval |= 0x02;
-				tilepixels >>= 1;
+				colorval = (tilepixels & 0x3);
+				tilepixels >>= 2;
 			}
 			else
 			{
-				if (tilepixels & 0x0080) colorval |= 0x01;
-				if (tilepixels & 0x8000) colorval |= 0x02;
-				tilepixels <<= 1;
+				colorval = (tilepixels & 0xC000) >> 14;
+				tilepixels <<= 2;
 			}
 			
 			if (colorval)
 			{
 				colorval |= (curtile & 0x1C00) >> 8;
-				buffer[i] = pal[colorval];
+				buffer[i<<1] = pal[colorval];
 			}
 			i++;
-			if (i >= 256) return;
-			
-			xoff++;
 		}
-		while (xoff & 0x7);
+		xoff += 8;
 	}
 }
 
@@ -695,7 +754,7 @@ void PPU_RenderBG_4bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal, 
 	u16 curtile;
 	u32 tilepixels;
 	u32 colorval;
-	u32 i;
+	s32 i;
 	u32 idx;
 	
 	line += bg->YScroll;
@@ -708,85 +767,66 @@ void PPU_RenderBG_4bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal, 
 	}
 	
 	xoff = bg->XScroll;
+	i = -(xoff & 0x7);
 	
-	for (i = 0; i < 256;)
+	for (; i < 256;)
 	{
-		// determine the next tile
-		for (;;)
+		idx = (xoff & 0xF8) >> 3;
+		if (xoff & 0x100)
 		{
-			idx = (xoff & 0xF8) >> 3;
-			if (xoff & 0x100)
-			{
-				if (bg->Size & 0x1)
-					idx += 1024;
-			}
-			curtile = tilemap[idx];
-			
-			// skip tiles that don't have the wanted prio
-			if ((curtile ^ prio) & 0x2000)
-			{
-				u32 npix = 8 - (xoff & 0x7);
-				i += npix;
-				if (i >= 256) return;
-				xoff += npix;
-				continue;
-			}
-			
-			idx = (curtile & 0x3FF) << 4;
-			if (curtile & 0x8000) 	idx += (7 - tiley);
-			else					idx += tiley;
-			
-			tilepixels = tileset[idx] | (tileset[idx+8] << 16);
-			if (!tilepixels)	// skip empty tiles
-			{
-				u32 npix = 8 - (xoff & 0x7);
-				i += npix;
-				if (i >= 256) return;
-				xoff += npix;
-				continue;
-			}
-			
-			if (curtile & 0x4000)	tilepixels >>= (xoff & 0x7);
-			else					tilepixels <<= (xoff & 0x7);
-			
-			break;
+			if (bg->Size & 0x1)
+				idx += 1024;
+		}
+		curtile = tilemap[idx];
+		
+		// skip tiles that don't have the wanted prio
+		if ((curtile ^ prio) & 0x2000)
+		{
+			i += 8;
+			xoff += 8;
+			continue;
 		}
 		
+		idx = (curtile & 0x3FF) << 4;
+		if (curtile & 0x8000) 	idx += (7 - tiley);
+		else					idx += tiley;
+		
+		tilepixels = tileset[idx] | (tileset[idx+8] << 16);
+		if (!tilepixels)	// skip empty tiles
+		{
+			i += 8;
+			xoff += 8;
+			continue;
+		}
+		tilepixels = PPU_Planar4BPP[tilepixels&0xFFFF] | (PPU_Planar4BPP[tilepixels>>16] << 2);
+		
 		// render all the possible pixels
-		do
+		for (idx = 0; idx < 8; idx++)
 		{
 			colorval = 0;
 			if (curtile & 0x4000) // hflip
 			{
-				if (tilepixels & 0x00000001) colorval |= 0x01;
-				if (tilepixels & 0x00000100) colorval |= 0x02;
-				if (tilepixels & 0x00010000) colorval |= 0x04;
-				if (tilepixels & 0x01000000) colorval |= 0x08;
-				tilepixels >>= 1;
+				colorval = (tilepixels & 0xF);
+				tilepixels >>= 4;
 			}
 			else
 			{
-				if (tilepixels & 0x00000080) colorval |= 0x01;
-				if (tilepixels & 0x00008000) colorval |= 0x02;
-				if (tilepixels & 0x00800000) colorval |= 0x04;
-				if (tilepixels & 0x80000000) colorval |= 0x08;
-				tilepixels <<= 1;
+				colorval = (tilepixels & 0xF0000000) >> 28;
+				tilepixels <<= 4;
 			}
 			
 			if (colorval)
 			{
 				colorval |= (curtile & 0x1C00) >> 6;
-				buffer[i] = pal[colorval];
+				buffer[i<<1] = pal[colorval];
 			}
 			i++;
-			if (i >= 256) return;
-			
-			xoff++;
 		}
-		while (xoff & 0x7);
+		xoff += 8;
 	}
 }
 
+// TODO make this one work! we all want Super Bomberman
 void PPU_RenderBG_4bpp_16x16(PPU_Background* bg, u16* buffer, u32 line, u16* pal, u32 prio)
 {
 	u16* tileset = bg->Tileset;
@@ -1045,7 +1085,7 @@ void PPU_RenderBG_8bpp_8x8(PPU_Background* bg, u16* buffer, u32 line, u16* pal, 
 			
 			if (colorval)
 			{
-				buffer[i] = pal[colorval];
+				buffer[i<<1] = pal[colorval];
 			}
 			i++;
 			if (i >= 256) return;
@@ -1205,13 +1245,13 @@ inline void PPU_RenderOBJs(u16* buf, u32 line, u32 prio)
 		u32 val = srcbuf[i >> 1];
 		
 		if ((val & 0xFF00) == prio)
-			buf[i] = pal[val & 0xFF];
+			buf[i<<1] = pal[val & 0xFF];
 		
 		i++;
 		val >>= 16;
 		
 		if ((val & 0xFF00) == prio)
-			buf[i] = pal[val & 0xFF];
+			buf[i<<1] = pal[val & 0xFF];
 		
 		i++;
 	}
@@ -1343,7 +1383,7 @@ void PPU_RenderScanline(u32 line)
 	u32 backdrop = PPU_SubBackdrop;
 	if (!backdrop) backdrop = PPU_CGRAM[0];
 	backdrop |= (backdrop << 16);
-	for (i = 0; i < 256; i += 2)
+	for (i = 0; i < (16+256+16)*2; i += 2)
 		*(u32*)&buf[i] = backdrop;
 		
 	for (i = 0; i < 256; i += 2)
@@ -1351,6 +1391,11 @@ void PPU_RenderScanline(u32 line)
 		
 	if ((PPU_MainScreen|PPU_SubScreen) & 0x10)
 		PPU_PrerenderOBJs(PPU_OBJBuffer, line);
+		
+	buf += 16<<1;
+		
+	// subscreen calls need to switch to &buf[1] whenever we do color math
+	// (unless we do it in hardware)
 		
 	switch (PPU_Mode & 0x07)
 	{
@@ -1388,7 +1433,7 @@ void PPU_RenderScanline(u32 line)
 	}
 	
 	// copy to final framebuffer
-	u16* finalbuf = &((u16*)TopFB)[17512 - line];
+	/*u16* finalbuf = &((u16*)TopFB)[17512 - line];
 	for (i = 0; i < 256; i++)
 	{
 		/*u16 maincol = buf[i];
@@ -1404,12 +1449,12 @@ void PPU_RenderScanline(u32 line)
 		finalcol ^= xor;*-/
 		finalcol >>= 1;
 		
-		*finalbuf = PPU_ColorTable[finalcol];*/
-		*finalbuf = PPU_ColorTable[buf[i]];
+		*finalbuf = PPU_ColorTable[finalcol];*-/
+		*finalbuf = PPU_ColorTable[buf[i<<1]];
 		finalbuf += 240;
-	}
+	}*/
 	
-	//svc_signalEvent(fbCopyEvent);
+	//svcSignalEvent(fbCopyEvent);
 	//fbCopy = 1;
 }
 
@@ -1431,7 +1476,7 @@ void PPU_RenderScanline(u32 line)
 			finalbuf += 240;
 		}
 		
-		//svc_clearEvent(fbCopyEvent);
+		//svcClearEvent(fbCopyEvent);
 		fbCopy = 0;
 	}
 }*/

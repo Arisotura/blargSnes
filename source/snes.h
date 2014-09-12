@@ -20,7 +20,7 @@
 #define _SNES_H_
 
 #include <stdio.h>
-#include <ctr/types.h>
+#include <3ds/types.h>
 
 typedef struct
 {

@@ -16,57 +16,39 @@
     with blargSnes. If not, see http://www.gnu.org/licenses/.
 */
 
-#ifndef _CPU_H_
-#define _CPU_H_
+#ifndef _UI_H_
+#define _UI_H_
 
-typedef union
-{
-	u16 val;
-	struct
-	{
-		u16 C :1,
-			Z :1,
-			I :1,
-			D :1,
-			X :1,	// B in emulation mode
-			M :1,
-			V :1,
-			N :1,
-			E :1,	// actually not in P, but hey, we have to keep it somewhere
-			W :1,	// not even an actual flag, set by WAI
-			I2 :1,	// not an actual flag either, set when NMI's are disabled
-			  :5;
-	};
-} CPU_P;
+#include <3ds/types.h>
+
+#define RGB(r,g,b) ((b) | ((g) << 8) | ((r) << 16))
+
+void UI_SetFramebuffer(u8* buffer);
+void ClearFramebuffer();
+void FillRect(int x1, int y1, int x2, int y2, u32 color);
+void DrawText(int x, int y, u32 color, char* str);
+
 
 typedef struct
 {
-	u32 _memoryMap;
-	u32 _opTable;
-	u16 nLines;
-	s16 nCycles;
-	CPU_P P;
-	u16 PC;
-	u16 DBR;
-	u16 D;
-	u16 PBR;
-	u16 S;
-	u32 Y;
-	u32 X;
-	u32 A;
-} CPU_Regs_t;
-
-extern CPU_Regs_t CPU_Regs;
-
+	void (*Init)();
+	void (*DeInit)();
 	
-void CPU_Reset();
-void CPU_Run();
+	void (*Render)();
+	void (*ButtonPress)(u32 btn);
+	void (*Touch)(bool touch, u32 x, u32 y);
+	
+} UIController;
 
-void CPU_TriggerIRQ();
-void CPU_TriggerNMI();
+extern UIController UI_ROMMenu;
+extern UIController UI_Console;
 
-// debugging crap
-u32 CPU_GetPC();
-u32 CPU_GetReg(u32 reg);
+void UI_Switch(UIController* ui);
+void UI_Render();
+void UI_ButtonPress(u32 btn);
+void UI_Touch(bool touch, u32 x, u32 y);
+
+
+bool StartROM(char* path);
 
 #endif

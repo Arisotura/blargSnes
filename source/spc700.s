@@ -26,7 +26,7 @@
 @ search the code for 'todo' for more
 @ -----------------------------------------------------------------------------
 
-.include "spc700.inc"
+#include "spc700.inc"
 
 .section    .data, "aw", %progbits
 
