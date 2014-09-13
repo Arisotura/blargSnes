@@ -292,6 +292,7 @@ bool StartROM(char* path)
 }
 
 
+
 int main() 
 {
 	int i;
@@ -474,7 +475,6 @@ int main()
 				UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
 				UI_Render();
 			}
-			svcSleepThread(100000);
 
 			// PICA200 TEST ZONE
 			
@@ -482,20 +482,22 @@ int main()
 			doFrameBlarg(gpuOut, 400);
 			GPUCMD_Finalize();
 			GPUCMD_Run(gxCmdBuf);
-			gfxSwapBuffersGpu();
 			
-			// END
-				
+			// flush the bottomscreen cache while the PICA200 is busy rendering
+			GSPGPU_FlushDataCache(NULL, gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL), 0x38400);
 			
+			// wait for the PICA200 to finish drawing
+			gspWaitForP3D();
 			
-			//SwapBottomBuffers(0);
-			
-			//svcSleepThread(150 * 1000 * 1000);
-			gspWaitForVBlank();
+			// transfer the final color buffer to the LCD
 			GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
-			svcSleepThread(100000);
+			gspWaitForPPF();
+			
+			// fill the color buffer
 			GX_SetMemoryFill(gxCmdBuf, gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
-			svcSleepThread(100000);
+
+			gspWaitForEvent(GSPEVENT_VBlank0, false);
+			gfxSwapBuffersGpu();
 		}
 		/*else if(status == APP_SUSPENDING)
 		{
