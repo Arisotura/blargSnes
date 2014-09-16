@@ -43,6 +43,10 @@ u32* gpuOut = (u32*)0x1F119400;
 u32* gpuDOut = (u32*)0x1F370800;
 DVLB_s* shader;
 
+u32* BorderTex;
+u32* MainScreenTex;
+u32* SubScreenTex;
+
 FS_archive sdmcArchive;
 
 
@@ -51,6 +55,16 @@ int pause = 0;
 int exitemu = 0;
 
 
+
+// dirty way to get a 16-byte aligned pointer in the linear heap
+// will not work if we want to free that memory
+// PICA200 wants its vertex buffers to be aligned to a 16-byte boundary, linearAlloc() provides 8-byte granularity
+void* linearAllocAligned(u32 size)
+{
+	u32 ret = (u32)linearAlloc(size + 16);
+	ret = (ret + 15) & ~15;
+	return (void*)ret;
+}
 
 
 
@@ -115,18 +129,10 @@ Result APT_EnableSyscoreUsage(u32 max_percent)
 
 
 
-float topProjMatrix[16] = 
+float projMatrix[16] = 
 {
 	2.0f/240.0f, 0, 0, -1,
 	0, 2.0f/400.0f, 0, -1,
-	0, 0, 1, -1,
-	0, 0, 0, 1
-};
-
-float bottomProjMatrix[16] = 
-{
-	2.0f/240.0f, 0, 0, -1,
-	0, 2.0f/320.0f, 0, -1,
 	0, 0, 1, -1,
 	0, 0, 0, 1
 };
@@ -139,19 +145,28 @@ float mvMatrix[16] =
 	0, 0, 0, 1
 };
 
-float _blargvert[] = 
+float vertexList[] = 
 {
-	0.0, 0.0, 0.5,      1.0, 0.9375,
-	240.0, 0.0, 0.5,    1.0, 0,
-	240.0, 400.0, 0.5,  0, 0,
+	// border
+	0.0, 0.0, 0.9,      1.0, 0.125,
+	240.0, 0.0, 0.9,    1.0, 1.0,
+	240.0, 400.0, 0.9,  0, 1.0,
 	
-	0.0, 0.0, 0.5,      1.0, 0.9375,
-	240.0, 400.0, 0.5,  0, 0,
-	0.0, 400.0, 0.5,    0, 0.9375,
+	0.0, 0.0, 0.9,      1.0, 0.125,
+	240.0, 400.0, 0.9,  0, 1.0,
+	0.0, 400.0, 0.9,    0, 0.125,
+	
+	// screen
+	8.0, 72.0, 0.5,      1.0, 0.125,
+	232.0, 72.0, 0.5,    1.0, 1.0,
+	232.0, 328.0, 0.5,  0, 1.0,
+	
+	8.0, 72.0, 0.5,      1.0, 0.125,
+	232.0, 328.0, 0.5,  0, 1.0,
+	8.0, 328.0, 0.5,    0, 0.125,
 };
-float* blargvert;
-
-u8* blargtex;
+float* borderVertices;
+float* screenVertices;
 
 void setUniformMatrix(u32 startreg, float* m)
 {
@@ -175,50 +190,141 @@ void setUniformMatrix(u32 startreg, float* m)
 	GPU_SetUniform(startreg, (u32*)param, 4);
 }
 
-int derpo = 0;
-
-void doFrameBlarg(u32* colorbuf, int width)
+void myGPU_DrawArray(GPU_Primitive_t primitive, u32 n)
 {
-	// 000F0101 -- alpha blending
-	// 0-7: color blend equation
-	// 8-15: alpha blend equation
-	// 16-19: color src factor
-	// 20-23: color dst factor
-	// 24-27: alpha src factor
-	// 28-31: alpha dst factor
+	/*GPUCMD_AddSingleParam(0x0002025E, primitive);
+	GPUCMD_AddSingleParam(0x0002025F, 1);
 	
-	// blend equation:
-	// 0 = GL_FUNC_ADD
-	// 1 = GL_FUNC_SUBTRACT
-	// 2 = GL_FUNC_REVERSE_SUBTRACT
-	// 3 = GL_MIN
-	// 4 = GL_MAX
+	GPUCMD_AddSingleParam(0x000F0027, 0x80000000);
+	GPUCMD_AddSingleParam(0x00010253, 1);
+	GPUCMD_AddSingleParam(0x000F0228, n);
+	GPUCMD_AddSingleParam(0x000F022A, 0);
+	GPUCMD_AddSingleParam(0x00010245, 0);
+	GPUCMD_AddSingleParam(0x000F022E, 1);
+	GPUCMD_AddSingleParam(0x00010245, 1);
+	GPUCMD_AddSingleParam(0x000F0321, 1);
+	GPUCMD_AddSingleParam(0x0008025E, 0);
+	GPUCMD_AddSingleParam(0x0008025E, 0);
+	GPUCMD_AddSingleParam(0x00010253, 0);
+	GPUCMD_AddSingleParam(0x000F0111, 1);
 	
-	// src/dst factor:
-	// 0 = GL_ZERO (?)
-	// 1 = GL_ONE (?)
-	// 2 = GL_SRC_COLOR (?)
-	// 3 = GL_ONE_MINUS_SRC_COLOR
-	// 4 = GL_DST_COLOR
-	// 5 = GL_ONE_MINUS_DST_COLOR
-	// 6 = GL_SRC_ALPHA
-	// 7 = GL_ONE_MINUS_SRC_ALPHA
-	// 8 = GL_DST_ALPHA
-	// 9 = GL_ONE_MINUS_DST_ALPHA
-	// 10 = GL_CONSTANT_COLOR (?)
-	// 11 = GL_ONE_MINUS_CONSTANT_COLOR (?)
-	// 12 = GL_CONSTANT_ALPHA (?)
-	// 13 = GL_ONE_MINUS_CONSTANT_ALPHA (?)
-	// 14 = GL_SRC_ALPHA_SATURATE
+	//GPUCMD_AddSingleParam(0x00010080, 0);
+	GPUCMD_AddSingleParam(0x000C02BA, 0x7FFF0000);
+	//GPUCMD_AddSingleParam(0x000C028A, 0x7FFF0000);
 	
-	// set to 01010000 to disable.
+	GPUCMD_AddSingleParam(0x000F0111, 0x00000001);
+	GPUCMD_AddSingleParam(0x000F0110, 0x00000001);
 	
+	return;*/
+	// //?
+	// GPUCMD_AddSingleParam(0x00040080, 0x00010000);
+	//set primitive type
+	GPUCMD_AddSingleParam(0x0002025E, primitive);
+	GPUCMD_AddSingleParam(0x0002025F, 0x00000001);
+	//index buffer not used for drawArrays but 0x000F0227 still required
+	GPUCMD_AddSingleParam(0x000F0227, 0x80000000);
+	//pass number of vertices
+	GPUCMD_AddSingleParam(0x000F0228, n);
+
+	GPUCMD_AddSingleParam(0x00010253, 0x00000001);
+
+	GPUCMD_AddSingleParam(0x00010245, 0x00000000);
+	GPUCMD_AddSingleParam(0x000F022E, 0x00000001);
+	GPUCMD_AddSingleParam(0x00010245, 0x00000001);
+	GPUCMD_AddSingleParam(0x000F0231, 0x00000001);
+	
+	//GPUCMD_AddSingleParam(0x000F0111, 1);
+	GPUCMD_AddSingleParam(0x000C02BA, 0x7FFF0000);
+	//GPUCMD_AddSingleParam(0x000C028A, 0x7FFF0000);
+
+	GPUCMD_AddSingleParam(0x000F0063, 0x00000001);
+	GPUCMD_AddSingleParam(0x000F0111, 0x00000001);
+	GPUCMD_AddSingleParam(0x000F0110, 0x00000001);
+}
+
+void myGPU_SetViewport(u32* depthBuffer, u32* colorBuffer, u32 x, u32 y, u32 w, u32 h)
+{
+	u32 param[0x4];
+	float fw=(float)w;
+	float fh=(float)h;
+	
+	/*000F0111 00000001
+	000F0110 00000001
+	000F0117 <colorbuffer format>
+	000F011D <colorbuffer physaddr>>3>
+	000F0116 <depthbuffer format>
+	000F011C <depthbuffer physaddr>>3>
+	000F011E <viewportshiz|0x01000000>
+	000F006E <viewportshiz|same>
+	glViewport*/
+
+	GPUCMD_AddSingleParam(0x000F0111, 0x00000001);
+	GPUCMD_AddSingleParam(0x000F0110, 0x00000001);
+
+	u32 f116e=0x01000000|(((h-1)&0xFFF)<<12)|(w&0xFFF);
+
+	param[0x0]=((u32)depthBuffer)>>3;
+	param[0x1]=((u32)colorBuffer)>>3;
+	param[0x2]=f116e;
+	
+	GPUCMD_AddSingleParam(0x000F0117, 0x00000002); //color buffer format
+	GPUCMD_AddSingleParam(0x000F011D, param[1]);
+	GPUCMD_AddSingleParam(0x000F0116, 0x00000003); //depth buffer format
+	GPUCMD_AddSingleParam(0x000F011C, param[0]);
+	GPUCMD_AddSingleParam(0x000F011E, param[2]);
+	//GPUCMD_Add(0x800F011C, param, 0x00000003);
+	//GPUCMD_AddSingleParam(0x000F011B, 0x00000000); //?
+	GPUCMD_AddSingleParam(0x000F006E, f116e);
+
+	param[0x0]=f32tof24(fw/2);
+	param[0x1]=computeInvValue(fw);
+	param[0x2]=f32tof24(fh/2);
+	param[0x3]=computeInvValue(fh);
+	GPUCMD_Add(0x800F0041, param, 0x00000004);
+
+	GPUCMD_AddSingleParam(0x000F0068, (y<<16)|(x&0xFFFF));
+
+	param[0x0]=0x00000000;
+	param[0x1]=0x00000000;
+	param[0x2]=((h-1)<<16)|((w-1)&0xFFFF);
+	GPUCMD_Add(0x800F0065, param, 0x00000003);
+
+	//enable depth buffer
+	param[0x0]=0x00000000;
+	param[0x1]=0x0000000F;
+	param[0x2]=0x00000002;
+	param[0x3]=0x00000002;
+	GPUCMD_Add(0x800F0112, param, 0x00000004);
+}
+
+void GPU_SetTexture1(u32* data, u16 width, u16 height, u32 param, GPU_TEXCOLOR colorType)
+{
+	GPUCMD_AddSingleParam(0x000F0096, colorType);
+	GPUCMD_AddSingleParam(0x000F0095, ((u32)data)>>3);
+	GPUCMD_AddSingleParam(0x000F0092, (width)|(height<<16));
+	GPUCMD_AddSingleParam(0x000F0093, param);
+}
+
+void GPU_SetDummyTexEnv(u8 num)
+{
+	GPU_SetTexEnv(num, 
+		GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0), 
+		GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0), 
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_REPLACE, 
+		GPU_REPLACE, 
+		0xFFFFFFFF);
+}
+
+void doFrameBlarg()
+{
 	//general setup
-	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)colorbuf),0,0,240*2,width);
+	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)gpuOut),0,0,240*2,400);
 	GPU_DepthRange(-1.0f, 0.0f);
 	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
 	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00);
-	GPU_SetDepthTest(true, GPU_GREATER, 0x1F);
+	GPU_SetDepthTest(false, GPU_ALWAYS, 0x1F);
 	
 	// ?
 	GPUCMD_AddSingleParam(0x00010062, 0x00000000); //param always 0x0 according to code
@@ -236,23 +342,145 @@ void doFrameBlarg(u32* colorbuf, int width)
 	GPUCMD_AddSingleParam(0x0002006F, 0x00000100);
 	GPUCMD_AddSingleParam(0x000F0080, 0x00011001); //enables/disables texturing
 	//texenv
+	GPU_SetTexEnv(0, 
+		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
+		GPU_TEVSOURCES(GPU_CONSTANT, 0, 0),
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_REPLACE, GPU_REPLACE, 
+		0xFFFFFFFF);
+	GPU_SetDummyTexEnv(1);
+	GPU_SetDummyTexEnv(2);
+	GPU_SetDummyTexEnv(3);
+	GPU_SetDummyTexEnv(4);
+	GPU_SetDummyTexEnv(5);
+	//texturing stuff
+	GPU_SetTexture((u32*)osConvertVirtToPhys((u32)BorderTex),512,256,0x6,GPU_RGBA8);
+	
+	//setup matrices
+	setUniformMatrix(0x24, mvMatrix);
+	setUniformMatrix(0x20, projMatrix);
+	
+	// note on the drawing process: GPU hangs if we attempt to draw an even number of arrays :/
+	
+	// border
+	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)borderVertices),
+		GPU_ATTRIBFMT(0, 3, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT),
+		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
+	myGPU_DrawArray(GPU_TRIANGLES, 2*3);
+
+	//return;
+	
+	// TEMP
+	GPU_DepthRange(-1.0f, 0.0f);
+	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
+	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00);
+	GPU_SetDepthTest(false, GPU_ALWAYS, 0x1F);
+	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
+	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+	GPUCMD_AddSingleParam(0x000F0100, 0x00000100);
+	GPUCMD_AddSingleParam(0x000F0101, 0x01010000);
+	//GPUCMD_AddSingleParam(0x00020100, 0x00000100);
+	GPUCMD_AddSingleParam(0x000F0104, 0x00000010);
+	
+	//texturing stuff
+	GPUCMD_AddSingleParam(0x0002006F, 0x00000300);	// enables/disables texcoord output
+	GPUCMD_AddSingleParam(0x000F0080, 0x00011003); //enables/disables texturing
+	// TEXTURE ENV STAGES
+	// ---
+	// blending operation: (Main.Color +- (Sub.Color * Main.Alpha)) * Sub.Alpha
+	// Main.Alpha = 0/255 depending on color math
+	// Sub.Alpha = 128/255 depending on color div2
+	// note: the main/sub intensities are halved to prevent overflow during the operations.
+	// (each TEV stage output is clamped to [0,255])
+	// last stage makes up for this
+	// ---
+	// STAGE 1: Out.Color = whatever, Out.Alpha = Main.Alpha
+	GPU_SetTexEnv(0, 
+		GPU_TEVSOURCES(GPU_CONSTANT, 0, 0), 
+		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_REPLACE, 
+		GPU_REPLACE, 
+		0xFFFFFFFF);
+	// STAGE 2: Out.Color = Sub.Color * Prev.Alpha, Out.Alpha = Sub.Alpha + (1-Main.Alpha) (cancel out div2 when color math doesn't happen)
+	GPU_SetTexEnv(1, 
+		GPU_TEVSOURCES(GPU_TEXTURE1, GPU_PREVIOUS, 0), 
+		GPU_TEVSOURCES(GPU_TEXTURE1, GPU_TEXTURE0, 0),
+		GPU_TEVOPERANDS(0,2,0), 
+		GPU_TEVOPERANDS(0,1,0), 
+		GPU_MODULATE, 
+		GPU_ADD, 
+		0xFFFFFFFF);
+	// STAGE 3: Out.Color = Main.Color +- Prev.Color, Out.Alpha = Prev.Alpha
+	GPU_SetTexEnv(2, 
+		GPU_TEVSOURCES(GPU_TEXTURE0, GPU_PREVIOUS, 0), 
+		GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0),
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_TEVOPERANDS(0,0,0), 
+		(PPU_ColorMath & 0x80) ? GPU_SUBTRACT:GPU_ADD, 
+		GPU_REPLACE, 
+		0xFFFFFFFF);
+	// STAGE 4: Out.Color = Prev.Color * Prev.Alpha, Out.Alpha = Prev.Alpha
+	GPU_SetTexEnv(3, 
+		GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
+		GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0),
+		GPU_TEVOPERANDS(0,2,0), 
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_MODULATE, 
+		GPU_REPLACE, 
+		0xFFFFFFFF);
+	// STAGE 5: Out.Color = Prev.Color + Prev.Color (doubling color intensity), Out.Alpha = Const.Alpha
+	GPU_SetTexEnv(4, 
+		GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
+		GPU_TEVSOURCES(GPU_CONSTANT, 0, 0),
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_ADD, 
+		GPU_REPLACE, 
+		0xFFFFFFFF);
+	// STAGE 6: dummy
+	GPU_SetDummyTexEnv(5);
+	
+
+	// mainscreen
+	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)screenVertices),
+		GPU_ATTRIBFMT(0, 3, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT),
+		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
+		
+	GPU_SetTexture((u32*)osConvertVirtToPhys((u32)MainScreenTex),256,256,0x6,GPU_RGBA8);
+	GPU_SetTexture1((u32*)osConvertVirtToPhys((u32)SubScreenTex),256,256,0x6,GPU_RGBA8);
+	
+	myGPU_DrawArray(GPU_TRIANGLES, 2*3);
+	
+	// subscreen
+	myGPU_DrawArray(GPU_TRIANGLES, 2*3);
+	return;
+	// change alphablending.
+	// there are probably unneeded commands in there. TODO: investigate. Picky200 likes to freeze if there aren't enough commands.
+	u32 blend = 0x11110000;//(PPU_ColorMath & 0x80) ? 0x11180202 : 0x11180000;
+	GPU_DepthRange(-1.0f, 0.0f);
+	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
+	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00);
+	GPU_SetDepthTest(false, GPU_ALWAYS, 0x1F);
+	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
+	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+	GPUCMD_AddSingleParam(0x000F0100, 0x00E40100);
+	GPUCMD_AddSingleParam(0x000F0101, blend);
+	GPUCMD_AddSingleParam(0x000F0104, 0x00000010);
+	
+	//texturing stuff
+	GPUCMD_AddSingleParam(0x0002006F, 0x00000100);
+	GPUCMD_AddSingleParam(0x000F0080, 0x00011001); //enables/disables texturing
+	//texenv
 	GPU_SetTexEnv(3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00000000);
 	GPU_SetTexEnv(4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00000000);
 	GPU_SetTexEnv(5, GPU_TEVSOURCES(GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR), GPU_TEVSOURCES(GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR),
 	GPU_TEVOPERANDS(0,0,0), GPU_TEVOPERANDS(0,0,0), GPU_MODULATE, GPU_MODULATE, 0xFFFFFFFF);
-	//texturing stuff
-	GPU_SetTexture((u32*)osConvertVirtToPhys((u32)blargtex),256,256,0x6,GPU_RGBA8);
 	
-	//setup matrices
-	setUniformMatrix(0x24, mvMatrix);
-	setUniformMatrix(0x20, topProjMatrix);
-
-	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)blargvert),
-		GPU_ATTRIBFMT(0, 3, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT),
-		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
-	
-	//draw model
-	GPU_DrawArray(GPU_TRIANGLES, 2*3);
+	GPU_SetTexture((u32*)osConvertVirtToPhys((u32)SubScreenTex),256,256,0x6,GPU_RGBA8);
+	myGPU_DrawArray(GPU_TRIANGLES, 2*3);
 }
 
 
@@ -290,12 +518,12 @@ bool StartROM(char* path)
 	CPU_Reset();
 	return true;
 }
-
+//u8 buf[0x10000];
 
 
 int main() 
 {
-	int i;
+	int i, x, y;
 	
 	touchPosition lastTouch;
 	u32 repeatkeys = 0;
@@ -332,52 +560,28 @@ int main()
 	
 	UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
 	
-	// TODO port me
-	/*for (y = 0; y < 240; y++)
+	// TODO load BorderTex from something
+	// either internal hardcoded bitmap or external .bmp
+	BorderTex = (u32*)linearAlloc(512*256*4);
+	for (y = 0; y < 256; y++)
 	{
-		for (x = 0; x < 400; x++)
+		for (x = 0; x < 512; x++)
 		{
-			int idx = (x*240) + (239-y);
-			((u16*)TopFB)[idx] = logo[(y*400)+x];
-		}
-	}*/
-	//SwapTopBuffers(0);
-	
-	blargvert = MemAlloc(5*3*2*4);
-	for (i = 0; i < 5*3*2; i++)
-	{
-		blargvert[i] = _blargvert[i];
-	}
-	GSPGPU_FlushDataCache(NULL, blargvert, 5*3*2*4);
-	
-	blargtex = MemAlloc(256*256*4);
-	for (i = 0; i < 256*256; i++)
-	{
-		int x = i & 0xFF;
-		int y = i >> 8;
-		
-		int j;
-		
-		j = x & 0x1;
-		j += (y & 0x1) << 1;
-		j += (x & 0x2) << 1;
-		j += (y & 0x2) << 2;
-		j += (x & 0x4) << 2;
-		j += (y & 0x4) << 3;
-		j += (x & 0xF8) << 3;
-		j += ((y & 0xF8) << 3) * 32;
-		
-		if (x < 128)
-			((u32*)blargtex)[j] = 0xFFFF00FF;
-		else
-		{
-			if (y < 160) 
-				((u32*)blargtex)[j] = 0xFF00FFFF;
-			else
-				((u32*)blargtex)[j] = (i&0x100) ? 0x00FF00FF : 0x0000FFFF;
+			//int idx = (x*240) + (239-y);
+			//((u16*)TopFB)[idx] = logo[(y*400)+x];
+			BorderTex[x+(y*512)] = 0x0000FF80;
 		}
 	}
-	GSPGPU_FlushDataCache(NULL, blargtex, 256*256*4);
+	
+	MainScreenTex = (u32*)linearAlloc(256*256*4);
+	SubScreenTex = (u32*)linearAlloc(256*256*4);
+	
+	borderVertices = (float*)linearAllocAligned(5*3 * 2 * sizeof(float));
+	screenVertices = (float*)linearAllocAligned(5*3 * 2 * sizeof(float));
+	
+	float* fptr = &vertexList[0];
+	for (i = 0; i < 5*3*2; i++) borderVertices[i] = *fptr++;
+	for (i = 0; i < 5*3*2; i++) screenVertices[i] = *fptr++;
 	
 	aptSetupEventHandler();
 	
@@ -406,6 +610,13 @@ int main()
 	//Result ohshit = CSND_initialize(NULL);
 	//CSND_playsound(8, 1, 1/*PCM16*/, 32000, tempshiz, tempshiz, 4096, 2, 0);
 	// TEST END
+	int derpo=0;
+	
+	// TEST CRAP REMOVEME
+	GX_SetMemoryFill(gxCmdBuf, 
+		(u32*)0x1F000000, 0xFF0000FF, (u32*)0x1F300000, 0x201, 
+		(u32*)0x1F300000, 0xFF0000FF, (u32*)0x1F600000, 0x201);
+	gspWaitForPSC0();
 	
 	APP_STATUS status;
 	while((status=aptGetStatus())!=APP_EXITING)
@@ -479,7 +690,7 @@ int main()
 			// PICA200 TEST ZONE
 			
 			GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
-			doFrameBlarg(gpuOut, 400);
+			doFrameBlarg();
 			GPUCMD_Finalize();
 			GPUCMD_Run(gxCmdBuf);
 			
@@ -488,7 +699,36 @@ int main()
 			
 			// wait for the PICA200 to finish drawing
 			gspWaitForP3D();
-			
+			/*if (!derpo)
+			{
+				derpo=1;
+				bprintf("%08X %08X %08X %08X\n", gpuOut[0], gpuOut[1], gpuOut[2], gpuOut[3]);
+				
+				Handle sram;
+				FS_path sramPath;
+				sramPath.type = PATH_CHAR;
+				sramPath.size = 9 + 1;
+				sramPath.data = (u8*)"/vram.bin";
+				
+				Result res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+				if ((res & 0xFFFC03FF) == 0)
+				{
+					u32 byteswritten = 0;
+					u32 offset = 0;
+					
+					while (offset < 0x00600000)
+					{
+						int i;
+						for (i = 0; i < 0x10000; i += 4)
+							*(u32*)&buf[i] = *(u32*)(0x1F000000+offset+i);
+						
+						FSFILE_Write(sram, &byteswritten, offset, buf, 0x10000, 0x10001);
+						offset += 0x10000;
+					}
+					
+					FSFILE_Close(sram);
+				}
+			}*/
 			// transfer the final color buffer to the LCD
 			GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
 			gspWaitForPPF();

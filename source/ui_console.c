@@ -25,7 +25,7 @@
 
 
 #define CONSOLE_MAX 20
-char consolebuf[CONSOLE_MAX][33];
+char consolebuf[CONSOLE_MAX][33] = {{0}};
 int consoleidx = 0;
 int consoledirty = 0;
 
@@ -108,13 +108,13 @@ void DrawConsole()
 
 void Console_Init()
 {
-	int i;
+	/*int i;
 	
 	for (i = 0; i < CONSOLE_MAX; i++)
 		consolebuf[i][0] = '\0';
 	
 	consoleidx = 0;
-	consoledirty = 2;
+	consoledirty = 2;*/
 }
 
 void Console_DeInit()

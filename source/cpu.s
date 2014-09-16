@@ -670,7 +670,7 @@ newline:
 			strh snesCycles, [r0]
 			ldrh r0, [r0]
 			cmp r0, #0xE0
-			bgt emuloop
+			bge emuloop
 			SafeCall PPU_RenderScanline
 			
 emuloop:
@@ -744,10 +744,10 @@ irq_end:
 				subne snesPC, snesPC, #0x10000
 				
 				@ debug code
-				mov r0, snesPC, lsr #0x10
-				orr r0, r0, snesPBR, lsl #0x10
-				ldr r1, =debugpc
-				str r0, [r1]
+				@mov r0, snesPC, lsr #0x10
+				@orr r0, r0, snesPBR, lsl #0x10
+				@ldr r1, =debugpc
+				@str r0, [r1]
 				@ debug code end
 
 				OpcodePrefetch8

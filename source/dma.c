@@ -106,7 +106,7 @@ void DMA_Enable(u8 flag)
 			{
 				while (bytecount > 1)
 				{
-					PPU_CGRAM[PPU_CGRAMAddr >> 1] = SNES_Read16(membank|memaddr);
+					PPU_SetColor(PPU_CGRAMAddr >> 1, SNES_Read16(membank|memaddr));
 					memaddr += maddrinc<<1;
 					bytecount -= 2;
 					PPU_CGRAMAddr += 2;

@@ -30,8 +30,12 @@ extern u16 PPU_OAMAddr;
 
 extern u16 PPU_VCount;
 
+extern u8 PPU_ColorMath;
+
 void PPU_Init();
 void PPU_Reset();
+
+void PPU_SetColor(u32 num, u16 val);
 
 u8 PPU_Read8(u32 addr);
 u16 PPU_Read16(u32 addr);
