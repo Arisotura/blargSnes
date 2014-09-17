@@ -463,7 +463,7 @@ void doFrameBlarg()
 
 
 Handle spcthread;
-u8* spcthreadstack;
+u8 spcthreadstack[0x400] __attribute__((aligned(8)));
 
 bool StartROM(char* path)
 {
@@ -570,7 +570,6 @@ int main()
 	
 	UI_Switch(&UI_ROMMenu);
 	
-	spcthreadstack = MemAlloc(0x400); // should be good enough for a stack
 	svcCreateEvent(&SPCSync, 0);
 
 	
@@ -670,10 +669,11 @@ int main()
 			aptWaitStatusEvent();
 		}
 	}
+	
 	exitemu = 1;
+	svcWaitSynchronization(spcthread, U64_MAX);
 	
 	MemFree(gpuCmd, gpuCmdSize*4);
-	MemFree(spcthreadstack, 0x400);
 
 	fsExit();
 	hidExit();
