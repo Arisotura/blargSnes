@@ -105,30 +105,6 @@ void dbgcolor(u32 col)
 
 
 
-extern Handle aptuHandle;
-
-Result APT_EnableSyscoreUsage(u32 max_percent)
-{
-	aptOpenSession();
-	
-	u32* cmdbuf=getThreadCommandBuffer();
-	cmdbuf[0]=0x4F0080; //request header code
-	cmdbuf[1]=1;
-	cmdbuf[2]=max_percent;
-	
-	Result ret=0;
-	if((ret=svcSendSyncRequest(aptuHandle)))
-	{
-		aptCloseSession();
-		return ret;
-	}
-
-	aptCloseSession();
-	return cmdbuf[1];
-}
-
-
-
 float projMatrix[16] = 
 {
 	2.0f/240.0f, 0, 0, -1,
@@ -393,28 +369,19 @@ void doFrameBlarg()
 	// Sub.Alpha = 128/255 depending on color div2
 	// note: the main/sub intensities are halved to prevent overflow during the operations.
 	// (each TEV stage output is clamped to [0,255])
-	// last stage makes up for this
+	// stage 4 makes up for this
 	// ---
-	// STAGE 1: Out.Color = whatever, Out.Alpha = Main.Alpha
+	// STAGE 1: Out.Color = Sub.Color * Main.Alpha, Out.Alpha = Sub.Alpha + (1-Main.Alpha) (cancel out div2 when color math doesn't happen)
 	GPU_SetTexEnv(0, 
-		GPU_TEVSOURCES(GPU_CONSTANT, 0, 0), 
-		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_REPLACE, 
-		GPU_REPLACE, 
-		0xFFFFFFFF);
-	// STAGE 2: Out.Color = Sub.Color * Prev.Alpha, Out.Alpha = Sub.Alpha + (1-Main.Alpha) (cancel out div2 when color math doesn't happen)
-	GPU_SetTexEnv(1, 
-		GPU_TEVSOURCES(GPU_TEXTURE1, GPU_PREVIOUS, 0), 
+		GPU_TEVSOURCES(GPU_TEXTURE1, GPU_TEXTURE0, 0), 
 		GPU_TEVSOURCES(GPU_TEXTURE1, GPU_TEXTURE0, 0),
 		GPU_TEVOPERANDS(0,2,0), 
 		GPU_TEVOPERANDS(0,1,0), 
 		GPU_MODULATE, 
 		GPU_ADD, 
 		0xFFFFFFFF);
-	// STAGE 3: Out.Color = Main.Color +- Prev.Color, Out.Alpha = Prev.Alpha
-	GPU_SetTexEnv(2, 
+	// STAGE 2: Out.Color = Main.Color +- Prev.Color, Out.Alpha = Prev.Alpha
+	GPU_SetTexEnv(1, 
 		GPU_TEVSOURCES(GPU_TEXTURE0, GPU_PREVIOUS, 0), 
 		GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0),
 		GPU_TEVOPERANDS(0,0,0), 
@@ -422,8 +389,8 @@ void doFrameBlarg()
 		(PPU_ColorMath & 0x80) ? GPU_SUBTRACT:GPU_ADD, 
 		GPU_REPLACE, 
 		0xFFFFFFFF);
-	// STAGE 4: Out.Color = Prev.Color * Prev.Alpha, Out.Alpha = Prev.Alpha
-	GPU_SetTexEnv(3, 
+	// STAGE 3: Out.Color = Prev.Color * Prev.Alpha, Out.Alpha = Prev.Alpha
+	GPU_SetTexEnv(2, 
 		GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
 		GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0),
 		GPU_TEVOPERANDS(0,2,0), 
@@ -431,8 +398,8 @@ void doFrameBlarg()
 		GPU_MODULATE, 
 		GPU_REPLACE, 
 		0xFFFFFFFF);
-	// STAGE 5: Out.Color = Prev.Color + Prev.Color (doubling color intensity), Out.Alpha = Const.Alpha
-	GPU_SetTexEnv(4, 
+	// STAGE 4: Out.Color = Prev.Color + Prev.Color (doubling color intensity), Out.Alpha = Const.Alpha
+	GPU_SetTexEnv(3, 
 		GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
 		GPU_TEVSOURCES(GPU_CONSTANT, 0, 0),
 		GPU_TEVOPERANDS(0,0,0), 
@@ -440,6 +407,16 @@ void doFrameBlarg()
 		GPU_ADD, 
 		GPU_REPLACE, 
 		0xFFFFFFFF);
+	// STAGE 5: master brightness - Out.Color = Prev.Color * Bright.Alpha, Out.Alpha = Const.Alpha
+	/*GPU_SetTexEnv(4, 
+		GPU_TEVSOURCES(GPU_PREVIOUS, GPU_TEXTURE2, 0), 
+		GPU_TEVSOURCES(GPU_CONSTANT, 0, 0),
+		GPU_TEVOPERANDS(0,2,0), 
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_MODULATE, 
+		GPU_REPLACE, 
+		0xFFFFFFFF);*/
+	GPU_SetDummyTexEnv(4);
 	// STAGE 6: dummy
 	GPU_SetDummyTexEnv(5);
 	
@@ -542,7 +519,9 @@ int main()
 	srvInit();
 		
 	aptInit();
-	APT_EnableSyscoreUsage(30);
+	aptOpenSession();
+	APT_SetAppCpuTimeLimit(NULL, 30);
+	aptCloseSession();
 
 	gfxInit();
 	hidInit(NULL);
@@ -593,30 +572,7 @@ int main()
 	
 	spcthreadstack = MemAlloc(0x400); // should be good enough for a stack
 	svcCreateEvent(&SPCSync, 0);
-	
-	// TEST
-	/*s16* tempshiz = MemAlloc(2048*2);
-	for (i = 0; i < 2048; i += 8)
-	{
-		tempshiz[i+0] = 32767;
-		tempshiz[i+1] = 32767;
-		tempshiz[i+2] = 32767;
-		tempshiz[i+3] = 32767;
-		tempshiz[i+4] = -32768;
-		tempshiz[i+5] = -32768;
-		tempshiz[i+6] = -32768;
-		tempshiz[i+7] = -32768;
-	}*/
-	//Result ohshit = CSND_initialize(NULL);
-	//CSND_playsound(8, 1, 1/*PCM16*/, 32000, tempshiz, tempshiz, 4096, 2, 0);
-	// TEST END
-	int derpo=0;
-	
-	// TEST CRAP REMOVEME
-	GX_SetMemoryFill(gxCmdBuf, 
-		(u32*)0x1F000000, 0xFF0000FF, (u32*)0x1F300000, 0x201, 
-		(u32*)0x1F300000, 0xFF0000FF, (u32*)0x1F600000, 0x201);
-	gspWaitForPSC0();
+
 	
 	APP_STATUS status;
 	while((status=aptGetStatus())!=APP_EXITING)
@@ -641,9 +597,6 @@ int main()
 				framecount++;
 				if (!(framecount & 7))
 					SNES_SaveSRAM();
-					
-				UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
-				UI_Render();
 			}
 			else
 			{
@@ -682,12 +635,10 @@ int main()
 							repeatstate = 2;
 					}
 				}
-				
-				UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
-				UI_Render();
 			}
-
-			// PICA200 TEST ZONE
+			
+			UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
+			UI_Render();
 			
 			GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
 			doFrameBlarg();
@@ -699,36 +650,7 @@ int main()
 			
 			// wait for the PICA200 to finish drawing
 			gspWaitForP3D();
-			/*if (!derpo)
-			{
-				derpo=1;
-				bprintf("%08X %08X %08X %08X\n", gpuOut[0], gpuOut[1], gpuOut[2], gpuOut[3]);
-				
-				Handle sram;
-				FS_path sramPath;
-				sramPath.type = PATH_CHAR;
-				sramPath.size = 9 + 1;
-				sramPath.data = (u8*)"/vram.bin";
-				
-				Result res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
-				if ((res & 0xFFFC03FF) == 0)
-				{
-					u32 byteswritten = 0;
-					u32 offset = 0;
-					
-					while (offset < 0x00600000)
-					{
-						int i;
-						for (i = 0; i < 0x10000; i += 4)
-							*(u32*)&buf[i] = *(u32*)(0x1F000000+offset+i);
-						
-						FSFILE_Write(sram, &byteswritten, offset, buf, 0x10000, 0x10001);
-						offset += 0x10000;
-					}
-					
-					FSFILE_Close(sram);
-				}
-			}*/
+
 			// transfer the final color buffer to the LCD
 			GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
 			gspWaitForPPF();
@@ -739,21 +661,23 @@ int main()
 			gspWaitForEvent(GSPEVENT_VBlank0, false);
 			gfxSwapBuffersGpu();
 		}
-		/*else if(status == APP_SUSPENDING)
+		else if(status == APP_SUSPENDING)
 		{
 			aptReturnToMenu();
 		}
 		else if(status == APP_SLEEPMODE)
 		{
 			aptWaitStatusEvent();
-		}*/
+		}
 	}
+	exitemu = 1;
 	
 	MemFree(gpuCmd, gpuCmdSize*4);
 	MemFree(spcthreadstack, 0x400);
 
 	fsExit();
 	hidExit();
+	gfxExit();
 	aptExit();
 	svcExitProcess();
 
