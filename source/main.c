@@ -56,18 +56,6 @@ int exitemu = 0;
 
 
 
-// dirty way to get a 16-byte aligned pointer in the linear heap
-// will not work if we want to free that memory
-// PICA200 wants its vertex buffers to be aligned to a 16-byte boundary, linearAlloc() provides 8-byte granularity
-void* linearAllocAligned(u32 size)
-{
-	u32 ret = (u32)linearAlloc(size + 16);
-	ret = (ret + 15) & ~15;
-	return (void*)ret;
-}
-
-
-
 Handle SPCSync;
 
 void SPCThread(u32 blarg)
@@ -433,36 +421,11 @@ void doFrameBlarg()
 	
 	// subscreen
 	myGPU_DrawArray(GPU_TRIANGLES, 2*3);
-	return;
-	// change alphablending.
-	// there are probably unneeded commands in there. TODO: investigate. Picky200 likes to freeze if there aren't enough commands.
-	u32 blend = 0x11110000;//(PPU_ColorMath & 0x80) ? 0x11180202 : 0x11180000;
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00);
-	GPU_SetDepthTest(false, GPU_ALWAYS, 0x1F);
-	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0100, 0x00E40100);
-	GPUCMD_AddSingleParam(0x000F0101, blend);
-	GPUCMD_AddSingleParam(0x000F0104, 0x00000010);
-	
-	//texturing stuff
-	GPUCMD_AddSingleParam(0x0002006F, 0x00000100);
-	GPUCMD_AddSingleParam(0x000F0080, 0x00011001); //enables/disables texturing
-	//texenv
-	GPU_SetTexEnv(3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00000000);
-	GPU_SetTexEnv(4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00000000);
-	GPU_SetTexEnv(5, GPU_TEVSOURCES(GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR), GPU_TEVSOURCES(GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR),
-	GPU_TEVOPERANDS(0,0,0), GPU_TEVOPERANDS(0,0,0), GPU_MODULATE, GPU_MODULATE, 0xFFFFFFFF);
-	
-	GPU_SetTexture((u32*)osConvertVirtToPhys((u32)SubScreenTex),256,256,0x6,GPU_RGBA8);
-	myGPU_DrawArray(GPU_TRIANGLES, 2*3);
 }
 
 
 
-Handle spcthread;
+Handle spcthread = NULL;
 u8 spcthreadstack[0x400] __attribute__((aligned(8)));
 
 bool StartROM(char* path)
@@ -488,6 +451,7 @@ bool StartROM(char* path)
 	if (res)
 	{
 		bprintf("Failed to create SPC700 thread:\n -> %08X\n", res);
+		spcthread = NULL;
 	}
 	
 	bprintf("ROM loaded, running...\n");
@@ -495,7 +459,6 @@ bool StartROM(char* path)
 	CPU_Reset();
 	return true;
 }
-//u8 buf[0x10000];
 
 
 int main() 
@@ -529,7 +492,7 @@ int main()
 	
 	GPU_Init(NULL);
 	u32 gpuCmdSize = 0x40000;
-	u32* gpuCmd = (u32*)MemAlloc(gpuCmdSize*4);
+	u32* gpuCmd = (u32*)linearAlloc(gpuCmdSize*4);
 	GPU_Reset(gxCmdBuf, gpuCmd, gpuCmdSize);
 	
 	shader = SHDR_ParseSHBIN((u32*)blarg_shbin, blarg_shbin_size);
@@ -555,8 +518,8 @@ int main()
 	MainScreenTex = (u32*)linearAlloc(256*256*4);
 	SubScreenTex = (u32*)linearAlloc(256*256*4);
 	
-	borderVertices = (float*)linearAllocAligned(5*3 * 2 * sizeof(float));
-	screenVertices = (float*)linearAllocAligned(5*3 * 2 * sizeof(float));
+	borderVertices = (float*)linearAlloc(5*3 * 2 * sizeof(float));
+	screenVertices = (float*)linearAlloc(5*3 * 2 * sizeof(float));
 	
 	float* fptr = &vertexList[0];
 	for (i = 0; i < 5*3*2; i++) borderVertices[i] = *fptr++;
@@ -664,16 +627,19 @@ int main()
 		{
 			aptReturnToMenu();
 		}
-		else if(status == APP_SLEEPMODE)
+		else if(status == APP_PREPARE_SLEEPMODE)
 		{
+			//gspWaitForVBlank();g  
+			aptSignalReadyForSleep();
 			aptWaitStatusEvent();
+			//gspWaitForVBlank();
 		}
 	}
-	
+	 
 	exitemu = 1;
-	svcWaitSynchronization(spcthread, U64_MAX);
+	if (spcthread) svcWaitSynchronization(spcthread, U64_MAX);
 	
-	MemFree(gpuCmd, gpuCmdSize*4);
+	linearFree(gpuCmd);
 
 	fsExit();
 	hidExit();
