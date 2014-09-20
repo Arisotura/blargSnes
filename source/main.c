@@ -29,7 +29,8 @@
 #include "ppu.h"
 #include "snes.h"
 
-#include "logo.h"
+#include "defaultborder.h"
+#include "screenfill.h"
 #include "blarg_shbin.h"
 
 
@@ -112,13 +113,13 @@ float mvMatrix[16] =
 float vertexList[] = 
 {
 	// border
-	0.0, 0.0, 0.9,      1.0, 0.125,
-	240.0, 0.0, 0.9,    1.0, 1.0,
+	0.0, 0.0, 0.9,      0.78125, 0.0625,
+	240.0, 0.0, 0.9,    0.78125, 1.0,
 	240.0, 400.0, 0.9,  0, 1.0,
 	
-	0.0, 0.0, 0.9,      1.0, 0.125,
+	0.0, 0.0, 0.9,      0.78125, 0.0625,
 	240.0, 400.0, 0.9,  0, 1.0,
-	0.0, 400.0, 0.9,    0, 0.125,
+	0.0, 400.0, 0.9,    0, 0.0625,
 	
 	// screen
 	8.0, 72.0, 0.5,      1.0, 0.125,
@@ -319,7 +320,7 @@ void doFrameBlarg()
 	GPU_SetDummyTexEnv(4);
 	GPU_SetDummyTexEnv(5);
 	//texturing stuff
-	GPU_SetTexture((u32*)osConvertVirtToPhys((u32)BorderTex),512,256,0x6,GPU_RGBA8);
+	GPU_SetTexture((u32*)osConvertVirtToPhys((u32)BorderTex),256,512,0x6,GPU_RGBA8); // texture is actually 512x256
 	
 	//setup matrices
 	setUniformMatrix(0x24, mvMatrix);
@@ -425,6 +426,107 @@ void doFrameBlarg()
 
 
 
+void CopyBitmapToTexture(u8* src, u32* dst, u32 width, u32 height, u32 alpha, u32 stride)
+{
+	int x, y;
+	for (y = height-1; y >= 0; y--)
+	{
+		for (x = 0; x < width; x++)
+		{
+			u8 b = *src++;
+			u8 g = *src++;
+			u8 r = *src++;
+			
+			int di;
+			di  = x & 0x1;
+			di += (y & 0x1) << 1;
+			di += (x & 0x2) << 1;
+			di += (y & 0x2) << 2;
+			di += (x & 0x4) << 2;
+			di += (y & 0x4) << 3;
+			di += (x & 0x1F8) << 3;
+			di += ((y & 0xF8) << 3) * stride;
+			
+			dst[di] = alpha | (b << 8) | (g << 16) | (r << 24);
+		}
+	}
+}
+
+bool LoadBitmap(char* path, u32 width, u32 height, u32* dst, u32 alpha, u32 stride)
+{
+	Handle file;
+	FS_path filePath;
+	filePath.type = PATH_CHAR;
+	filePath.size = strlen(path) + 1;
+	filePath.data = (u8*)path;
+	
+	Result res = FSUSER_OpenFile(NULL, &file, sdmcArchive, filePath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
+	if (res) 
+		return false;
+		
+	u32 bytesread;
+	u32 temp;
+	
+	// magic
+	FSFILE_Read(file, &bytesread, 0, (u32*)&temp, 2);
+	if ((u16)temp != 0x4D42)
+	{
+		FSFILE_Close(file);
+		return false;
+	}
+	
+	// width
+	FSFILE_Read(file, &bytesread, 0x12, (u32*)&temp, 4);
+	if (temp != width)
+	{
+		FSFILE_Close(file);
+		return false;
+	}
+	
+	// height
+	FSFILE_Read(file, &bytesread, 0x16, (u32*)&temp, 4);
+	if (temp != height)
+	{
+		FSFILE_Close(file);
+		return false;
+	}
+	
+	// bitplanes
+	FSFILE_Read(file, &bytesread, 0x1A, (u32*)&temp, 2);
+	if ((u16)temp != 1)
+	{
+		FSFILE_Close(file);
+		return false;
+	}
+	
+	// bit depth
+	FSFILE_Read(file, &bytesread, 0x1C, (u32*)&temp, 2);
+	if ((u16)temp != 24)
+	{
+		FSFILE_Close(file);
+		return false;
+	}
+	
+	
+	u32 bufsize = width*height*3;
+	u8* buf = (u8*)MemAlloc(bufsize);
+	
+	FSFILE_Read(file, &bytesread, 0x36, buf, bufsize);
+	FSFILE_Close(file);
+	
+	CopyBitmapToTexture(buf, dst, width, height, alpha, stride);
+	
+	MemFree(buf, 0);
+	return true;
+}
+
+bool LoadBorder(char* path)
+{
+	return LoadBitmap(path, 400, 240, BorderTex, 0xFF, 64);
+}
+
+
+
 Handle spcthread = NULL;
 u8 spcthreadstack[0x400] __attribute__((aligned(8)));
 
@@ -458,6 +560,25 @@ bool StartROM(char* path)
 
 	CPU_Reset();
 	return true;
+}
+
+
+
+void dbg_save(char* path, void* buf, int size)
+{
+	Handle sram;
+	FS_path sramPath;
+	sramPath.type = PATH_CHAR;
+	sramPath.size = strlen(path) + 1;
+	sramPath.data = (u8*)path;
+	
+	Result res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+	if ((res & 0xFFFC03FF) == 0)
+	{
+		u32 byteswritten = 0;
+		FSFILE_Write(sram, &byteswritten, 0, (u32*)buf, size, 0x10001);
+		FSFILE_Close(sram);
+	}
 }
 
 
@@ -502,19 +623,7 @@ int main()
 	
 	UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
 	
-	// TODO load BorderTex from something
-	// either internal hardcoded bitmap or external .bmp
 	BorderTex = (u32*)linearAlloc(512*256*4);
-	for (y = 0; y < 256; y++)
-	{
-		for (x = 0; x < 512; x++)
-		{
-			//int idx = (x*240) + (239-y);
-			//((u16*)TopFB)[idx] = logo[(y*400)+x];
-			BorderTex[x+(y*512)] = 0x0000FF80;
-		}
-	}
-	
 	MainScreenTex = (u32*)linearAlloc(256*256*4);
 	SubScreenTex = (u32*)linearAlloc(256*256*4);
 	
@@ -531,9 +640,53 @@ int main()
 	sdmcArchive = (FS_archive){0x9, (FS_path){PATH_EMPTY, 1, (u8*)""}};
 	FSUSER_OpenArchive(NULL, &sdmcArchive);
 	
+	if (!LoadBorder("/blargSnesBorder.bmp"))
+		CopyBitmapToTexture(defaultborder, BorderTex, 400, 240, 0xFF, 64);
+		
+	CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 32);
+	memset(SubScreenTex, 0, 256*256*4);
+	
 	UI_Switch(&UI_ROMMenu);
 	
 	svcCreateEvent(&SPCSync, 0);
+	
+	//int gg = 0;
+	//for (gg = 0x1000; gg < 0x1001; gg++)
+	/*u32 blargie=0;
+	if (0)
+	{
+		u32 flag = 0;
+
+		for (y = 0; y < 256; y++)
+		{
+			for (x = 0; x < 512; x++)
+			{
+				int idx = x+(y*512);
+
+				if (x < 4)
+				//if (y>=248)
+					derpo[idx] = (y&4) ? 0x00FF00FF : 0xFF0000FF;
+				else if (x >= 400-4)
+					derpo[idx] = 0xFF00FFFF;
+				else
+					derpo[idx] = 0x0000FFFF | (y << 16); // blue/cyan
+				
+				//derpo[idx] = flag;
+				//flag++;
+			}
+		}
+
+		GSPGPU_FlushDataCache(NULL, derpo, 512*256*4);
+		//GX_SetTextureCopy(gxCmdBuf, derpo, 0x01000200, BorderTex, 0x01000200, 512*256, 6); // bit12-15 = destination format?
+		GX_SetDisplayTransfer(gxCmdBuf, derpo, 0x01000200, BorderTex, 0x01000200, 0x2);
+		gspWaitForVBlank();
+		gspWaitForVBlank();
+		
+		/*char path[256];
+		sprintf(path, "/texcopy%04X.bin", gg);
+		dbg_save(path, BorderTex, 512*256*4);*-/
+		dbg_save("/derpcrapo.bin", BorderTex, 512*256*4);
+	}*/
 
 	
 	APP_STATUS status;
