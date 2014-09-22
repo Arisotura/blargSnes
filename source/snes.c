@@ -33,7 +33,6 @@ bool SNES_HiROM;
 u8 SNES_SysRAM[0x20000] __attribute__((aligned(256)));
 u32 SNES_SRAMMask;
 u8* SNES_SRAM = NULL;
-u32 SNES_OldSRAMSize;
 
 char SNES_SRAMPath[300];
 extern FS_archive sdmcArchive;
@@ -140,7 +139,7 @@ void SNES_Reset()
 
 	if (SNES_SRAM) 
 	{
-		MemFree(SNES_SRAM, SNES_OldSRAMSize);
+		MemFree(SNES_SRAM);
 		SNES_SRAM = NULL;
 	}
 	if (SNES_SRAMMask)
@@ -148,8 +147,6 @@ void SNES_Reset()
 		SNES_SRAM = (u8*)MemAlloc(SNES_SRAMMask + 1);
 		for (i = 0; i <= SNES_SRAMMask; i += 4)
 			*(u32*)&SNES_SRAM[i] = 0;
-			
-		SNES_OldSRAMSize = SNES_SRAMMask + 1;
 		
 		Handle sram;
 		FS_path sramPath;

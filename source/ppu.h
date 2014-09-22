@@ -19,6 +19,10 @@
 #ifndef PPU_H
 #define PPU_H
 
+extern u32* PPU_MainBuffer;
+extern u32* PPU_SubBuffer;
+extern u8 PPU_Brightness[224];
+
 extern u16 PPU_CGRAM[256];
 extern u8 PPU_VRAM[0x10000];
 extern u8 PPU_OAM[0x220];
@@ -34,6 +38,7 @@ extern u8 PPU_ColorMath;
 
 void PPU_Init();
 void PPU_Reset();
+void PPU_DeInit();
 
 void PPU_SetColor(u32 num, u16 val);
 

@@ -152,7 +152,7 @@ void ROMMenu_Init()
 
 void ROMMenu_DeInit()
 {
-	MemFree(filelist, 0x106*nfiles);
+	MemFree(filelist);
 }
 
 void ROMMenu_Render()
