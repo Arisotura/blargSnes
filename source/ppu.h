@@ -19,6 +19,8 @@
 #ifndef PPU_H
 #define PPU_H
 
+extern bool SkipThisFrame;
+
 extern u32* PPU_MainBuffer;
 extern u32* PPU_SubBuffer;
 extern u8 PPU_Brightness[224];
@@ -29,7 +31,8 @@ extern u8 PPU_OAM[0x220];
 
 extern u16 PPU_CGRAMAddr;
 extern u16 PPU_VRAMAddr;
-extern u8 PPU_VRAMStep, PPU_VRAMInc;
+extern u16 PPU_VRAMStep;
+extern u8 PPU_VRAMInc;
 extern u16 PPU_OAMAddr;
 
 extern u16 PPU_VCount;
@@ -47,7 +50,10 @@ u16 PPU_Read16(u32 addr);
 void PPU_Write8(u32 addr, u8 val);
 void PPU_Write16(u32 addr, u16 val);
 
-void PPU_RenderScanline(u16 line);
+void PPU_RenderScanline(u32 line);
 void PPU_VBlank();
+
+void RenderPipeline();
+void RenderPipelineVBlank();
 
 #endif

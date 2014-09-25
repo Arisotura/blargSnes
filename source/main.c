@@ -60,6 +60,13 @@ int pause = 0;
 int exitemu = 0;
 u32 framecount = 0;
 
+int RenderState = 0;
+int FramesSkipped = 0;
+bool SkipThisFrame = false;
+
+// hax
+extern Handle gspEvents[GSPEVENT_MAX];
+
 
 Handle SPCSync;
 
@@ -450,6 +457,10 @@ bool StartROM(char* path)
 	running = 1;
 	framecount = 0;
 	
+	RenderState = 0;
+	FramesSkipped = 0;
+	SkipThisFrame = false;
+	
 	CPU_Reset();
 	
 	SPC_Reset();
@@ -487,6 +498,103 @@ void dbg_save(char* path, void* buf, int size)
 }
 
 
+bool PeekEvent(Handle evt)
+{
+	// do a wait that returns immediately.
+	// if we get a timeout error code, the event didn't occur
+	Result res = svcWaitSynchronization(evt, 0);
+	if (!res)
+	{
+		svcClearEvent(evt);
+		return true;
+	}
+	
+	return false;
+}
+
+void RenderPipeline()
+{
+	// PICA200 rendering.
+	// doing all this on a separate thread would normally work better,
+	// but the 3DS threads don't like to cooperate. Oh well.
+	
+	if (RenderState != 0) return;
+	
+	// check if rendering finished
+	if (PeekEvent(gspEvents[GSPEVENT_P3D]))
+	{
+		// in that case, send the color buffer to the LCD
+		GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
+		RenderState = 1;
+	}
+}
+
+void RenderPipelineVBlank()
+{
+	// SNES VBlank. Copy the freshly rendered framebuffers.
+	
+	// in case we arrived here too early
+	if (RenderState != 1)
+	{
+		gspWaitForP3D();
+		GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
+	}
+	
+	// wait for the previous copy to be done, just in case
+	gspWaitForPPF();
+	
+	// copy new screen textures
+	// SetDisplayTransfer with flags=2 converts linear graphics to the tiled format used for textures
+	// since the two sets of buffers are contiguous, we can transfer them as one 512x512 texture
+	GX_SetDisplayTransfer(gxCmdBuf, PPU_MainBuffer, 0x02000200, MainScreenTex, 0x02000200, 0x2);
+	
+	// copy brightness.
+	// TODO do better
+	// although I don't think SetDisplayTransfer is fitted to handle alpha textures
+	int i;
+	u8* bptr = BrightnessTex;
+	for (i = 0; i < 224;)
+	{
+		u32 pixels = *(u32*)&PPU_Brightness[i];
+		i += 4;
+		
+		*bptr = (u8)pixels;
+		pixels >>= 8;
+		bptr += 2;
+		*bptr = (u8)pixels;
+		pixels >>= 8;
+		bptr += 6;
+		
+		*bptr = (u8)pixels;
+		pixels >>= 8;
+		bptr += 2;
+		*bptr = (u8)pixels;
+		pixels >>= 8;
+		bptr += 22;
+	}
+	GSPGPU_FlushDataCache(NULL, BrightnessTex, 8*256);
+}
+
+void VSyncAndFrameskip()
+{
+	if (running && PeekEvent(gspEvents[GSPEVENT_VBlank0]) && FramesSkipped<5)
+	{
+		// we missed the VBlank
+		// skip the next frame to compensate
+		
+		SkipThisFrame = true;
+		FramesSkipped++;
+	}
+	else
+	{
+		SkipThisFrame = false;
+		FramesSkipped = 0;
+		
+		gspWaitForVBlank();
+	}
+}
+
+
 int main() 
 {
 	int i, x, y;
@@ -499,7 +607,6 @@ int main()
 	running = 0;
 	pause = 0;
 	exitemu = 0;
-	
 	
 		
 	PPU_Init();
@@ -529,8 +636,8 @@ int main()
 	UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
 	
 	BorderTex = (u32*)linearAlloc(512*256*4);
-	MainScreenTex = (u32*)linearAlloc(512*256*4);
-	SubScreenTex = (u32*)linearAlloc(512*256*4);
+	MainScreenTex = (u32*)linearAlloc(512*512*4);
+	SubScreenTex = &MainScreenTex[512*256];
 	BrightnessTex = (u8*)linearAlloc(8*256);
 	
 	borderVertices = (float*)linearAlloc(5*3 * 2 * sizeof(float));
@@ -547,9 +654,9 @@ int main()
 	if (!LoadBorder("/blargSnesBorder.bmp"))
 		CopyBitmapToTexture(defaultborder, BorderTex, 400, 240, 0xFF, 0, 64, true);
 		
-	CopyBitmapToTexture(screenfill, PPU_MainBuffer, 256, 224, 0, 16, 64, false);
-	memset(PPU_SubBuffer, 0, 256*256*4);
-	memset(PPU_Brightness, 0xFF, 224);
+	CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 16, 64, true);
+	memset(SubScreenTex, 0, 256*256*4);
+	memset(BrightnessTex, 0xFF, 224*8);
 	
 	UI_Switch(&UI_ROMMenu);
 	
@@ -570,13 +677,27 @@ int main()
 			u32 held = hidKeysHeld();
 			u32 release = hidKeysUp();
 			
-			GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
-			RenderTopScreen();
-			GPUCMD_Finalize();
-			GPUCMD_Run(gxCmdBuf);
-			
 			if (running)
 			{
+				if (!SkipThisFrame)
+				{
+					// start PICA200 rendering
+					// we don't have to care about clearing the buffers since we always render a 400x240 border
+					// and don't use depth test
+					
+					RenderState = 0;
+					GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
+					RenderTopScreen();
+					GPUCMD_Finalize();
+					GPUCMD_Run(gxCmdBuf);
+				}
+				else
+				{
+					// when frameskipping, just copy the old frame
+					
+					GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
+				}
+				
 				// emulate
 				
 				CPU_Run(); // runs the SNES for one frame. Handles PPU rendering.
@@ -590,6 +711,11 @@ int main()
 			else
 			{
 				// update UI
+				
+				GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
+				RenderTopScreen();
+				GPUCMD_Finalize();
+				GPUCMD_Run(gxCmdBuf);
 				
 				if (held & KEY_TOUCH)
 				{
@@ -612,7 +738,7 @@ int main()
 					repeatstate = 1;
 					repeatcount = 15;
 				}
-				else if (held == repeatkeys)
+				else if (held && held == repeatkeys)
 				{
 					repeatcount--;
 					if (!repeatcount)
@@ -624,62 +750,21 @@ int main()
 							repeatstate = 2;
 					}
 				}
+				
+				gspWaitForP3D();
+				GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
 			}
 			
 			UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
 			UI_Render();
-			
-			/*GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
-			RenderTopScreen();
-			GPUCMD_Finalize();
-			GPUCMD_Run(gxCmdBuf);*/
-			
-			// flush the bottomscreen cache while the PICA200 is busy rendering
 			GSPGPU_FlushDataCache(NULL, gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL), 0x38400);
 			
-			// wait for the PICA200 to finish drawing
-			gspWaitForP3D();
-			
-			// copy new screen textures
-			// SetDisplayTransfer with flags=2 converts linear graphics to the tiled format used for textures
-			GX_SetDisplayTransfer(gxCmdBuf, PPU_MainBuffer, 0x01000200, MainScreenTex, 0x01000200, 0x2);
-			gspWaitForPPF();
-			GX_SetDisplayTransfer(gxCmdBuf, PPU_SubBuffer, 0x01000200, SubScreenTex, 0x01000200, 0x2);
+			// at this point, we were transferring a framebuffer. Wait for it to be done.
 			gspWaitForPPF();
 			
-			// copy brightness.
-			// TODO do better
-			u8* bptr = BrightnessTex;
-			for (i = 0; i < 224;)
-			{
-				u32 pixels = *(u32*)&PPU_Brightness[i];
-				i += 4;
-				
-				*bptr = (u8)pixels;
-				pixels >>= 8;
-				bptr += 2;
-				*bptr = (u8)pixels;
-				pixels >>= 8;
-				bptr += 6;
-				
-				*bptr = (u8)pixels;
-				pixels >>= 8;
-				bptr += 2;
-				*bptr = (u8)pixels;
-				pixels >>= 8;
-				bptr += 22;
-			}
-			
-			// transfer the final color buffer to the LCD and clear it
-			// we can mostly overlap those two operations
-			GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
-			svcSleepThread(20000);
-			GX_SetMemoryFill(gxCmdBuf, gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
-			gspWaitForPPF();
-			gspWaitForPSC0();
-
-			gspWaitForEvent(GSPEVENT_VBlank0, false);
+			VSyncAndFrameskip();
 			gfxSwapBuffersGpu();
+			//gfxSwapBuffers();
 		}
 		else if(status == APP_SUSPENDING)
 		{
