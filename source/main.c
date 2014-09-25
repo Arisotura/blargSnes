@@ -248,6 +248,7 @@ void RenderTopScreen()
 	GPU_DrawArray(GPU_TRIANGLES, 2*3);
 
 
+	// TODO: there are probably unneeded things in here. Investigate whenever we know the PICA200 better.
 	GPU_DepthRange(-1.0f, 0.0f);
 	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
 	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00);
@@ -260,7 +261,7 @@ void RenderTopScreen()
 	
 	//texturing stuff
 	GPUCMD_AddSingleParam(0x0002006F, 0x00000700); // enables/disables texcoord output
-	GPUCMD_AddSingleParam(0x000F0080, 0x00011007); //enables/disables texturing
+	GPUCMD_AddSingleParam(0x000F0080, 0x00011007); // enables/disables texturing
 	// TEXTURE ENV STAGES
 	// ---
 	// blending operation: (Main.Color +- (Sub.Color * Main.Alpha)) * Sub.Alpha
