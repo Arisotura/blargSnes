@@ -533,6 +533,8 @@ void RenderPipelineVBlank()
 {
 	// SNES VBlank. Copy the freshly rendered framebuffers.
 	
+	GSPGPU_FlushDataCache(NULL, PPU_MainBuffer, 512*512*4);
+	
 	// in case we arrived here too early
 	if (RenderState != 1)
 	{
@@ -755,16 +757,16 @@ int main()
 				GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
 			}
 			
-			UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
+			u8* bottomfb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
+			gfxSwapBuffersGpu();
+			UI_SetFramebuffer(bottomfb);
 			UI_Render();
-			GSPGPU_FlushDataCache(NULL, gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL), 0x38400);
+			GSPGPU_FlushDataCache(NULL, bottomfb, 0x38400);
 			
 			// at this point, we were transferring a framebuffer. Wait for it to be done.
 			gspWaitForPPF();
 			
 			VSyncAndFrameskip();
-			gfxSwapBuffersGpu();
-			//gfxSwapBuffers();
 		}
 		else if(status == APP_SUSPENDING)
 		{
