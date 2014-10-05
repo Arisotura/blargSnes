@@ -24,8 +24,8 @@
 
 typedef struct
 {
-	//u32 NextEventTime;			// -0x14
-	//void (*NextEventFunc)(); 	// -0x10
+	u32 NextEventTime;			// -0x14
+	void (*NextEventFunc)(); 	// -0x10
 	
 	u32 SRAMMask;	// -0xC
 	

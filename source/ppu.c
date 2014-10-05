@@ -160,6 +160,11 @@ u16* PPU_OBJTileset;
 u32 PPU_OBJGap;
 
 
+u16 PPU_OPHCT, PPU_OPVCT;
+u8 PPU_OPHFlag, PPU_OPVFlag;
+u8 PPU_OPLatch;
+
+
 
 void PPU_Init()
 {
@@ -265,6 +270,18 @@ inline void PPU_SetColor(u32 num, u16 val)
 }
 
 
+void PPU_LatchHVCounters()
+{
+	// TODO simulate this one based on CPU cycle counter
+	PPU_OPHCT = 22;
+	
+	PPU_OPVCT = 1 + PPU_VCount;
+	if (PPU_OPVCT > 261) PPU_OPVCT = 0;
+	
+	PPU_OPLatch = 0x40;
+}
+
+
 u8 PPU_Read8(u32 addr)
 {
 	u8 ret = 0;
@@ -274,9 +291,9 @@ u8 PPU_Read8(u32 addr)
 		case 0x35: ret = (PPU_MulResult >> 8) & 0xFF; break;
 		case 0x36: ret = (PPU_MulResult >> 16) & 0xFF; break;
 		
-		/*case 0x37:
+		case 0x37:
 			PPU_LatchHVCounters();
-			break;*/
+			break;
 			
 		case 0x38:
 			if (PPU_OAMAddr >= 0x200)
@@ -308,7 +325,7 @@ u8 PPU_Read8(u32 addr)
 			}
 			break;
 			
-		/*case 0x3C:
+		case 0x3C:
 			if (PPU_OPHFlag)
 			{
 				PPU_OPHFlag = 0;
@@ -331,14 +348,14 @@ u8 PPU_Read8(u32 addr)
 				PPU_OPVFlag = 1;
 				ret = PPU_OPVCT & 0xFF;
 			}
-			break;*/
+			break;
 			
 		case 0x3E: ret = 0x01; break;
 		case 0x3F: 
-			ret = 0x01 | (ROM_Region ? 0x10 : 0x00);// | PPU_OPLatch;
-			/*PPU_OPLatch = 0;
+			ret = 0x01 | (ROM_Region ? 0x10 : 0x00) | PPU_OPLatch;
+			PPU_OPLatch = 0;
 			PPU_OPHFlag = 0;
-			PPU_OPVFlag = 0;*/
+			PPU_OPVFlag = 0;
 			break;
 		
 		case 0x40: ret = SPC_IOPorts[4]; break;
@@ -347,6 +364,9 @@ u8 PPU_Read8(u32 addr)
 		case 0x43: ret = SPC_IOPorts[7]; break;
 		
 		case 0x80: ret = SNES_SysRAM[Mem_WRAMAddr++]; Mem_WRAMAddr &= ~0x20000; break;
+		
+		case 0x3B: bprintf("CGRAM read\n"); break;
+		default: bprintf("Open bus 21%02X\n", addr); break;
 	}
 
 	return ret;
@@ -1528,6 +1548,7 @@ void PPU_RenderScanline(u32 line)
 	if (!(line&7)) RenderPipeline();
 	
 	PPU_Brightness[line] = PPU_CurBrightness;
+	if (!PPU_CurBrightness) return;
 	
 	u8 alpha = (PPU_ColorMath & 0x40) ? 0x80 : 0xFF;
 	

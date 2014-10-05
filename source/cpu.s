@@ -473,25 +473,6 @@ OpTableStart:
 .endm
 
 @ --- Misc. functions ---------------------------------------------------------
-
-@ TODO put that somewhere else (or get rid of it? will we even need it?)
-.global svcCreateTimer
-.global svcSetTimer
-.global svcClearTimer
-
-svcCreateTimer:
-	sub sp, sp, #4
-	str r0, [sp]
-	svc #0x1A
-	ldr r2, [sp], #4
-	str r1, [r2]
-	bx lr
-svcSetTimer:
-	svc #0x1B
-	bx lr
-svcClearTimer:
-	svc #0x1B
-	bx lr
 	
 .global CPU_Reset
 .global CPU_Run
@@ -645,8 +626,93 @@ CPU_Cycles:
 debugpc:
 	.long 0
 	
+CPU_TimeInFrame:
+	.long 0
+	
 .section    .text, "awx", %progbits
 
+
+.global getprio
+getprio:
+	svc #0xB
+	bx lr
+
+CPU_Schedule:
+	@stmdb r12
+	
+	ldr r3, =CPU_TimeInFrame
+	ldr r0, [r3]
+	ldr r1, [memoryMap, #-0x14]
+	add r0, r0, r1
+	str r0, [r3]
+	
+	@ r0 = total time within frame
+	@ r1 = current scanline
+	@ r2 = current scanline * scanline time
+	@ r3 = time within scanline
+	@ r4 = time to current event
+	@ r5 = funcptr of current event
+	@ r12 = temp
+	
+	ldr r1, =PPU_VCount
+	ldrh r1, [r1]
+	
+	ldr r12, =1324			@ minus 40 refresh cycles. TODO: checkme
+	mul r2, r1, r12
+	sub r3, r0, r2
+	
+	@ check the most probable events first
+	
+	ldrb r3, [memoryMap, #-0x5] @ HVBFlags
+	tst r3, #0x40
+	bne sched_inside_hblank
+		@ outside of HBlank
+		rsb r4, r3, #1024
+		add r4, r4, r2
+		@ldr r5, =CPU_Event_HBlankStart
+		
+		b sched_hbl_end
+	sched_inside_hblank:
+		@ inside of HBlank
+		rsb r4, r3, r12
+		add r4, r4, r2
+		@ldr r5, =CPU_Event_HBlankEnd
+		
+	sched_hbl_end:
+	
+	
+	
+	@ldmia
+
+
+_CPU_Run:
+	stmdb sp!, {r4-r11, lr}
+	LoadRegs
+
+	ldr r3, =CPU_TimeInFrame
+	@ldr r0, =357368 @ TODO: PAL timing
+	mov r0, #0
+	str r0, [r3]
+	str r0, [memoryMap, #-0x14]
+	bl CPU_Schedule
+runloop:
+	OpcodePrefetch8
+	ldr pc, [opTable, r0, lsl #0x2]
+	
+	_op_return:
+	cmp snesCycles, #0
+	bgt runloop
+	
+	@ -- execute event
+	@ -- check if end of frame
+	bl CPU_Schedule
+	b runloop
+
+frameend:
+	StoreRegs
+	ldmia sp!, {r4-r11, pc}
+	
+	
 	
 CPU_Run:
 	stmdb sp!, {r4-r11, lr}
@@ -655,6 +721,11 @@ CPU_Run:
 frameloop:
 		ldr r0, =0x05540000
 		add snesCycles, snesCycles, r0
+		
+		@ldr r0, =SPCSync
+		@ldr r0, [r0]
+		@SafeCall svcSignalEvent
+		
 		mov r0, #0
 		ldr r1, =PPU_VCount
 		strh r0, [r1]
@@ -665,6 +736,10 @@ frameloop:
 newline:
 			ldr r0, =0x05540001
 			add snesCycles, snesCycles, r0
+			
+			@ldr r0, =SPCSync
+			@ldr r0, [r0]
+			@SafeCall svcSignalEvent
 			
 			ldr r0, =PPU_VCount
 			strh snesCycles, [r0]
@@ -749,6 +824,16 @@ irq_end:
 				@ldr r1, =debugpc
 				@str r0, [r1]
 				@ debug code end
+				
+				@ldr r0, =(PPU_VRAM+(0x5C32<<1))
+				@ldr r1, =0x288B
+				@ldrh r0, [r0]
+				@cmp r0, r1
+				@bne bouboule
+				@mov r0, snesPC, lsr #0x10
+				@orr r0, r0, snesPBR, lsl #0x10
+				@SafeCall reportshit
+				@bouboule:
 
 				OpcodePrefetch8
 				ldr pc, [opTable, r0, lsl #0x2]

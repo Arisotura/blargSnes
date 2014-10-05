@@ -309,6 +309,7 @@ SPC_Run:
 	
 	ldr r12, =itercount
 	ldr r4, =17447			@ ~ SPC cycles per frame
+	@mov r4, #65
 	ldr r3, [r12]
 	add r3, r3, r4
 	str r3, [r12]

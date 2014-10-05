@@ -34,11 +34,6 @@
 #include "blarg_shbin.h"
 
 
-Result svcCreateTimer(Handle* timer, int resettype);
-Result svcSetTimer(Handle timer, s64 initial, s64 interval);
-Result svcClearTimer(Handle timer);
-
-
 extern u32* gxCmdBuf;
 u32* gpuOut = (u32*)0x1F119400;
 u32* gpuDOut = (u32*)0x1F370800;
@@ -65,19 +60,30 @@ int FramesSkipped = 0;
 bool SkipThisFrame = false;
 
 // hax
+extern Handle gspEventThread;
 extern Handle gspEvents[GSPEVENT_MAX];
+
+
+Result svcSetThreadPriority(Handle thread, s32 prio)
+{
+	asm("svc 0xC");
+}
 
 
 Handle SPCSync;
 
 void SPCThread(u32 blarg)
 {
+	// 65 cycles per scanline (65.13994910941475826972010178117)
+	// -> 31931 Hz (31931.25)
 	while (!exitemu)
 	{
 		if (!pause)
 			SPC_Run();
 		
 		svcWaitSynchronization(SPCSync, (s64)(17*1000*1000));
+		//svcWaitSynchronization(SPCSync, (s64)63613);
+		svcClearEvent(SPCSync);
 	}
 	
 	svcExitThread();
@@ -467,7 +473,7 @@ bool StartROM(char* path)
 	SPC_Reset();
 
 	// SPC700 thread (running on syscore)
-	res = svcCreateThread(&spcthread, SPCThread, 0, (u32*)(spcthreadstack+0x400), 0x3F, 1);
+	res = svcCreateThread(&spcthread, SPCThread, 0, (u32*)(spcthreadstack+0x400), 0x30, 1);
 	if (res)
 	{
 		bprintf("Failed to create SPC700 thread:\n -> %08X\n", res);
@@ -496,6 +502,14 @@ void dbg_save(char* path, void* buf, int size)
 		FSFILE_Write(sram, &byteswritten, 0, (u32*)buf, size, 0x10001);
 		FSFILE_Close(sram);
 	}
+}
+
+int reported=0;
+void reportshit(u32 pc)
+{
+	if (reported) return;
+	reported = 1;
+	bprintf("-- %06X\n", pc);
 }
 
 
@@ -577,7 +591,8 @@ void RenderPipelineVBlank()
 	}
 	GSPGPU_FlushDataCache(NULL, BrightnessTex, 8*256);
 }
-
+u64 lastvbl = 0;
+s32 vbltimes[16];
 void VSyncAndFrameskip()
 {
 	if (running && PeekEvent(gspEvents[GSPEVENT_VBlank0]) && FramesSkipped<5)
@@ -587,14 +602,42 @@ void VSyncAndFrameskip()
 		
 		SkipThisFrame = true;
 		FramesSkipped++;
+		
+		/*lastvbl += 4468724ULL;
+		vbltimes[framecount&0xF] = -1;*/
 	}
 	else
 	{
 		SkipThisFrame = false;
 		FramesSkipped = 0;
 		
-		gspWaitForVBlank();
+		gspWaitForEvent(GSPEVENT_VBlank0, false);
+		
+		/*u64 t=svcGetSystemTick();
+		u32 time=(u32)(t-lastvbl);
+		lastvbl = t;
+		vbltimes[framecount&0xF] = time;*/
+		
 	}
+	/*if ((framecount&0xF)==0xF)
+		{
+			bprintf("%d | %d\n",
+				vbltimes[0], vbltimes[1]);
+			bprintf("%d | %d\n",
+				vbltimes[2], vbltimes[3]);
+			bprintf("%d | %d\n",
+				vbltimes[4], vbltimes[5]);
+			bprintf("%d | %d\n",
+				vbltimes[6], vbltimes[7]);
+			bprintf("%d | %d\n",
+				vbltimes[8], vbltimes[9]);
+			bprintf("%d | %d\n",
+				vbltimes[10], vbltimes[11]);
+			bprintf("%d | %d\n",
+				vbltimes[12], vbltimes[13]);
+			bprintf("%d | %d\n",
+				vbltimes[14], vbltimes[15]);
+		}*/
 }
 
 
@@ -630,6 +673,8 @@ int main()
 	gpuCmdSize = 0x40000;
 	gpuCmd = (u32*)linearAlloc(gpuCmdSize*4);
 	GPU_Reset(gxCmdBuf, gpuCmd, gpuCmdSize);
+	
+	svcSetThreadPriority(gspEventThread, 0x30);
 	
 	shader = SHDR_ParseSHBIN((u32*)blarg_shbin, blarg_shbin_size);
 	
@@ -667,8 +712,8 @@ int main()
 	
 	aptSetupEventHandler();
 
-	
-	APP_STATUS status;
+
+	APP_STATUS status;//u32 lastfc=0; u8 lastcnt=0;u64 lastbig=0;
 	while((status = aptGetStatus()) != APP_EXITING)
 	{
 		if(status == APP_RUNNING)
@@ -710,6 +755,17 @@ int main()
 				framecount++;
 				if (!(framecount & 7))
 					SNES_SaveSRAM();
+					
+				//bprintf("TIMER: %d:%d - %d\n", SNES_SysRAM[0x5E10], SNES_SysRAM[0x5E12], SNES_SysRAM[0x5E14]);
+				/*u8 cnt=SNES_SysRAM[0x5E12];
+				if (cnt!=lastcnt)
+				{
+					u64 big=svcGetSystemTick();
+					bprintf("%d->%d, %d frames (%f sec)\n", lastcnt, cnt, framecount-lastfc, (float)(big-lastbig)/268123480.0f);
+					lastfc = framecount;
+					lastcnt = cnt;
+					lastbig = big;
+				}*/
 			}
 			else
 			{

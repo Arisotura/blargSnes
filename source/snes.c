@@ -349,6 +349,18 @@ u8 SNES_GIORead8(u32 addr)
 			hidScanInput();
 			ret = IO_ReadKeysHigh();
 			break;
+			
+		case 0x13:
+		case 0x1A:
+		case 0x1B:
+		case 0x1C:
+		case 0x1D:
+		case 0x1E:
+		case 0x1F:
+			// unimplemented
+			break;
+			
+		default: bprintf("Open bus 42%02X\n", addr); break;
 	}
 
 	return ret;
@@ -507,6 +519,7 @@ u8 SNES_JoyRead8(u32 addr)
 	// games that actually require manual joypad I/O will fuck up
 	// but this seems to convince SMAS that there is a joystick plugged in
 	if (addr == 0x16) ret = 0x01;
+	else if (addr != 0x17) bprintf("Open bus 40%02X\n", addr);
 
 	return ret;
 }
@@ -516,6 +529,7 @@ u16 SNES_JoyRead16(u32 addr)
 	u16 ret = 0;
 	
 	//bprintf("joy read16 40%02X\n", addr);
+	if (addr != 0x16) bprintf("Open bus (16) 40%02X\n", addr);
 
 	return ret;
 }
@@ -586,4 +600,37 @@ void SNES_Write16(u32 addr, u8 val)
 		mptr[addr] = val & 0xFF;
 		mptr[addr + 1] = val >> 8;
 	}
+}
+
+
+// called to determine the next event that should occur
+// also called when ie. IRQ is disabled/enabled
+void SNES_Schedule()
+{
+}
+
+void SNES_HBlankStart()
+{
+	// PPU_RenderScanline()
+	// set HBlank flag
+	// start HDMA
+}
+
+void SNES_HBlankEnd()
+{
+	// clear HBlank flag
+}
+
+void SNES_VBlankStart()
+{
+	// set VBlank flags
+	// conditionally execute NMI
+	// PPU_VBlank()
+	// more extra shit
+}
+
+void SNES_VBlankEnd()
+{
+	// clear VBlank flags
+	// reload HDMA
 }

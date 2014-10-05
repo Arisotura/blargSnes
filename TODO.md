@@ -11,3 +11,11 @@ long term
  * scaling/borders (render to a texture and use the PICA200 instead of rendering to framebuffer)
  * expansion chips and other fancy shiz
  * 3D
+ 
+ 
+POTENTIAL OPTIMIZATIONS
+
+ * render to 15bit textures rather than 32bit
+ ** NOTES ON THIS
+ ** can SetDisplayTransfer handle 15bit transfers? probably yes
+ ** color math pipeline requires that color intensities be halved; not possible in 15bit without losing accuracy

@@ -53,11 +53,12 @@ void ROM_ApplySpeedHacks(int banknum, u8* bank)
 			bank[i+2] = 0x42;
 			bank[i+3] = (bank[i+3] & 0x0F) | (branchtype & 0xF0);
 			
-			//bprintf("Speed hack installed @ %02X:%04X\n", banknum, (SNES_HiROM?0:0x8000)+i);
+			bprintf("Speed hack installed @ %02X:%04X\n", banknum, (SNES_HiROM?0:0x8000)+i);
 			
 			i += 4;
 		}
-		else if (bank[i] == 0xAD && (bank[i+3] & 0x1F) == 0x10 && bank[i+4] == 0xFB)
+		else if ((bank[i] == 0xAD || bank[i] == 0xCD)
+			&& (bank[i+3] & 0x1F) == 0x10 && bank[i+4] == 0xFB)
 		{
 			u16 addr = bank[i+1] | (bank[i+2] << 8);
 			
@@ -67,7 +68,7 @@ void ROM_ApplySpeedHacks(int banknum, u8* bank)
 				bank[i+3] = 0x42;
 				bank[i+4] = (bank[i+4] & 0x0F) | (branchtype & 0xF0);
 				
-				//bprintf("Speed hack installed @ %02X:%04X\n", banknum, (SNES_HiROM?0:0x8000)+i);
+				bprintf("Speed hack installed @ %02X:%04X\n", banknum, (SNES_HiROM?0:0x8000)+i);
 			}
 			
 			i += 5;
