@@ -368,7 +368,8 @@ void RenderTopScreen()
 
 
 
-void CopyBitmapToTexture(u8* src, u32* dst, u32 width, u32 height, u32 alpha, u32 startx, u32 stride, bool tiled)
+// flags: bit0=tiled, bit1=15bit color
+void CopyBitmapToTexture(u8* src, void* dst, u32 width, u32 height, u32 alpha, u32 startx, u32 stride, u32 flags)
 {
 	int x, y;
 	for (y = height-1; y >= 0; y--)
@@ -380,7 +381,7 @@ void CopyBitmapToTexture(u8* src, u32* dst, u32 width, u32 height, u32 alpha, u3
 			u8 r = *src++;
 			
 			int di;
-			if (tiled)
+			if (flags & 0x1)
 			{
 				di  = x & 0x1;
 				di += (y & 0x1) << 1;
@@ -394,12 +395,15 @@ void CopyBitmapToTexture(u8* src, u32* dst, u32 width, u32 height, u32 alpha, u3
 			else
 				di = x + (y * stride * 8);
 			
-			dst[di] = alpha | (b << 8) | (g << 16) | (r << 24);
+			if (flags & 0x2)
+				((u16*)dst)[di] = (alpha ? 1:0) | ((b & 0xF8) >> 2) | ((g & 0xF8) << 3) | ((r & 0xF8) << 8);
+			else
+				((u32*)dst)[di] = alpha | (b << 8) | (g << 16) | (r << 24);
 		}
 	}
 }
 
-bool LoadBitmap(char* path, u32 width, u32 height, u32* dst, u32 alpha, u32 startx, u32 stride, bool tiled)
+bool LoadBitmap(char* path, u32 width, u32 height, void* dst, u32 alpha, u32 startx, u32 stride, u32 flags)
 {
 	Handle file;
 	FS_path filePath;
@@ -461,7 +465,7 @@ bool LoadBitmap(char* path, u32 width, u32 height, u32* dst, u32 alpha, u32 star
 	FSFILE_Read(file, &bytesread, 0x36, buf, bufsize);
 	FSFILE_Close(file);
 	
-	CopyBitmapToTexture(buf, dst, width, height, alpha, startx, stride, tiled);
+	CopyBitmapToTexture(buf, dst, width, height, alpha, startx, stride, flags);
 	
 	MemFree(buf);
 	return true;
@@ -469,7 +473,7 @@ bool LoadBitmap(char* path, u32 width, u32 height, u32* dst, u32 alpha, u32 star
 
 bool LoadBorder(char* path)
 {
-	return LoadBitmap(path, 400, 240, BorderTex, 0xFF, 0, 64, true);
+	return LoadBitmap(path, 400, 240, BorderTex, 0xFF, 0, 64, 0x1);
 }
 
 
@@ -729,10 +733,9 @@ int main()
 	FSUSER_OpenArchive(NULL, &sdmcArchive);
 	
 	if (!LoadBorder("/blargSnesBorder.bmp"))
-		CopyBitmapToTexture(defaultborder, BorderTex, 400, 240, 0xFF, 0, 64, true);
+		CopyBitmapToTexture(defaultborder, BorderTex, 400, 240, 0xFF, 0, 64, 0x1);
 		
-	//CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 16, 64, true);
-	memset(MainScreenTex, 0, 256*512*2);
+	CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 16, 64, 0x3);
 	memset(SubScreenTex, 0, 256*512*2);
 	memset(BrightnessTex, 0xFF, 224*8);
 	
