@@ -21,8 +21,8 @@
 
 extern bool SkipThisFrame;
 
-extern u32* PPU_MainBuffer;
-extern u32* PPU_SubBuffer;
+extern u16* PPU_MainBuffer;
+extern u16* PPU_SubBuffer;
 extern u8 PPU_Brightness[224];
 
 extern u16 PPU_CGRAM[256];
@@ -38,6 +38,8 @@ extern u16 PPU_OAMAddr;
 extern u16 PPU_VCount;
 
 extern u8 PPU_ColorMath;
+
+extern u8 PPU_Subtract;
 
 void PPU_Init();
 void PPU_Reset();

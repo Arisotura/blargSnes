@@ -43,8 +43,8 @@ u32 gpuCmdSize;
 u32* gpuCmd;
 
 u32* BorderTex;
-u32* MainScreenTex;
-u32* SubScreenTex;
+u16* MainScreenTex;
+u16* SubScreenTex;
 u8* BrightnessTex;
 
 FS_archive sdmcArchive;
@@ -271,48 +271,77 @@ void RenderTopScreen()
 	// TEXTURE ENV STAGES
 	// ---
 	// blending operation: (Main.Color +- (Sub.Color * Main.Alpha)) * Sub.Alpha
-	// Main.Alpha = 0/255 depending on color math
-	// Sub.Alpha = 128/255 depending on color div2
-	// note: the main/sub intensities are halved to prevent overflow during the operations.
-	// (each TEV stage output is clamped to [0,255])
-	// stage 4 makes up for this
+	// Main.Alpha: 0 = no color math, 255 = color math
+	// Sub.Alpha: 0 = div2, 1 = no div2
 	// ---
-	// STAGE 1: Out.Color = Sub.Color * Main.Alpha, Out.Alpha = Sub.Alpha + (1-Main.Alpha) (cancel out div2 when color math doesn't happen)
+	// STAGE 1: Out.Color = Sub.Color * Main.Alpha, Out.Alpha = Sub.Alpha + 0.5
 	GPU_SetTexEnv(0, 
 		GPU_TEVSOURCES(GPU_TEXTURE1, GPU_TEXTURE0, 0), 
-		GPU_TEVSOURCES(GPU_TEXTURE1, GPU_TEXTURE0, 0),
-		GPU_TEVOPERANDS(0,2,0), 
-		GPU_TEVOPERANDS(0,1,0), 
-		GPU_MODULATE, 
-		GPU_ADD, 
-		0xFFFFFFFF);
-	// STAGE 2: Out.Color = Main.Color +- Prev.Color, Out.Alpha = Prev.Alpha
-	GPU_SetTexEnv(1, 
-		GPU_TEVSOURCES(GPU_TEXTURE0, GPU_PREVIOUS, 0), 
-		GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0),
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_TEVOPERANDS(0,0,0), 
-		(PPU_ColorMath & 0x80) ? GPU_SUBTRACT:GPU_ADD, 
-		GPU_REPLACE, 
-		0xFFFFFFFF);
-	// STAGE 3: Out.Color = Prev.Color * Prev.Alpha, Out.Alpha = Prev.Alpha
-	GPU_SetTexEnv(2, 
-		GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
-		GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0),
+		GPU_TEVSOURCES(GPU_TEXTURE1, GPU_CONSTANT, 0),
 		GPU_TEVOPERANDS(0,2,0), 
 		GPU_TEVOPERANDS(0,0,0), 
 		GPU_MODULATE, 
-		GPU_REPLACE, 
-		0xFFFFFFFF);
-	// STAGE 4: Out.Color = Prev.Color + Prev.Color (doubling color intensity), Out.Alpha = Const.Alpha
-	GPU_SetTexEnv(3, 
-		GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
-		GPU_TEVSOURCES(GPU_CONSTANT, 0, 0),
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_TEVOPERANDS(0,0,0), 
 		GPU_ADD, 
-		GPU_REPLACE, 
-		0xFFFFFFFF);
+		0x80FFFFFF);
+	
+	if (PPU_Subtract)
+	{
+		// COLOR SUBTRACT
+		
+		// STAGE 2: Out.Color = Main.Color - Prev.Color, Out.Alpha = Prev.Alpha + (1-Main.Alpha) (cancel out div2 when color math doesn't happen)
+		GPU_SetTexEnv(1, 
+			GPU_TEVSOURCES(GPU_TEXTURE0, GPU_PREVIOUS, 0), 
+			GPU_TEVSOURCES(GPU_PREVIOUS, GPU_TEXTURE0, 0),
+			GPU_TEVOPERANDS(0,0,0), 
+			GPU_TEVOPERANDS(0,1,0), 
+			GPU_SUBTRACT, 
+			GPU_ADD, 
+			0xFFFFFFFF);
+		// STAGE 3: Out.Color = Prev.Color * Prev.Alpha, Out.Alpha = Prev.Alpha
+		GPU_SetTexEnv(2, 
+			GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
+			GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0),
+			GPU_TEVOPERANDS(0,2,0), 
+			GPU_TEVOPERANDS(0,0,0), 
+			GPU_MODULATE, 
+			GPU_REPLACE, 
+			0xFFFFFFFF);
+		// STAGE 4: dummy (no need to double color intensity)
+		GPU_SetDummyTexEnv(3);
+	}
+	else
+	{
+		// COLOR ADDITION
+		
+		// STAGE 2: Out.Color = Main.Color*0.5 + Prev.Color*0.5 (prevents overflow), Out.Alpha = Prev.Alpha + (1-Main.Alpha) (cancel out div2 when color math doesn't happen)
+		GPU_SetTexEnv(1, 
+			GPU_TEVSOURCES(GPU_TEXTURE0, GPU_PREVIOUS, GPU_CONSTANT), 
+			GPU_TEVSOURCES(GPU_PREVIOUS, GPU_TEXTURE0, 0),
+			GPU_TEVOPERANDS(0,0,0), 
+			GPU_TEVOPERANDS(0,1,0), 
+			GPU_INTERPOLATE,
+			GPU_ADD, 
+			0xFF808080);
+		// STAGE 3: Out.Color = Prev.Color * Prev.Alpha, Out.Alpha = Prev.Alpha
+		GPU_SetTexEnv(2, 
+			GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
+			GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0),
+			GPU_TEVOPERANDS(0,2,0), 
+			GPU_TEVOPERANDS(0,0,0), 
+			GPU_MODULATE, 
+			GPU_REPLACE, 
+			0xFFFFFFFF);
+		// STAGE 4: Out.Color = Prev.Color + Prev.Color (doubling color intensity), Out.Alpha = Const.Alpha
+		GPU_SetTexEnv(3, 
+			GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
+			GPU_TEVSOURCES(GPU_CONSTANT, 0, 0),
+			GPU_TEVOPERANDS(0,0,0), 
+			GPU_TEVOPERANDS(0,0,0), 
+			GPU_ADD, 
+			GPU_REPLACE, 
+			0xFFFFFFFF);
+	}
+	
 	// STAGE 5: master brightness - Out.Color = Prev.Color * Bright.Alpha, Out.Alpha = Const.Alpha
 	GPU_SetTexEnv(4, 
 		GPU_TEVSOURCES(GPU_PREVIOUS, GPU_TEXTURE2, 0), 
@@ -330,8 +359,8 @@ void RenderTopScreen()
 		GPU_ATTRIBFMT(0, 3, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT)|GPU_ATTRIBFMT(2, 2, GPU_FLOAT),
 		0xFFC, 0x210, 1, (u32[]){0x00000000}, (u64[]){0x210}, (u8[]){3});
 		
-	GPU_SetTexture((u32*)osConvertVirtToPhys((u32)MainScreenTex),256,512,0,GPU_RGBA8);
-	GPU_SetTexture1((u32*)osConvertVirtToPhys((u32)SubScreenTex),256,512,0,GPU_RGBA8);
+	GPU_SetTexture((u32*)osConvertVirtToPhys((u32)MainScreenTex),256,512,0,GPU_RGBA5551);
+	GPU_SetTexture1((u32*)osConvertVirtToPhys((u32)SubScreenTex),256,512,0,GPU_RGBA5551);
 	GPU_SetTexture2((u32*)osConvertVirtToPhys((u32)BrightnessTex),256,8,0x200,GPU_A8);
 	
 	GPU_DrawArray(GPU_TRIANGLES, 2*3);
@@ -548,7 +577,7 @@ void RenderPipelineVBlank()
 {
 	// SNES VBlank. Copy the freshly rendered framebuffers.
 	
-	GSPGPU_FlushDataCache(NULL, PPU_MainBuffer, 512*512*4);
+	GSPGPU_FlushDataCache(NULL, PPU_MainBuffer, 512*512*2);
 	
 	// in case we arrived here too early
 	if (RenderState != 1)
@@ -563,7 +592,7 @@ void RenderPipelineVBlank()
 	// copy new screen textures
 	// SetDisplayTransfer with flags=2 converts linear graphics to the tiled format used for textures
 	// since the two sets of buffers are contiguous, we can transfer them as one 512x512 texture
-	GX_SetDisplayTransfer(gxCmdBuf, PPU_MainBuffer, 0x02000200, MainScreenTex, 0x02000200, 0x2);
+	GX_SetDisplayTransfer(gxCmdBuf, PPU_MainBuffer, 0x02000200, MainScreenTex, 0x02000200, 0x3302);
 	
 	// copy brightness.
 	// TODO do better
@@ -684,7 +713,7 @@ int main()
 	UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
 	
 	BorderTex = (u32*)linearAlloc(512*256*4);
-	MainScreenTex = (u32*)linearAlloc(512*512*4);
+	MainScreenTex = (u16*)linearAlloc(512*512*2);
 	SubScreenTex = &MainScreenTex[512*256];
 	BrightnessTex = (u8*)linearAlloc(8*256);
 	
@@ -702,8 +731,9 @@ int main()
 	if (!LoadBorder("/blargSnesBorder.bmp"))
 		CopyBitmapToTexture(defaultborder, BorderTex, 400, 240, 0xFF, 0, 64, true);
 		
-	CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 16, 64, true);
-	memset(SubScreenTex, 0, 256*256*4);
+	//CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 16, 64, true);
+	memset(MainScreenTex, 0, 256*512*2);
+	memset(SubScreenTex, 0, 256*512*2);
 	memset(BrightnessTex, 0xFF, 224*8);
 	
 	UI_Switch(&UI_ROMMenu);
