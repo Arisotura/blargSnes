@@ -36,6 +36,8 @@ u8 PPU_Brightness[224];
 // bit8-15: BG-relative priority
 u16 PPU_OBJBuffer[16+256+16];
 
+u8 PPU_SpritesOnLine[4] __attribute__((aligned(4)));
+
 u16 PPU_CGRAMAddr = 0;
 u8 PPU_CGRAMVal = 0;
 u16 PPU_CGRAM[256];		// SNES CGRAM, xBGR1555
@@ -87,7 +89,8 @@ u8 PPU_Mode = 0;
 
 u8 PPU_MainScreen = 0;
 u8 PPU_SubScreen = 0;
-u8 PPU_ColorMath = 0;
+u8 PPU_ColorMath1 = 0;
+u8 PPU_ColorMath2 = 0;
 
 u16 PPU_SubBackdrop = 0;
 
@@ -574,8 +577,11 @@ void PPU_Write8(u32 addr, u8 val)
 			PPU_SubScreen = val;
 			break;
 		
+		case 0x30:
+			PPU_ColorMath1 = val;
+			break;
 		case 0x31:
-			PPU_ColorMath = val;
+			PPU_ColorMath2 = val;
 			break;
 			
 		case 0x32:
@@ -1310,7 +1316,7 @@ void PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line)
 	u32 idx;
 	s32 i;
 	s32 width = (s32)PPU_OBJWidth[(oamextra & 0x2) >> 1];
-	u32 paloffset;
+	u32 paloffset, prio;
 	
 	attrib = *(u16*)&oam[2];
 	
@@ -1336,6 +1342,9 @@ void PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line)
 	
 	paloffset = ((oam[3] & 0x0E) << 3);
 	
+	prio = oam[3] & 0x30;
+	PPU_SpritesOnLine[prio >> 4] = 1;
+	
 	for (; i < width;)
 	{
 		// skip offscreen tiles
@@ -1348,19 +1357,19 @@ void PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line)
 		}
 		
 		tilepixels = tileset[idx] | (tileset[idx+8] << 16);
-		PPU_RenderTile_OBJ(attrib, tilepixels, &buffer[i], paloffset | ((oam[3] & 0x30) << 8));
+		PPU_RenderTile_OBJ(attrib, tilepixels, &buffer[i], paloffset | (prio << 8));
 		i += 8;
 		idx += (attrib & 0x4000) ? -16:16;
 	}
 }
 
-inline void PPU_PrerenderOBJs(u16* buf, s32 line)
+void PPU_PrerenderOBJs(u16* buf, s32 line)
 {
 	int i = PPU_FirstOBJ;
 	i--;
 	if (i < 0) i = 127;
 	int last = i;
-	
+
 	do
 	{
 		u8* oam = &PPU_OAM[i << 2];
@@ -1373,10 +1382,10 @@ inline void PPU_PrerenderOBJs(u16* buf, s32 line)
 		else if (oy >= 192)
 		{
 			oy -= 0x100;
-			if (line < (s32)(oy+oh))
+			if (line > 0 && line < (s32)(oy+oh)) // hack. Stops garbage from showing up at the top of the screen in SMW and other games
 				PPU_RenderOBJ(oam, oamextra, oh-1, buf, line-oy);
 		}
-		
+
 		i--;
 		if (i < 0) i = 127;
 	}
@@ -1386,6 +1395,9 @@ inline void PPU_PrerenderOBJs(u16* buf, s32 line)
 inline void PPU_RenderOBJs(u16* buf, u32 line, u32 prio, u32 colmathmask)
 {
 	int i;
+	
+	if (!PPU_SpritesOnLine[prio >> 12]) return;
+	
 	u32* srcbuf = (u32*)&PPU_OBJBuffer[16];
 	u16* pal = &PPU_Palette[128];
 	
@@ -1532,13 +1544,13 @@ void PPU_RenderScanline(u32 line)
 	PPU_Brightness[line] = PPU_CurBrightness;
 	if (!PPU_CurBrightness) return;
 	
-	PPU_Subtract = (PPU_ColorMath & 0x80);
+	PPU_Subtract = (PPU_ColorMath2 & 0x80);
 	
 	int i;
 	u16* mbuf = &PPU_MainBuffer[16 + (512*line)];
 	u16* sbuf = &PPU_SubBuffer[16 + (512*line)];
 	
-	u32 backdrop = PPU_Palette[0] | ((PPU_ColorMath & 0x20) ? 1:0);
+	u32 backdrop = PPU_Palette[0] | ((PPU_ColorMath2 & 0x20) ? 1:0);
 	backdrop |= (backdrop << 16);
 	for (i = 0; i < 256; i += 2)
 		*(u32*)&mbuf[i] = backdrop;
@@ -1550,46 +1562,54 @@ void PPU_RenderScanline(u32 line)
 	
 	for (i = 16; i < 272; i += 2)
 		*(u32*)&PPU_OBJBuffer[i] = 0xFFFFFFFF;
+		
+	*(u32*)&PPU_SpritesOnLine[0] = 0;
 	
 	
 	if ((PPU_MainScreen|PPU_SubScreen) & 0x10)
 		PPU_PrerenderOBJs(&PPU_OBJBuffer[16], line);
 		
-	u8 colormathmain = PPU_ColorMath & 0x0F;
-	if (PPU_ColorMath & 0x10) colormathmain |= 0x40;
-	u8 colormathsub = (PPU_ColorMath & 0x40) ? 0:0xFF;
+	u8 colormathmain = PPU_ColorMath2 & 0x0F;
+	if (PPU_ColorMath2 & 0x10) colormathmain |= 0x40;
+	u8 colormathsub = (PPU_ColorMath2 & 0x40) ? 0:0xFF;
 	
 	switch (PPU_Mode & 0x07)
 	{
 		case 0:
-			PPU_RenderMode0(sbuf, line, PPU_SubScreen, colormathsub);
+			if (PPU_ColorMath1 & 0x02)
+				PPU_RenderMode0(sbuf, line, PPU_SubScreen, colormathsub);
 			PPU_RenderMode0(mbuf, line, PPU_MainScreen, colormathmain);
 			break;
 			
 		case 1:
-			PPU_RenderMode1(sbuf, line, PPU_SubScreen, colormathsub);
+			if (PPU_ColorMath1 & 0x02)
+				PPU_RenderMode1(sbuf, line, PPU_SubScreen, colormathsub);
 			PPU_RenderMode1(mbuf, line, PPU_MainScreen, colormathmain);
 			break;
 		
 		case 2:
-			PPU_RenderMode2(sbuf, line, PPU_SubScreen, colormathsub);
+			if (PPU_ColorMath1 & 0x02)
+				PPU_RenderMode2(sbuf, line, PPU_SubScreen, colormathsub);
 			PPU_RenderMode2(mbuf, line, PPU_MainScreen, colormathmain);
 			break;
 			
 		case 3:
-			PPU_RenderMode3(sbuf, line, PPU_SubScreen, colormathsub);
+			if (PPU_ColorMath1 & 0x02)
+				PPU_RenderMode3(sbuf, line, PPU_SubScreen, colormathsub);
 			PPU_RenderMode3(mbuf, line, PPU_MainScreen, colormathmain);
 			break;
 			
 		case 4:
-			PPU_RenderMode4(sbuf, line, PPU_SubScreen, colormathsub);
+			if (PPU_ColorMath1 & 0x02)
+				PPU_RenderMode4(sbuf, line, PPU_SubScreen, colormathsub);
 			PPU_RenderMode4(mbuf, line, PPU_MainScreen, colormathmain);
 			break;
 			
 		// TODO: mode 5/6 (hires)
 		
 		case 7:
-			PPU_RenderMode7(sbuf, line, PPU_SubScreen, colormathsub);
+			if (PPU_ColorMath1 & 0x02)
+				PPU_RenderMode7(sbuf, line, PPU_SubScreen, colormathsub);
 			PPU_RenderMode7(mbuf, line, PPU_MainScreen, colormathmain);
 			break;
 	}

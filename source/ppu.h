@@ -37,8 +37,6 @@ extern u16 PPU_OAMAddr;
 
 extern u16 PPU_VCount;
 
-extern u8 PPU_ColorMath;
-
 extern u8 PPU_Subtract;
 
 void PPU_Init();
