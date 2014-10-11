@@ -1932,6 +1932,7 @@ void PPU_PrerenderOBJs(u16* buf, s32 line)
 	if (i < 0) i = 127;
 	int last = i;
 
+	// TODO: maybe precalculate once-per-frame which sprites are on which lines?
 	do
 	{
 		u8* oam = &PPU_OAM[i << 2];
@@ -1954,29 +1955,39 @@ void PPU_PrerenderOBJs(u16* buf, s32 line)
 	while (i != last);
 }
 
-inline void PPU_RenderOBJs(u16* buf, u32 line, u32 prio, u32 colmathmask)
+void PPU_RenderOBJs(u16* buf, u32 line, u32 prio, u32 colmathmask, u32 window)
 {
-	int i;
+	int i = 0;
 	
 	if (!PPU_SpritesOnLine[prio >> 12]) return;
 	
-	u32* srcbuf = (u32*)&PPU_OBJBuffer[16];
+	u16* srcbuf = &PPU_OBJBuffer[16];
 	u16* pal = &PPU_Palette[128];
 	
-	for (i = 0; i < 256;)
+	PPU_WindowSegment* s = &PPU_Window[0];
+	for (;;)
 	{
-		u32 val = srcbuf[i >> 1];
+		u16 hidden = window ? (PPU_OBJWindowCombine & (1 << (s->WindowMask ^ PPU_OBJWindowMask))) : 0;
 		
-		if ((val & 0xFF00) == prio)
-			buf[i] = pal[val & 0xFF] | ((val & colmathmask) ? 1:0);
+		if (hidden)
+		{
+			i = s->EndOffset;
+		}
+		else
+		{
+			u32 finalalpha = (PPU_ColorMath1 & s->ColorMath) ? 0:1;
+			
+			while (i < s->EndOffset)
+			{
+				u16 val = srcbuf[i];
+				if ((val & 0xFF00) == prio)
+					buf[i] = pal[val & 0xFF] | ((val & colmathmask) ? finalalpha:0);
+				i++;
+			}
+		}
 		
-		i++;
-		val >>= 16;
-		
-		if ((val & 0xFF00) == prio)
-			buf[i] = pal[val & 0xFF] | ((val & colmathmask) ? 1:0);
-		
-		i++;
+		if (s->EndOffset >= 256) return;
+		s++;
 	}
 }
 
@@ -1994,40 +2005,40 @@ void PPU_RenderMode0(u16* buf, u32 line, u16 screen, u8 colormath)
 {
 	if (screen & 0x08) PPU_RENDERBG(2bpp, 3, 96);
 	if (screen & 0x04) PPU_RENDERBG(2bpp, 2, 64);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x0000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x0000, COLMATH_OBJ, (screen&0x1000));
 	
 	if (screen & 0x08) PPU_RenderDeferredTiles_2bpp(&PPU_BG[3], &PPU_Palette[96]);
 	if (screen & 0x04) PPU_RenderDeferredTiles_2bpp(&PPU_BG[2], &PPU_Palette[64]);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x1000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x1000, COLMATH_OBJ, (screen&0x1000));
 	
 	if (screen & 0x02) PPU_RENDERBG(2bpp, 1, 32);
 	if (screen & 0x01) PPU_RENDERBG(2bpp, 0, 0);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x2000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x2000, COLMATH_OBJ, (screen&0x1000));
 	
 	if (screen & 0x02) PPU_RenderDeferredTiles_2bpp(&PPU_BG[1], &PPU_Palette[32]);
 	if (screen & 0x01) PPU_RenderDeferredTiles_2bpp(&PPU_BG[0], &PPU_Palette[0]);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x3000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x3000, COLMATH_OBJ, (screen&0x1000));
 }
 
 void PPU_RenderMode1(u16* buf, u32 line, u16 screen, u8 colormath)
 {
 	if (screen & 0x04) PPU_RENDERBG(2bpp, 2, 0);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x0000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x0000, COLMATH_OBJ, (screen&0x1000));
 	
 	if (screen & 0x04) 
 	{
 		if (!(PPU_Mode & 0x08))
 			PPU_RenderDeferredTiles_2bpp(&PPU_BG[2], &PPU_Palette[0]);
 	}
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x1000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x1000, COLMATH_OBJ, (screen&0x1000));
 	
 	if (screen & 0x02) PPU_RENDERBG(4bpp, 1, 0);
 	if (screen & 0x01) PPU_RENDERBG(4bpp, 0, 0);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x2000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x2000, COLMATH_OBJ, (screen&0x1000));
 	
 	if (screen & 0x02) PPU_RenderDeferredTiles_4bpp(&PPU_BG[1], &PPU_Palette[0]);
 	if (screen & 0x01) PPU_RenderDeferredTiles_4bpp(&PPU_BG[0], &PPU_Palette[0]);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x3000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x3000, COLMATH_OBJ, (screen&0x1000));
 	
 	if (screen & 0x04)
 	{
@@ -2040,60 +2051,60 @@ void PPU_RenderMode1(u16* buf, u32 line, u16 screen, u8 colormath)
 void PPU_RenderMode2(u16* buf, u32 line, u16 screen, u8 colormath)
 {
 	if (screen & 0x02) PPU_RENDERBG(4bpp, 1, 0);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x0000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x0000, COLMATH_OBJ, (screen&0x1000));
 	
 	if (screen & 0x01) PPU_RENDERBG(4bpp, 0, 0);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x1000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x1000, COLMATH_OBJ, (screen&0x1000));
 	
 	if (screen & 0x02) PPU_RenderDeferredTiles_4bpp(&PPU_BG[1], &PPU_Palette[0]);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x2000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x2000, COLMATH_OBJ, (screen&0x1000));
 	
 	if (screen & 0x01) PPU_RenderDeferredTiles_4bpp(&PPU_BG[0], &PPU_Palette[0]);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x3000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x3000, COLMATH_OBJ, (screen&0x1000));
 }
 
 void PPU_RenderMode3(u16* buf, u32 line, u16 screen, u8 colormath)
 {
 	if (screen & 0x02) PPU_RENDERBG(4bpp, 1, 0);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x0000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x0000, COLMATH_OBJ, (screen&0x1000));
 	
 	if (screen & 0x01) PPU_RENDERBG(8bpp, 0, 0);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x1000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x1000, COLMATH_OBJ, (screen&0x1000));
 	
 	if (screen & 0x02) PPU_RenderDeferredTiles_4bpp(&PPU_BG[1], &PPU_Palette[0]);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x2000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x2000, COLMATH_OBJ, (screen&0x1000));
 	
 	if (screen & 0x01) PPU_RenderDeferredTiles_8bpp(&PPU_BG[0], &PPU_Palette[0]);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x3000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x3000, COLMATH_OBJ, (screen&0x1000));
 }
 
 // TODO: offset per tile, someday
 void PPU_RenderMode4(u16* buf, u32 line, u16 screen, u8 colormath)
 {
 	if (screen & 0x02) PPU_RENDERBG(2bpp, 1, 0);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x0000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x0000, COLMATH_OBJ, (screen&0x1000));
 	
 	if (screen & 0x01) PPU_RENDERBG(8bpp, 0, 0);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x1000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x1000, COLMATH_OBJ, (screen&0x1000));
 	
 	if (screen & 0x02) PPU_RenderDeferredTiles_2bpp(&PPU_BG[1], &PPU_Palette[0]);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x2000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x2000, COLMATH_OBJ, (screen&0x1000));
 	
 	if (screen & 0x01) PPU_RenderDeferredTiles_8bpp(&PPU_BG[0], &PPU_Palette[0]);
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x3000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x3000, COLMATH_OBJ, (screen&0x1000));
 }
 
 void PPU_RenderMode7(u16* buf, u32 line, u16 screen, u8 colormath)
 {
-	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x0000, COLMATH_OBJ);
+	if (screen & 0x10) PPU_RenderOBJs(buf, line, 0x0000, COLMATH_OBJ, (screen&0x1000));
 	
 	if (screen & 0x01) PPU_RenderBG_Mode7(buf, line, &PPU_Palette[0], COLMATH(0), (screen&0x100));
 	
 	if (screen & 0x10)
 	{
-		PPU_RenderOBJs(buf, line, 0x1000, COLMATH_OBJ);
-		PPU_RenderOBJs(buf, line, 0x2000, COLMATH_OBJ);
-		PPU_RenderOBJs(buf, line, 0x3000, COLMATH_OBJ);
+		PPU_RenderOBJs(buf, line, 0x1000, COLMATH_OBJ, (screen&0x1000));
+		PPU_RenderOBJs(buf, line, 0x2000, COLMATH_OBJ, (screen&0x1000));
+		PPU_RenderOBJs(buf, line, 0x3000, COLMATH_OBJ, (screen&0x1000));
 	}
 }
 
