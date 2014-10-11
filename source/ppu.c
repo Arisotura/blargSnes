@@ -233,8 +233,8 @@ void PPU_Init()
 {
 	int i;
 	
-	PPU_MainBuffer = (u16*)linearAlloc(512*512*2);
-	PPU_SubBuffer = &PPU_MainBuffer[512*256];
+	PPU_MainBuffer = (u16*)linearAlloc(256*512*2);
+	PPU_SubBuffer = &PPU_MainBuffer[256*256];
 	
 	PPU_SubBackdrop = 0x0001;
 }
@@ -2192,8 +2192,8 @@ void PPU_RenderScanline(u32 line)
 	PPU_Subtract = (PPU_ColorMath2 & 0x80);
 	
 	int i;
-	u16* mbuf = &PPU_MainBuffer[16 + (512*line)];
-	u16* sbuf = &PPU_SubBuffer[16 + (512*line)];
+	u16* mbuf = &PPU_MainBuffer[line << 8];
+	u16* sbuf = &PPU_SubBuffer[line << 8];
 	
 	// main backdrop
 	u32 backdrop = PPU_Palette[0];

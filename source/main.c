@@ -134,13 +134,13 @@ float vertexList[] =
 	0.0, 400.0, 0.9,    0, 0.0625,
 	
 	// screen
-	8.0, 72.0, 0.5,     0.53125, 0.125,  0.125, 0.125,
-	232.0, 72.0, 0.5,   0.53125, 1.0,    0.125, 1.0,
-	232.0, 328.0, 0.5,  0.03125, 1.0,    0.0, 1.0,
+	8.0, 72.0, 0.5,     1.0, 0.125,  0.125, 0.125,
+	232.0, 72.0, 0.5,   1.0, 1.0,    0.125, 1.0,
+	232.0, 328.0, 0.5,  0.0, 1.0,    0.0, 1.0,
 	
-	8.0, 72.0, 0.5,     0.53125, 0.125,  0.125, 0.125,
-	232.0, 328.0, 0.5,  0.03125, 1.0,    0.0,   1.0,
-	8.0, 328.0, 0.5,    0.03125, 0.125,  0.0,   0.125,
+	8.0, 72.0, 0.5,     1.0, 0.125,  0.125, 0.125,
+	232.0, 328.0, 0.5,  0.0, 1.0,    0.0,   1.0,
+	8.0, 328.0, 0.5,    0.0, 0.125,  0.0,   0.125,
 };
 float* borderVertices;
 float* screenVertices;
@@ -359,8 +359,8 @@ void RenderTopScreen()
 		GPU_ATTRIBFMT(0, 3, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT)|GPU_ATTRIBFMT(2, 2, GPU_FLOAT),
 		0xFFC, 0x210, 1, (u32[]){0x00000000}, (u64[]){0x210}, (u8[]){3});
 		
-	GPU_SetTexture((u32*)osConvertVirtToPhys((u32)MainScreenTex),256,512,0,GPU_RGBA5551);
-	GPU_SetTexture1((u32*)osConvertVirtToPhys((u32)SubScreenTex),256,512,0,GPU_RGBA5551);
+	GPU_SetTexture((u32*)osConvertVirtToPhys((u32)MainScreenTex),256,256,0,GPU_RGBA5551);
+	GPU_SetTexture1((u32*)osConvertVirtToPhys((u32)SubScreenTex),256,256,0,GPU_RGBA5551);
 	GPU_SetTexture2((u32*)osConvertVirtToPhys((u32)BrightnessTex),256,8,0x200,GPU_A8);
 	
 	GPU_DrawArray(GPU_TRIANGLES, 2*3);
@@ -595,8 +595,8 @@ void RenderPipelineVBlank()
 	
 	// copy new screen textures
 	// SetDisplayTransfer with flags=2 converts linear graphics to the tiled format used for textures
-	// since the two sets of buffers are contiguous, we can transfer them as one 512x512 texture
-	GX_SetDisplayTransfer(gxCmdBuf, PPU_MainBuffer, 0x02000200, MainScreenTex, 0x02000200, 0x3302);
+	// since the two sets of buffers are contiguous, we can transfer them as one 256x512 texture
+	GX_SetDisplayTransfer(gxCmdBuf, PPU_MainBuffer, 0x02000100, MainScreenTex, 0x02000100, 0x3302);
 	
 	// copy brightness.
 	// TODO do better
@@ -624,20 +624,18 @@ void RenderPipelineVBlank()
 	}
 	GSPGPU_FlushDataCache(NULL, BrightnessTex, 8*256);
 }
-u64 lastvbl = 0;
-s32 vbltimes[16];
+
+
 void VSyncAndFrameskip()
 {
 	if (running && PeekEvent(gspEvents[GSPEVENT_VBlank0]) && FramesSkipped<5)
 	{
 		// we missed the VBlank
 		// skip the next frame to compensate
+		// TODO: this doesn't work if we miss more than one VBlank!
 		
 		SkipThisFrame = true;
 		FramesSkipped++;
-		
-		/*lastvbl += 4468724ULL;
-		vbltimes[framecount&0xF] = -1;*/
 	}
 	else
 	{
@@ -645,32 +643,7 @@ void VSyncAndFrameskip()
 		FramesSkipped = 0;
 		
 		gspWaitForEvent(GSPEVENT_VBlank0, false);
-		
-		/*u64 t=svcGetSystemTick();
-		u32 time=(u32)(t-lastvbl);
-		lastvbl = t;
-		vbltimes[framecount&0xF] = time;*/
-		
 	}
-	/*if ((framecount&0xF)==0xF)
-		{
-			bprintf("%d | %d\n",
-				vbltimes[0], vbltimes[1]);
-			bprintf("%d | %d\n",
-				vbltimes[2], vbltimes[3]);
-			bprintf("%d | %d\n",
-				vbltimes[4], vbltimes[5]);
-			bprintf("%d | %d\n",
-				vbltimes[6], vbltimes[7]);
-			bprintf("%d | %d\n",
-				vbltimes[8], vbltimes[9]);
-			bprintf("%d | %d\n",
-				vbltimes[10], vbltimes[11]);
-			bprintf("%d | %d\n",
-				vbltimes[12], vbltimes[13]);
-			bprintf("%d | %d\n",
-				vbltimes[14], vbltimes[15]);
-		}*/
 }
 
 
@@ -717,8 +690,8 @@ int main()
 	UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
 	
 	BorderTex = (u32*)linearAlloc(512*256*4);
-	MainScreenTex = (u16*)linearAlloc(512*512*2);
-	SubScreenTex = &MainScreenTex[512*256];
+	MainScreenTex = (u16*)linearAlloc(256*512*2);
+	SubScreenTex = &MainScreenTex[256*256];
 	BrightnessTex = (u8*)linearAlloc(8*256);
 	
 	borderVertices = (float*)linearAlloc(5*3 * 2 * sizeof(float));
@@ -735,8 +708,8 @@ int main()
 	if (!LoadBorder("/blargSnesBorder.bmp"))
 		CopyBitmapToTexture(defaultborder, BorderTex, 400, 240, 0xFF, 0, 64, 0x1);
 		
-	CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 16, 64, 0x3);
-	memset(SubScreenTex, 0, 256*512*2);
+	CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 0, 32, 0x3);
+	memset(SubScreenTex, 0, 256*256*2);
 	memset(BrightnessTex, 0xFF, 224*8);
 	
 	UI_Switch(&UI_ROMMenu);
@@ -788,17 +761,6 @@ int main()
 				framecount++;
 				if (!(framecount & 7))
 					SNES_SaveSRAM();
-					
-				//bprintf("TIMER: %d:%d - %d\n", SNES_SysRAM[0x5E10], SNES_SysRAM[0x5E12], SNES_SysRAM[0x5E14]);
-				/*u8 cnt=SNES_SysRAM[0x5E12];
-				if (cnt!=lastcnt)
-				{
-					u64 big=svcGetSystemTick();
-					bprintf("%d->%d, %d frames (%f sec)\n", lastcnt, cnt, framecount-lastfc, (float)(big-lastbig)/268123480.0f);
-					lastfc = framecount;
-					lastcnt = cnt;
-					lastbig = big;
-				}*/
 			}
 			else
 			{
