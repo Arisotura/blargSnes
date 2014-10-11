@@ -632,11 +632,6 @@ CPU_TimeInFrame:
 .section    .text, "awx", %progbits
 
 
-.global getprio
-getprio:
-	svc #0xB
-	bx lr
-
 CPU_Schedule:
 	@stmdb r12
 	

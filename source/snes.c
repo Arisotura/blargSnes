@@ -601,36 +601,3 @@ void SNES_Write16(u32 addr, u8 val)
 		mptr[addr + 1] = val >> 8;
 	}
 }
-
-
-// called to determine the next event that should occur
-// also called when ie. IRQ is disabled/enabled
-void SNES_Schedule()
-{
-}
-
-void SNES_HBlankStart()
-{
-	// PPU_RenderScanline()
-	// set HBlank flag
-	// start HDMA
-}
-
-void SNES_HBlankEnd()
-{
-	// clear HBlank flag
-}
-
-void SNES_VBlankStart()
-{
-	// set VBlank flags
-	// conditionally execute NMI
-	// PPU_VBlank()
-	// more extra shit
-}
-
-void SNES_VBlankEnd()
-{
-	// clear VBlank flags
-	// reload HDMA
-}

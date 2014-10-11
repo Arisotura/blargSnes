@@ -34,7 +34,7 @@ INCLUDES	:=	include
 #---------------------------------------------------------------------------------
 ARCH	:=	-marm
 
-CFLAGS	:=	-g -Wall -O3 -mthumb-interwork -save-temps \
+CFLAGS	:=	-g -Wall -O2 -mthumb-interwork -save-temps \
 			-mcpu=mpcore -mtune=mpcore -fomit-frame-pointer \
 			-mfpu=vfp -ffast-math -mword-relocations \
 			$(ARCH)
