@@ -720,10 +720,10 @@ frameloop:
 		mov r0, #0
 		ldr r1, =PPU_VCount
 		strh r0, [r1]
-		stmdb sp!, {r0, r12}
-		bl DMA_ReloadHDMA
+		stmdb sp!, {r12}
+		SafeCall DMA_ReloadHDMA
 		bl DMA_DoHDMA
-		ldmia sp!, {r0}
+		mov r0, #0
 		bl PPU_RenderScanline
 		ldmia sp!, {r12}
 		b emuloop
