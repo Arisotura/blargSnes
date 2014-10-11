@@ -717,24 +717,20 @@ frameloop:
 		ldr r0, =0x05540000
 		add snesCycles, snesCycles, r0
 		
-		@ldr r0, =SPCSync
-		@ldr r0, [r0]
-		@SafeCall svcSignalEvent
-		
 		mov r0, #0
 		ldr r1, =PPU_VCount
 		strh r0, [r1]
-		SafeCall PPU_RenderScanline
-		SafeCall DMA_ReloadHDMA
+		stmdb sp!, {r0, r12}
+		bl DMA_ReloadHDMA
+		bl DMA_DoHDMA
+		ldmia sp!, {r0}
+		bl PPU_RenderScanline
+		ldmia sp!, {r12}
 		b emuloop
 		
 newline:
 			ldr r0, =0x05540001
 			add snesCycles, snesCycles, r0
-			
-			@ldr r0, =SPCSync
-			@ldr r0, [r0]
-			@SafeCall svcSignalEvent
 			
 			ldr r0, =PPU_VCount
 			strh snesCycles, [r0]
@@ -819,16 +815,6 @@ irq_end:
 				@ldr r1, =debugpc
 				@str r0, [r1]
 				@ debug code end
-				
-				@ldr r0, =(PPU_VRAM+(0x5C32<<1))
-				@ldr r1, =0x288B
-				@ldrh r0, [r0]
-				@cmp r0, r1
-				@bne bouboule
-				@mov r0, snesPC, lsr #0x10
-				@orr r0, r0, snesPBR, lsl #0x10
-				@SafeCall reportshit
-				@bouboule:
 
 				OpcodePrefetch8
 				ldr pc, [opTable, r0, lsl #0x2]

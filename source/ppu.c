@@ -84,6 +84,7 @@ u8* PPU_OBJHeight;
 
 
 u8 PPU_CurBrightness = 0;
+u8 PPU_ForcedBlank = 0;
 
 u8 PPU_Mode = 0;
 
@@ -147,6 +148,8 @@ PPU_Background PPU_BG[4];
 
 u16* PPU_OBJTileset;
 u32 PPU_OBJGap;
+
+u8 PPU_OBJsPerLine[224][33];
 
 u8 PPU_OBJWindowMask;
 u16 PPU_OBJWindowCombine;
@@ -222,6 +225,8 @@ u16 PPU_OPHCT, PPU_OPVCT;
 u8 PPU_OPHFlag, PPU_OPVFlag;
 u8 PPU_OPLatch;
 
+u8 PPU_OBJOverflow;
+
 
 
 void PPU_Init()
@@ -239,6 +244,7 @@ void PPU_Reset()
 	int i;
 	
 	memset(PPU_Brightness, 0xFF, 224);
+	PPU_ForcedBlank = 0;
 	
 	memset(PPU_VRAM, 0, 0x10000);
 	memset(PPU_CGRAM, 0, 0x200);
@@ -253,6 +259,8 @@ void PPU_Reset()
 		
 		PPU_BG[i].WindowCombine = PPU_WindowCombine[0];
 	}
+	
+	memset(PPU_OBJsPerLine, 0, 224*33);
 	
 	PPU_OBJWindowCombine = PPU_WindowCombine[0];
 	PPU_ColorMathWindowCombine = PPU_WindowCombine[0];
@@ -269,6 +277,8 @@ void PPU_Reset()
 	
 	PPU_SubBackdrop = 0x0001;
 	PPU_Subtract = 0;
+	
+	PPU_OBJOverflow = 0;
 }
 
 void PPU_DeInit()
@@ -413,7 +423,7 @@ u8 PPU_Read8(u32 addr)
 			}
 			break;
 			
-		case 0x3E: ret = 0x01; break;
+		case 0x3E: ret = 0x01 | PPU_OBJOverflow; break;
 		case 0x3F: 
 			ret = 0x01 | (ROM_Region ? 0x10 : 0x00) | PPU_OPLatch;
 			PPU_OPLatch = 0;
@@ -467,6 +477,7 @@ void PPU_Write8(u32 addr, u8 val)
 	{
 		case 0x00: // force blank/master brightness
 			{
+				PPU_ForcedBlank = val & 0x80;
 				if (val & 0x80) val = 0;
 				else val &= 0x0F;
 				
@@ -1868,6 +1879,72 @@ void PPU_RenderDeferredTiles_8bpp(PPU_Background* bg, u16* pal)
 }
 
 
+void PPU_ComputeOBJs()
+{
+	int h;
+	int i = PPU_FirstOBJ;
+	i--;
+	if (i < 0) i = 127;
+	int last = i;
+	
+	for (h = 0; h < 224; h++)
+		PPU_OBJsPerLine[h][0] = 0;
+
+	do
+	{
+		u8* oam = &PPU_OAM[i << 2];
+		u8 oamextra = PPU_OAM[0x200 + (i >> 2)] >> ((i & 0x03) << 1);
+		
+		s32 ox = (s32)oam[0];
+		if (oamextra & 0x01) ox = -0x100 + ox;
+		s32 ow = (s32)PPU_OBJWidth[(oamextra & 0x2) >> 1];
+		
+		// skip sprite if offscreen horizontally.
+		// CHECKME: do horizontally offscreen sprites still affect the overflow flags?
+		if (ox > -ow)
+		{
+			s32 oy = (s32)oam[1] + 1;
+			s32 oh = (s32)PPU_OBJHeight[(oamextra & 0x2) >> 1];
+			s32 hmax = ((oy+oh) > 224) ? 224 : (oy+oh);
+			
+			for (h = oy; h < hmax; h++)
+			{
+				u8 n = PPU_OBJsPerLine[h][0] + 1;
+				if (n < 33)
+				{
+					PPU_OBJsPerLine[h][n] = i;
+					PPU_OBJsPerLine[h][0] = n;
+				}
+				// TODO overflow flag
+			}
+			
+			// sprite wraparound
+			if (oy >= 192)
+			{
+				oy -= 0x100;
+				if ((oy+oh) > 1)
+				{
+					oh += oy;
+					for (h = 0; h < oh; h++)
+					{
+						u8 n = PPU_OBJsPerLine[h][0] + 1;
+						if (n < 33)
+						{
+							PPU_OBJsPerLine[h][n] = i;
+							PPU_OBJsPerLine[h][0] = n;
+						}
+						// TODO overflow flag
+					}
+				}
+			}
+		}
+
+		i--;
+		if (i < 0) i = 127;
+	}
+	while (i != last);
+}
+
 void PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line)
 {
 	u16* tileset = PPU_OBJTileset;
@@ -1894,13 +1971,13 @@ void PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line)
 	if (oamextra & 0x1) // xpos bit8, sign bit
 	{
 		xoff = 0x100 - xoff;
-		if (xoff >= width) return; // sprite is fully offscreen, skip it
 		i = -xoff;
 	}
 	else
 		i = xoff;
 		
 	width += i;
+	if (width > 256) width = 256;
 	
 	paloffset = ((oam[3] & 0x0E) << 3);
 	
@@ -1910,7 +1987,6 @@ void PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line)
 	for (; i < width;)
 	{
 		// skip offscreen tiles
-		if (i >= 256) return;
 		if (i <= -8)
 		{
 			i += 8;
@@ -1927,32 +2003,20 @@ void PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line)
 
 void PPU_PrerenderOBJs(u16* buf, s32 line)
 {
-	int i = PPU_FirstOBJ;
-	i--;
-	if (i < 0) i = 127;
-	int last = i;
-
-	// TODO: maybe precalculate once-per-frame which sprites are on which lines?
-	do
+	int i;
+	u8 n = PPU_OBJsPerLine[line][0];
+	
+	for (i = 1; i <= n; i++)
 	{
-		u8* oam = &PPU_OAM[i << 2];
-		u8 oamextra = PPU_OAM[0x200 + (i >> 2)] >> ((i & 0x03) << 1);
+		u8 sid = PPU_OBJsPerLine[line][i];
+		
+		u8* oam = &PPU_OAM[sid << 2];
+		u8 oamextra = PPU_OAM[0x200 + (sid >> 2)] >> ((sid & 0x03) << 1);
 		s32 oy = (s32)oam[1] + 1;
 		u8 oh = PPU_OBJHeight[(oamextra & 0x2) >> 1];
 		
-		if (line >= oy && line < (oy+oh))
-			PPU_RenderOBJ(oam, oamextra, oh-1, buf, line-oy);
-		else if (oy >= 192)
-		{
-			oy -= 0x100;
-			if (line > 0 && line < (s32)(oy+oh)) // hack. Stops garbage from showing up at the top of the screen in SMW and other games
-				PPU_RenderOBJ(oam, oamextra, oh-1, buf, line-oy);
-		}
-
-		i--;
-		if (i < 0) i = 127;
+		PPU_RenderOBJ(oam, oamextra, oh-1, buf, line-oy);
 	}
-	while (i != last);
 }
 
 void PPU_RenderOBJs(u16* buf, u32 line, u32 prio, u32 colmathmask, u32 window)
@@ -2123,6 +2187,8 @@ void PPU_RenderScanline(u32 line)
 		PPU_WindowDirty = 0;
 	}
 	
+	if (line == 0) PPU_ComputeOBJs();
+	
 	PPU_Subtract = (PPU_ColorMath2 & 0x80);
 	
 	int i;
@@ -2232,4 +2298,7 @@ void PPU_VBlank()
 		RenderPipelineVBlank();
 	
 	PPU_OAMAddr = PPU_OAMReload;
+	
+	if (!PPU_ForcedBlank)
+		PPU_OBJOverflow = 0;
 }
