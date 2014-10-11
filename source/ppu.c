@@ -1252,19 +1252,22 @@ void PPU_RenderBG_2bpp_16x16(PPU_Background* bg, u16* buffer, u32 line, u16* pal
 				{
 					if (start < 8)
 					{
-						int end1 = (end > 8) ? 8:end;
+						int end1 = 8-start;
+						if (end1 > end) end1 = end;
 						PPU_DeferTile(bg, &buffer[i], curtile, &tileset[idx], finalalpha, start, end1);
 						
-						start = end1;
+						start = 0;
+						end -= end1;
 						i += end1;
 					}
+					else
+						start -= 8;
 					
-					if (end >= 8)
+					if (end > 0)
 					{
 						if (curtile & 0x4000) idx -= 8;
 						else                  idx += 8;
 						
-						end -= 8;
 						PPU_DeferTile(bg, &buffer[i], curtile, &tileset[idx], finalalpha, start, end);
 						i += end;
 					}
@@ -1273,22 +1276,25 @@ void PPU_RenderBG_2bpp_16x16(PPU_Background* bg, u16* buffer, u32 line, u16* pal
 				{
 					if (start < 8)
 					{
-						int end1 = (end > 8) ? 8:end;
+						int end1 = 8-start;
+						if (end1 > end) end1 = end;
 						
 						tilepixels = tileset[idx];
 						if (tilepixels)
 							PPU_RenderTile_2bpp(curtile, tilepixels, &buffer[i], &pal[(curtile & 0x1C00) >> 8], finalalpha, start, end1);
 						
-						start = end1;
+						start = 0;
+						end -= end1;
 						i += end1;
 					}
+					else
+						start -= 8;
 					
-					if (end >= 8)
+					if (end > 0)
 					{
 						if (curtile & 0x4000) idx -= 8;
 						else                  idx += 8;
 						
-						end -= 8;
 						tilepixels = tileset[idx];
 						if (tilepixels)
 							PPU_RenderTile_2bpp(curtile, tilepixels, &buffer[i], &pal[(curtile & 0x1C00) >> 8], finalalpha, start, end);
@@ -1454,21 +1460,22 @@ void PPU_RenderBG_4bpp_16x16(PPU_Background* bg, u16* buffer, u32 line, u16* pal
 				{
 					if (start < 8)
 					{
-						int end1 = (end > 8) ? 8:end;
+						int end1 = 8-start;
+						if (end1 > end) end1 = end;
 						PPU_DeferTile(bg, &buffer[i], curtile, &tileset[idx], finalalpha, start, end1);
 						
-						start = end1;
+						start = 0;
+						end -= end1;
 						i += end1;
 					}
 					else
 						start -= 8;
 					
-					if (end >= 8)
+					if (end > 0)
 					{
 						if (curtile & 0x4000) idx -= 16;
 						else                  idx += 16;
 						
-						end -= 8;
 						PPU_DeferTile(bg, &buffer[i], curtile, &tileset[idx], finalalpha, start, end);
 						i += end;
 					}
@@ -1477,24 +1484,25 @@ void PPU_RenderBG_4bpp_16x16(PPU_Background* bg, u16* buffer, u32 line, u16* pal
 				{
 					if (start < 8)
 					{
-						int end1 = (end > 8) ? 8:end;
+						int end1 = 8-start;
+						if (end1 > end) end1 = end;
 						
 						tilepixels = tileset[idx] | (tileset[idx+8] << 16);
 						if (tilepixels)
 							PPU_RenderTile_4bpp(curtile, tilepixels, &buffer[i], &pal[(curtile & 0x1C00) >> 6], finalalpha, start, end1);
 						
-						start = end1;
+						start = 0;
+						end -= end1;
 						i += end1;
 					}
 					else
 						start -= 8;
 					
-					if (end >= 8)
+					if (end > 0)
 					{
 						if (curtile & 0x4000) idx -= 16;
 						else                  idx += 16;
 						
-						end -= 8;
 						tilepixels = tileset[idx] | (tileset[idx+8] << 16);
 						if (tilepixels)
 							PPU_RenderTile_4bpp(curtile, tilepixels, &buffer[i], &pal[(curtile & 0x1C00) >> 6], finalalpha, start, end);
@@ -1664,19 +1672,22 @@ void PPU_RenderBG_8bpp_16x16(PPU_Background* bg, u16* buffer, u32 line, u16* pal
 				{
 					if (start < 8)
 					{
-						int end1 = (end > 8) ? 8:end;
+						int end1 = 8-start;
+						if (end1 > end) end1 = end;
 						PPU_DeferTile(bg, &buffer[i], curtile, &tileset[idx], finalalpha, start, end1);
 						
-						start = end1;
+						start = 0;
+						end -= end1;
 						i += end1;
 					}
+					else
+						start -= 8;
 					
-					if (end >= 8)
+					if (end > 0)
 					{
 						if (curtile & 0x4000) idx -= 32;
 						else                  idx += 32;
 						
-						end -= 8;
 						PPU_DeferTile(bg, &buffer[i], curtile, &tileset[idx], finalalpha, start, end);
 						i += end;
 					}
@@ -1687,7 +1698,8 @@ void PPU_RenderBG_8bpp_16x16(PPU_Background* bg, u16* buffer, u32 line, u16* pal
 					
 					if (start < 8)
 					{
-						int end1 = (end > 8) ? 8:end;
+						int end1 = 8-start;
+						if (end1 > end) end1 = end;
 						
 						tilepixels1 = tileset[idx] | (tileset[idx+8] << 16);
 						tilepixels2 = tileset[idx+16] | (tileset[idx+24] << 16);
@@ -1695,16 +1707,18 @@ void PPU_RenderBG_8bpp_16x16(PPU_Background* bg, u16* buffer, u32 line, u16* pal
 						if (tilepixels1|tilepixels2)
 							PPU_RenderTile_8bpp(curtile, tilepixels1, tilepixels2, &buffer[i], pal, finalalpha, start, end1);
 						
-						start = end1;
+						start = 0;
+						end -= end1;
 						i += end1;
 					}
+					else
+						start -= 8;
 					
-					if (end >= 8)
+					if (end > 0)
 					{
 						if (curtile & 0x4000) idx -= 32;
 						else                  idx += 32;
 						
-						end -= 8;
 						tilepixels1 = tileset[idx] | (tileset[idx+8] << 16);
 						tilepixels2 = tileset[idx+16] | (tileset[idx+24] << 16);
 						
