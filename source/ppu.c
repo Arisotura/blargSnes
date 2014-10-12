@@ -802,6 +802,10 @@ void PPU_ComputeWindows()
 	if ((!((PPU_MainScreen|PPU_SubScreen) & 0x1F00)) && 
 		(((PPU_ColorMath1 & 0x30) == 0x00) || ((PPU_ColorMath1 & 0x30) == 0x30)))
 	{
+		s = &PPU_Window[0];
+		s->EndOffset = 256;
+		s->WindowMask = 0x0F;
+		s->ColorMath = 0x10;
 		return;
 	}
 	

@@ -52,7 +52,7 @@ FS_archive sdmcArchive;
 
 int running = 0;
 int pause = 0;
-int exitemu = 0;
+int exitspc = 0;
 u32 framecount = 0;
 
 int RenderState = 0;
@@ -76,7 +76,7 @@ void SPCThread(u32 blarg)
 {
 	// 65 cycles per scanline (65.13994910941475826972010178117)
 	// -> 31931 Hz (31931.25)
-	while (!exitemu)
+	while (!exitspc)
 	{
 		if (!pause)
 			SPC_Run();
@@ -367,6 +367,72 @@ void RenderTopScreen()
 }
 
 
+bool TakeScreenshot(char* path)
+{
+	int x, y;
+	
+	Handle file;
+	FS_path filePath;
+	filePath.type = PATH_CHAR;
+	filePath.size = strlen(path) + 1;
+	filePath.data = (u8*)path;
+	
+	Result res = FSUSER_OpenFile(NULL, &file, sdmcArchive, filePath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+	if (res) 
+		return false;
+		
+	u32 byteswritten;
+	
+	u32 bitmapsize = 400*480*3;
+	u8* tempbuf = (u8*)MemAlloc(0x36 + bitmapsize);
+	memset(tempbuf, 0, 0x36 + bitmapsize);
+	
+	FSFILE_SetSize(file, (u16)(0x36 + bitmapsize));
+	
+	*(u16*)&tempbuf[0x0] = 0x4D42;
+	*(u32*)&tempbuf[0x2] = 0x36 + bitmapsize;
+	*(u32*)&tempbuf[0xA] = 0x36;
+	*(u32*)&tempbuf[0xE] = 0x28;
+	*(u32*)&tempbuf[0x12] = 400; // width
+	*(u32*)&tempbuf[0x16] = 480; // height
+	*(u32*)&tempbuf[0x1A] = 0x00180001;
+	*(u32*)&tempbuf[0x22] = bitmapsize;
+	
+	u8* framebuf = (u8*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL);
+	for (y = 0; y < 240; y++)
+	{
+		for (x = 0; x < 400; x++)
+		{
+			int si = ((239 - y) + (x * 240)) * 3;
+			int di = 0x36 + (x + ((479 - y) * 400)) * 3;
+			
+			tempbuf[di++] = framebuf[si++];
+			tempbuf[di++] = framebuf[si++];
+			tempbuf[di++] = framebuf[si++];
+		}
+	}
+	
+	framebuf = (u8*)gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
+	for (y = 0; y < 240; y++)
+	{
+		for (x = 0; x < 320; x++)
+		{
+			int si = ((239 - y) + (x * 240)) * 3;
+			int di = 0x36 + ((x+40) + ((239 - y) * 400)) * 3;
+			
+			tempbuf[di++] = framebuf[si++];
+			tempbuf[di++] = framebuf[si++];
+			tempbuf[di++] = framebuf[si++];
+		}
+	}
+	
+	FSFILE_Write(file, &byteswritten, 0, (u32*)tempbuf, 0x36 + bitmapsize, 0x10001);
+	
+	FSFILE_Close(file);
+	MemFree(tempbuf);
+	return true;
+}
+
 
 // flags: bit0=tiled, bit1=15bit color
 void CopyBitmapToTexture(u8* src, void* dst, u32 width, u32 height, u32 alpha, u32 startx, u32 stride, u32 flags)
@@ -485,6 +551,17 @@ bool StartROM(char* path)
 	char temppath[300];
 	Result res;
 	
+	if (spcthread)
+	{
+		exitspc = 1;
+		svcWaitSynchronization(spcthread, U64_MAX);
+		exitspc = 0;
+	}
+	
+	ClearConsole();
+	bprintf("blargSNES console\n");
+	bprintf("http://blargsnes.kuribo64.net/\n");
+	
 	// load the ROM
 	strncpy(temppath, "/snes/", 6);
 	strncpy(&temppath[6], path, 0x106);
@@ -493,18 +570,18 @@ bool StartROM(char* path)
 	
 	if (!SNES_LoadROM(temppath))
 		return false;
+		
+	CPU_Reset();
+	SPC_Reset();
 
 	running = 1;
+	pause = 0;
 	framecount = 0;
 	
 	RenderState = 0;
 	FramesSkipped = 0;
 	SkipThisFrame = false;
 	
-	CPU_Reset();
-	
-	SPC_Reset();
-
 	// SPC700 thread (running on syscore)
 	res = svcCreateThread(&spcthread, SPCThread, 0, (u32*)(spcthreadstack+0x400), 0x30, 1);
 	if (res)
@@ -581,7 +658,7 @@ void RenderPipelineVBlank()
 {
 	// SNES VBlank. Copy the freshly rendered framebuffers.
 	
-	GSPGPU_FlushDataCache(NULL, PPU_MainBuffer, 512*512*2);
+	GSPGPU_FlushDataCache(NULL, (u8*)PPU_MainBuffer, 256*512*2);
 	
 	// in case we arrived here too early
 	if (RenderState != 1)
@@ -596,7 +673,7 @@ void RenderPipelineVBlank()
 	// copy new screen textures
 	// SetDisplayTransfer with flags=2 converts linear graphics to the tiled format used for textures
 	// since the two sets of buffers are contiguous, we can transfer them as one 256x512 texture
-	GX_SetDisplayTransfer(gxCmdBuf, PPU_MainBuffer, 0x02000100, MainScreenTex, 0x02000100, 0x3302);
+	GX_SetDisplayTransfer(gxCmdBuf, (u32*)PPU_MainBuffer, 0x02000100, (u32*)MainScreenTex, 0x02000100, 0x3302);
 	
 	// copy brightness.
 	// TODO do better
@@ -628,7 +705,7 @@ void RenderPipelineVBlank()
 
 void VSyncAndFrameskip()
 {
-	if (running && PeekEvent(gspEvents[GSPEVENT_VBlank0]) && FramesSkipped<5)
+	if (running && !pause && PeekEvent(gspEvents[GSPEVENT_VBlank0]) && FramesSkipped<5)
 	{
 		// we missed the VBlank
 		// skip the next frame to compensate
@@ -649,7 +726,8 @@ void VSyncAndFrameskip()
 
 int main() 
 {
-	int i, x, y;
+	int i;
+	int shot = 0;
 	
 	touchPosition lastTouch;
 	u32 repeatkeys = 0;
@@ -658,7 +736,7 @@ int main()
 	
 	running = 0;
 	pause = 0;
-	exitemu = 0;
+	exitspc = 0;
 	
 		
 	PPU_Init();
@@ -688,6 +766,7 @@ int main()
 	gfxSwapBuffersGpu();
 	
 	UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
+	ClearConsole();
 	
 	BorderTex = (u32*)linearAlloc(512*256*4);
 	MainScreenTex = (u16*)linearAlloc(256*512*2);
@@ -731,7 +810,7 @@ int main()
 			u32 held = hidKeysHeld();
 			u32 release = hidKeysUp();
 			
-			if (running)
+			if (running && !pause)
 			{
 				if (!SkipThisFrame)
 				{
@@ -761,10 +840,58 @@ int main()
 				framecount++;
 				if (!(framecount & 7))
 					SNES_SaveSRAM();
+					
+				if (release & KEY_TOUCH) 
+				{
+					bprintf("Pause.\n");
+					bprintf("Tap screen or press A to resume.\n");
+					bprintf("Press Select to load another game.\n");
+					pause = 1;
+				}
 			}
 			else
 			{
 				// update UI
+				
+				// TODO move this chunk of code somewhere else?
+				if (running)
+				{
+					if (release & (KEY_TOUCH|KEY_A))
+					{
+						bprintf("Resume\n");
+						pause = 0;
+					}
+					else if (release & KEY_SELECT)
+					{
+						running = 0;
+						UI_Switch(&UI_ROMMenu);
+						
+						CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 0, 32, 0x3);
+						memset(SubScreenTex, 0, 256*256*2);
+						memset(BrightnessTex, 0xFF, 224*8);
+					}
+					
+					if ((held & (KEY_L|KEY_R)) == (KEY_L|KEY_R))
+					{
+						if (!shot)
+						{
+							u32 timestamp = (u32)(svcGetSystemTick() / 446872);
+							char file[256];
+							snprintf(file, 256, "/blargSnes%08d.bmp", timestamp);
+							if (TakeScreenshot(file))
+							{
+								bprintf("Screenshot saved as:\n");
+								bprintf("SD:%s\n", file);
+							}
+							else
+								bprintf("Error saving screenshot\n");
+								
+							shot = 1;
+						}
+					}
+					else
+						shot = 0;
+				}
 				
 				GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
 				RenderTopScreen();
@@ -774,12 +901,12 @@ int main()
 				if (held & KEY_TOUCH)
 				{
 					hidTouchRead(&lastTouch);
-					UI_Touch(true, lastTouch.px, lastTouch.py);
+					UI_Touch((press & KEY_TOUCH) ? 1:2, lastTouch.px, lastTouch.py);
 					held &= ~KEY_TOUCH;
 				}
 				else if (release & KEY_TOUCH)
 				{
-					UI_Touch(false, lastTouch.px, lastTouch.py);
+					UI_Touch(0, lastTouch.px, lastTouch.py);
 					release &= ~KEY_TOUCH;
 				}
 				
@@ -831,7 +958,7 @@ int main()
 		}
 	}
 	 
-	exitemu = 1;
+	exitspc = 1;
 	if (spcthread) svcWaitSynchronization(spcthread, U64_MAX);
 	
 	linearFree(gpuCmd);

@@ -25,25 +25,27 @@
 
 
 #define CONSOLE_MAX 20
-char consolebuf[CONSOLE_MAX][33] = {{0}};
+char consolebuf[CONSOLE_MAX][37] = {{0}};
 int consoleidx = 0;
 int consoledirty = 0;
+
+extern int running;
 
 
 void bprintf(char* fmt, ...)
 {
-	char buf[256];
+	char buf[1024];
 	va_list args;
 	
 	va_start(args, fmt);
-	vsnprintf(buf, 255, fmt, args);
+	vsnprintf(buf, 1024, fmt, args);
 	va_end(args);
 	
 	int i = 0, j = 0;
 	for (;;)
 	{
 		j = 0;
-		while (buf[i] != '\0' && buf[i] != '\n' && j<32)
+		while (buf[i] != '\0' && buf[i] != '\n' && j<36)
 			consolebuf[consoleidx][j++] = buf[i++];
 		consolebuf[consoleidx][j] = '\0';
 		
@@ -57,33 +59,12 @@ void bprintf(char* fmt, ...)
 	consoledirty = 2;
 }
 
-void emergency_printf(char* fmt, ...)
+void ClearConsole()
 {
-	char buf[256];
-	va_list args;
+	consoleidx = 0;
+	memset(consolebuf, 0, CONSOLE_MAX*37);
 	
-	va_start(args, fmt);
-	vsnprintf(buf, 255, fmt, args);
-	va_end(args);
-	
-	int i = 0, j = 0;
-	for (;;)
-	{
-		j = 0;
-		while (buf[i] != '\0' && buf[i] != '\n' && j<32)
-			consolebuf[consoleidx][j++] = buf[i++];
-		consolebuf[consoleidx][j] = '\0';
-		
-		consoleidx++;
-		if (consoleidx >= CONSOLE_MAX) consoleidx = 0;
-		
-		if (buf[i] == '\0' || buf[i+1] == '\0')
-			break;
-	}
-	
-	DrawConsole();
-	//SwapBottomBuffers(0);
-	//ClearBottomBuffer();
+	consoledirty = 2;
 }
 
 void DrawConsole()
@@ -108,13 +89,6 @@ void DrawConsole()
 
 void Console_Init()
 {
-	/*int i;
-	
-	for (i = 0; i < CONSOLE_MAX; i++)
-		consolebuf[i][0] = '\0';
-	
-	consoleidx = 0;
-	consoledirty = 2;*/
 }
 
 void Console_DeInit()
@@ -134,13 +108,13 @@ void Console_ButtonPress(u32 btn)
 {
 	if (btn & (KEY_A|KEY_B))
 	{
-		UI_Switch(&UI_ROMMenu);
+		if (!running)
+			UI_Switch(&UI_ROMMenu);
 	}
 }
 
-void Console_Touch(bool touch, u32 x, u32 y)
+void Console_Touch(int touch, u32 x, u32 y)
 {
-	// TODO
 }
 
 

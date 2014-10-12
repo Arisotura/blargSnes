@@ -52,6 +52,12 @@ void SPC_InitMisc()
 	SPC_ROMAccess = 1;
 	SPC_DSPAddr = 0;
 	
+	memset(&SPC_RAM[0], 0, 0x10040);
+	memcpy(&SPC_RAM[0xFFC0], &SPC_ROM[0], 64);
+	
+	*(u32*)&SPC_IOPorts[0] = 0;
+	*(u32*)&SPC_IOPorts[4] = 0;
+	
 	SPC_Timers.EnableMask = 0;
 	SPC_Timers.Timer[0].CycleCount = 0;
 	SPC_Timers.Timer[0].Reload = 0;

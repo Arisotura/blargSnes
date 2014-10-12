@@ -44,7 +44,7 @@ void UI_ButtonPress(u32 btn)
 	(*CurrentUI->ButtonPress)(btn);
 }
 
-void UI_Touch(bool touch, u32 x, u32 y)
+void UI_Touch(int touch, u32 x, u32 y)
 {
 	(*CurrentUI->Touch)(touch, x, y);
 }

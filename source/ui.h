@@ -46,7 +46,7 @@ extern UIController UI_Console;
 void UI_Switch(UIController* ui);
 void UI_Render();
 void UI_ButtonPress(u32 btn);
-void UI_Touch(bool touch, u32 x, u32 y);
+void UI_Touch(int touch, u32 x, u32 y);
 
 
 bool StartROM(char* path);

@@ -29,6 +29,9 @@ int menuscroll = 0;
 #define MENU_MAX 18
 int menudirty = 0;
 
+int scrolltouch_y = 0;
+int scrolling = 0;
+
 
 void strncpy_u2a(char* dst, u16* src, int n)
 {
@@ -63,7 +66,7 @@ void DrawROMList()
 	int maxfile;
 	int menuy;
 	
-	DrawText(0, 0, RGB(255,255,255), "blargSnes 1.0 - by StapleButter");
+	DrawText(0, 0, RGB(255,255,255), "blargSNES 1.1 - by StapleButter");
 	
 	y = 13;  FillRect(0, 319, y, y, RGB(0,255,255));
 	y++;     FillRect(0, 319, y, y, RGB(0,128,255));
@@ -168,8 +171,6 @@ void ROMMenu_ButtonPress(u32 btn)
 {
 	if (btn & (KEY_A|KEY_B))
 	{
-		bprintf("blargSnes console\n");
-
 		if (!StartROM(&filelist[0x106*menusel]))
 			bprintf("Failed to load this ROM\nPress A to return to menu\n");
 			
@@ -193,9 +194,57 @@ void ROMMenu_ButtonPress(u32 btn)
 	}
 }
 
-void ROMMenu_Touch(bool touch, u32 x, u32 y)
+void ROMMenu_Touch(int touch, u32 x, u32 y)
 {
-	// TODO
+	int menuy = 19;
+	
+	if (y >= menuy)
+	{
+		if (x < 308)
+		{
+			y -= 19;
+			y /= 12;
+			
+			y += menuscroll;
+			if (y >= nfiles) return;
+			
+			menusel = y;
+			if (!StartROM(&filelist[0x106*menusel]))
+				bprintf("Failed to load this ROM\nPress A to return to menu\n");
+				
+			UI_Switch(&UI_Console);
+		}
+		/*else
+		{
+			if (touch == 0)
+				scrolling = 0;
+			else if (touch == 1)
+			{
+				scrolling = 1;
+				scrolltouch_y = y;
+			}
+			else
+			{
+				int dy = y - scrolltouch_y;
+				scrolltouch_y = y;
+				
+				int shownheight = 240-menuy;
+				int fullheight = 12*nfiles;
+				
+				int sboffset = (menuscroll * 12 * shownheight) / fullheight;
+				sboffset += dy;
+				
+				menuscroll = (sboffset * fullheight) / (12 * shownheight);
+				if (menuscroll < 0) menuscroll = 0;
+				else if (menuscroll >= nfiles) menuscroll = nfiles-1;
+				
+				if (menusel < menuscroll) menusel = menuscroll;
+				else if (menusel >= menuscroll+MENU_MAX) menusel = menuscroll+MENU_MAX-1;
+			}
+			
+			menudirty = 2;
+		}*/
+	}
 }
 
 

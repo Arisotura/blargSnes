@@ -342,11 +342,9 @@ u8 SNES_GIORead8(u32 addr)
 			break;
 			
 		case 0x18:
-			hidScanInput();
 			ret = IO_ReadKeysLow();
 			break;
 		case 0x19:
-			hidScanInput();
 			ret = IO_ReadKeysHigh();
 			break;
 			
@@ -380,7 +378,6 @@ u16 SNES_GIORead16(u32 addr)
 			break;
 			
 		case 0x18:
-			hidScanInput();
 			ret = IO_ReadKeysLow() | (IO_ReadKeysHigh() << 8);
 			break;
 			
