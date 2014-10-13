@@ -1878,7 +1878,7 @@ void PPU_RenderDeferredTiles_8bpp(PPU_Background* bg, u16* pal)
 }
 
 
-void PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line)
+int PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line)
 {
 	u16* tileset = PPU_OBJTileset;
 	s32 xoff;
@@ -1893,7 +1893,7 @@ void PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line)
 	if (oamextra & 0x1) // xpos bit8, sign bit
 	{
 		xoff = 0x100 - xoff;
-		if (xoff >= width) return;
+		if (xoff >= width) return 0;
 		i = -xoff;
 	}
 	else
@@ -1932,6 +1932,8 @@ void PPU_RenderOBJ(u8* oam, u32 oamextra, u32 ymask, u16* buffer, u32 line)
 		i += 8;
 		idx += (attrib & 0x4000) ? -16:16;
 	}
+	
+	return 1;
 }
 
 void PPU_PrerenderOBJs(u16* buf, s32 line)
@@ -1956,8 +1958,7 @@ void PPU_PrerenderOBJs(u16* buf, s32 line)
 				PPU_OBJOverflow |= 0x40;
 				return;
 			}
-			PPU_RenderOBJ(oam, oamextra, oh-1, buf, line-oy);
-			nrendered++;
+			nrendered += PPU_RenderOBJ(oam, oamextra, oh-1, buf, line-oy);
 		}
 		else if (oy >= 192)
 		{
@@ -1969,8 +1970,7 @@ void PPU_PrerenderOBJs(u16* buf, s32 line)
 					PPU_OBJOverflow |= 0x40;
 					return;
 				}
-				PPU_RenderOBJ(oam, oamextra, oh-1, buf, line-oy);
-				nrendered++;
+				nrendered += PPU_RenderOBJ(oam, oamextra, oh-1, buf, line-oy);
 			}
 		}
 

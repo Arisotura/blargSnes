@@ -150,6 +150,8 @@ void ROMMenu_Init()
 	}
 	FSDIR_Close(dirHandle);
 	
+	// TODO: alphabetical sorting maybe
+	
 	menudirty = 2;
 }
 
