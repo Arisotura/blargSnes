@@ -28,17 +28,13 @@ u8 HDMA_Pause[8];
 
 u8 DMA_Read8(u32 addr)
 {
-	u8 ret = (addr > 0x7F) ? 0 : DMA_Chans[addr];
-	if (((addr & 0xF) == 0xC) || ((addr & 0xF) == 0xD) || ((addr & 0xF) == 0xE) || (addr >= 0x80))
-		bprintf("Open bus 43%02X\n", addr);
+	u8 ret = (addr > 0x7F) ? 0x43 : DMA_Chans[addr];
 	return ret;
 }
 
 u16 DMA_Read16(u32 addr)
 {
-	u16 ret = (addr > 0x7F) ? 0 : *(u16*)&DMA_Chans[addr];
-	if (((addr & 0xF) == 0xB) || ((addr & 0xF) == 0xC) || ((addr & 0xF) == 0xD) || ((addr & 0xF) == 0xE) || (addr >= 0x7F))
-		bprintf("Open bus (16) 43%02X\n", addr);
+	u16 ret = (addr > 0x7F) ? 0x4343 : *(u16*)&DMA_Chans[addr];
 	return ret;
 }
 
