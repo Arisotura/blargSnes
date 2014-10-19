@@ -625,89 +625,10 @@ CPU_Cycles:
 .global debugpc
 debugpc:
 	.long 0
-	
-CPU_TimeInFrame:
-	.long 0
+
 	
 .section    .text, "awx", %progbits
 
-
-CPU_Schedule:
-	@stmdb r12
-	
-	ldr r3, =CPU_TimeInFrame
-	ldr r0, [r3]
-	ldr r1, [memoryMap, #-0x14]
-	add r0, r0, r1
-	str r0, [r3]
-	
-	@ r0 = total time within frame
-	@ r1 = current scanline
-	@ r2 = current scanline * scanline time
-	@ r3 = time within scanline
-	@ r4 = time to current event
-	@ r5 = funcptr of current event
-	@ r12 = temp
-	
-	ldr r1, =PPU_VCount
-	ldrh r1, [r1]
-	
-	ldr r12, =1324			@ minus 40 refresh cycles. TODO: checkme
-	mul r2, r1, r12
-	sub r3, r0, r2
-	
-	@ check the most probable events first
-	
-	ldrb r3, [memoryMap, #-0x5] @ HVBFlags
-	tst r3, #0x40
-	bne sched_inside_hblank
-		@ outside of HBlank
-		rsb r4, r3, #1024
-		add r4, r4, r2
-		@ldr r5, =CPU_Event_HBlankStart
-		
-		b sched_hbl_end
-	sched_inside_hblank:
-		@ inside of HBlank
-		rsb r4, r3, r12
-		add r4, r4, r2
-		@ldr r5, =CPU_Event_HBlankEnd
-		
-	sched_hbl_end:
-	
-	
-	
-	@ldmia
-
-
-_CPU_Run:
-	stmdb sp!, {r4-r11, lr}
-	LoadRegs
-
-	ldr r3, =CPU_TimeInFrame
-	@ldr r0, =357368 @ TODO: PAL timing
-	mov r0, #0
-	str r0, [r3]
-	str r0, [memoryMap, #-0x14]
-	bl CPU_Schedule
-runloop:
-	OpcodePrefetch8
-	ldr pc, [opTable, r0, lsl #0x2]
-	
-	_op_return:
-	cmp snesCycles, #0
-	bgt runloop
-	
-	@ -- execute event
-	@ -- check if end of frame
-	bl CPU_Schedule
-	b runloop
-
-frameend:
-	StoreRegs
-	ldmia sp!, {r4-r11, pc}
-	
-	
 	
 CPU_Run:
 	stmdb sp!, {r4-r11, lr}
@@ -853,6 +774,7 @@ vblank_notfirst:
 		ldr r1, =PPU_VCount
 		strh r0, [r1]
 		
+frame_end:
 	StoreRegs
 	ldmia sp!, {r4-r11, pc}
 		
@@ -1103,21 +1025,6 @@ vblank_notfirst:
 	GetAddr_SRIndirectIndY
 	_DoMemRead \sixteen
 .endm
-
-@ --- unknown -----------------------------------------------------------------
-
-report_unk:
-	stmdb sp!, {r0-r12, lr}
-	bl report_unk_lol
-	ldmia sp!, {r0-r12, lr}
-	bx lr
-
-OP_UNK:
-	mov r1, snesPC, lsr #0x10
-	orr r1, r1, snesPBR, lsl #0x10
-	bl report_unk
-	AddCycles 1
-	b op_return
 	
 @ --- ADC ---------------------------------------------------------------------
 
@@ -4030,12 +3937,8 @@ OP_m1_STA_SRIndirectIndY:
 @ at all in first place?
 
 OP_STP:
-	mov r1, snesPC, lsr #0x10
-	mov r0, #0xDB
-	bl report_unk
-stoploop:
-	@swi #0x50000
-	b stoploop
+	SafeCall ReportCrash
+	b frame_end
 	
 @ --- STX ---------------------------------------------------------------------
 

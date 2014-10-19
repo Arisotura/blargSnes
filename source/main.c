@@ -90,12 +90,73 @@ void SPCThread(u32 blarg)
 }
 
 
+
+void dbg_save(char* path, void* buf, int size)
+{
+	Handle sram;
+	FS_path sramPath;
+	sramPath.type = PATH_CHAR;
+	sramPath.size = strlen(path) + 1;
+	sramPath.data = (u8*)path;
+	
+	Result res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+	if ((res & 0xFFFC03FF) == 0)
+	{
+		u32 byteswritten = 0;
+		FSFILE_Write(sram, &byteswritten, 0, (u32*)buf, size, 0x10001);
+		FSFILE_Close(sram);
+	}
+}
+
 void debugcrapo(u32 op, u32 op2)
 {
 	bprintf("DBG: %08X %08X\n", op, op2);
 	DrawConsole();
 	//SwapBottomBuffers(0);
 	//ClearBottomBuffer();
+}
+
+void ReportCrash()
+{
+	pause = 1;
+	
+	ClearConsole();
+	bprintf("Game has crashed (STOP)\n");
+	
+	bprintf("PC: %02X|%04X\n", CPU_Regs.PBR, CPU_Regs.PC);
+	bprintf("P: %02X | M=%d X=%d E=%d\n", CPU_Regs.P.val&0xFF, CPU_Regs.P.M, CPU_Regs.P.X, CPU_Regs.P.E);
+	bprintf("A: %04X X: %04X Y: %04X\n", CPU_Regs.A, CPU_Regs.X, CPU_Regs.Y);
+	bprintf("S: %04X D: %02X DBR: %02X\n", CPU_Regs.S, CPU_Regs.D, CPU_Regs.DBR);
+	
+	bprintf("Stack\n");
+	bprintf("%02X %02X %02X %02X %02X %02X %02X %02X\n",
+		SNES_SysRAM[CPU_Regs.S+0], SNES_SysRAM[CPU_Regs.S+1],
+		SNES_SysRAM[CPU_Regs.S+2], SNES_SysRAM[CPU_Regs.S+3],
+		SNES_SysRAM[CPU_Regs.S+4], SNES_SysRAM[CPU_Regs.S+5],
+		SNES_SysRAM[CPU_Regs.S+6], SNES_SysRAM[CPU_Regs.S+7]);
+	CPU_Regs.S += 8;
+	bprintf("%02X %02X %02X %02X %02X %02X %02X %02X\n",
+		SNES_SysRAM[CPU_Regs.S+0], SNES_SysRAM[CPU_Regs.S+1],
+		SNES_SysRAM[CPU_Regs.S+2], SNES_SysRAM[CPU_Regs.S+3],
+		SNES_SysRAM[CPU_Regs.S+4], SNES_SysRAM[CPU_Regs.S+5],
+		SNES_SysRAM[CPU_Regs.S+6], SNES_SysRAM[CPU_Regs.S+7]);
+	CPU_Regs.S += 8;
+	bprintf("%02X %02X %02X %02X %02X %02X %02X %02X\n",
+		SNES_SysRAM[CPU_Regs.S+0], SNES_SysRAM[CPU_Regs.S+1],
+		SNES_SysRAM[CPU_Regs.S+2], SNES_SysRAM[CPU_Regs.S+3],
+		SNES_SysRAM[CPU_Regs.S+4], SNES_SysRAM[CPU_Regs.S+5],
+		SNES_SysRAM[CPU_Regs.S+6], SNES_SysRAM[CPU_Regs.S+7]);
+	CPU_Regs.S += 8;
+	bprintf("%02X %02X %02X %02X %02X %02X %02X %02X\n",
+		SNES_SysRAM[CPU_Regs.S+0], SNES_SysRAM[CPU_Regs.S+1],
+		SNES_SysRAM[CPU_Regs.S+2], SNES_SysRAM[CPU_Regs.S+3],
+		SNES_SysRAM[CPU_Regs.S+4], SNES_SysRAM[CPU_Regs.S+5],
+		SNES_SysRAM[CPU_Regs.S+6], SNES_SysRAM[CPU_Regs.S+7]);
+		
+	bprintf("Full RAM dump can be found on SD\n");
+	bprintf("Tell StapleButter\n");
+	
+	dbg_save("/SNESRAM.bin", SNES_SysRAM, 0x20000);
 }
 
 void dbgcolor(u32 col)
@@ -596,23 +657,6 @@ bool StartROM(char* path)
 }
 
 
-
-void dbg_save(char* path, void* buf, int size)
-{
-	Handle sram;
-	FS_path sramPath;
-	sramPath.type = PATH_CHAR;
-	sramPath.size = strlen(path) + 1;
-	sramPath.data = (u8*)path;
-	
-	Result res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
-	if ((res & 0xFFFC03FF) == 0)
-	{
-		u32 byteswritten = 0;
-		FSFILE_Write(sram, &byteswritten, 0, (u32*)buf, size, 0x10001);
-		FSFILE_Close(sram);
-	}
-}
 
 int reported=0;
 void reportshit(u32 pc)

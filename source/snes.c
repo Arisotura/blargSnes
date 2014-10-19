@@ -38,15 +38,15 @@ char SNES_SRAMPath[300];
 extern FS_archive sdmcArchive;
 
 // addressing: BBBBBBBB:AAAaaaaa:aaaaaaaa
-// bit0-27: argument
-// bit28: access speed (0 = 6 cycles, 1 = 8 cycles)
-// bit29: special bit (0 = argument is a RAM pointer, 1 = other case)
-// bit30: write permission (0 = can write, 1 = read-only)
+// bit4-31: argument
+// bit0: access speed (0 = 6 cycles, 1 = 8 cycles)
+// bit1: special bit (0 = argument is a RAM pointer, 1 = other case)
+// bit2: write permission (0 = can write, 1 = read-only)
+// bit3: SRAM bit
 // common cases:
-// * b29=0, b30=0: system RAM, SRAM; arg = pointer to RAM
-// * b29=1, b30=0: I/O, expansion RAM; arg = zero
-// * b29=0, b30=1: cached ROM; arg = pointer to RAM
-// * b29=1, b30=1: non-cached ROM; arg = file offset
+// * b1=0, b2=0: system RAM, SRAM; arg = pointer to RAM
+// * b1=1, b2=0: I/O, expansion RAM; arg = zero
+// * b1=0, b2=1: ROM; arg = pointer to RAM
 //
 // cheat: we place stuff before the start of the actual array-- those 
 // can be accessed quickly by the CPU core since it keeps a pointer to
@@ -71,6 +71,11 @@ u16 SNES_DivRes = 0;
 bool SNES_FastROM = false;
 
 extern u8 DMA_HDMAFlag;
+
+// execution trap
+// I/O regions are mapped to this buffer, so that when an accidental jump to those regions occurs,
+// we can trace it instead of just crashing
+u8 SNES_ExecTrap[8192] __attribute__((aligned(256)));
 
 
 
@@ -133,6 +138,9 @@ void SNES_Reset()
 	for (i = 0; i < (128 * 1024); i += 4)
 		*(u32*)&SNES_SysRAM[i] = 0x55555555; // idk about this
 		
+	// fill it with STP opcodes
+	memset(SNES_ExecTrap, 0xDB, 8192);
+		
 	SNES_FastROM = false;
 	
 	DMA_HDMAFlag = 0;
@@ -171,13 +179,13 @@ void SNES_Reset()
 	for (b = 0; b < 0x40; b++)
 	{
 		MEM_PTR(b, 0x0000) = MEM_PTR(0x80 + b, 0x0000) = MPTR_SLOW | (u32)&SNES_SysRAM[0];
-		MEM_PTR(b, 0x2000) = MEM_PTR(0x80 + b, 0x2000) = MPTR_SPECIAL;
-		MEM_PTR(b, 0x4000) = MEM_PTR(0x80 + b, 0x4000) = MPTR_SPECIAL;
+		MEM_PTR(b, 0x2000) = MEM_PTR(0x80 + b, 0x2000) = MPTR_SPECIAL | (u32)&SNES_ExecTrap[0];
+		MEM_PTR(b, 0x4000) = MEM_PTR(0x80 + b, 0x4000) = MPTR_SPECIAL | (u32)&SNES_ExecTrap[0];
 		
 		if ((b >= 0x30) && SNES_HiROM && SNES_SRAMMask)
 			MEM_PTR(b, 0x6000) = MEM_PTR(0x80 + b, 0x6000) = MPTR_SLOW | MPTR_SRAM | (u32)&SNES_SRAM[(b << 13) & SNES_SRAMMask];
 		else
-			MEM_PTR(b, 0x6000) = MEM_PTR(0x80 + b, 0x6000) = MPTR_SLOW | MPTR_SPECIAL;
+			MEM_PTR(b, 0x6000) = MEM_PTR(0x80 + b, 0x6000) = MPTR_SLOW | MPTR_SPECIAL | (u32)&SNES_ExecTrap[0];
 	}
 
 	if (SNES_HiROM)
@@ -203,11 +211,11 @@ void SNES_Reset()
 		{
 			for (b = 0; b < 0x0E; b++)
 				for (a = 0; a < 0x8000; a += 0x2000)
-					MEM_PTR(0x70 + b, a) = MEM_PTR(0xF0 + b, a) = MPTR_SLOW | MPTR_SPECIAL;
+					MEM_PTR(0x70 + b, a) = MEM_PTR(0xF0 + b, a) = MPTR_SLOW | MPTR_SPECIAL | (u32)&SNES_ExecTrap[0];
 			for (a = 0; a < 0x8000; a += 0x2000)
 			{
-				MEM_PTR(0xFE + b, a) = MPTR_SLOW | MPTR_SPECIAL;
-				MEM_PTR(0xFF + b, a) = MPTR_SLOW | MPTR_SPECIAL;
+				MEM_PTR(0xFE + b, a) = MPTR_SLOW | MPTR_SPECIAL | (u32)&SNES_ExecTrap[0];
+				MEM_PTR(0xFF + b, a) = MPTR_SLOW | MPTR_SPECIAL | (u32)&SNES_ExecTrap[0];
 			}
 		}
 
