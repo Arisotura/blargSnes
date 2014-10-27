@@ -154,9 +154,15 @@ void ReportCrash()
 		SNES_SysRAM[CPU_Regs.S+6], SNES_SysRAM[CPU_Regs.S+7]);
 		
 	bprintf("Full RAM dump can be found on SD\n");
+	
+	u32 pc = (CPU_Regs.PBR<<16)|CPU_Regs.PC;
+	u32 ptr = Mem_PtrTable[pc >> 13];
+	bprintf("Ptr table entry: %08X\n", ptr);
+	
 	bprintf("Tell StapleButter\n");
 	
 	dbg_save("/SNESRAM.bin", SNES_SysRAM, 0x20000);
+	dbg_save("/SNESPtrChunk.bin", (void*)(ptr&~0xF), 0x2000);
 }
 
 void dbgcolor(u32 col)
@@ -228,22 +234,6 @@ void setUniformMatrix(u32 startreg, float* m)
 	GPU_SetUniform(startreg, (u32*)param, 4);
 }
 
-void GPU_SetTexture1(u32* data, u16 width, u16 height, u32 param, GPU_TEXCOLOR colorType)
-{
-	GPUCMD_AddSingleParam(0x000F0096, colorType);
-	GPUCMD_AddSingleParam(0x000F0095, ((u32)data)>>3);
-	GPUCMD_AddSingleParam(0x000F0092, (width)|(height<<16));
-	GPUCMD_AddSingleParam(0x000F0093, param);
-}
-
-void GPU_SetTexture2(u32* data, u16 width, u16 height, u32 param, GPU_TEXCOLOR colorType)
-{
-	GPUCMD_AddSingleParam(0x000F009E, colorType);
-	GPUCMD_AddSingleParam(0x000F009D, ((u32)data)>>3);
-	GPUCMD_AddSingleParam(0x000F009A, (width)|(height<<16));
-	GPUCMD_AddSingleParam(0x000F009B, param);
-}
-
 void GPU_SetDummyTexEnv(u8 num)
 {
 	GPU_SetTexEnv(num, 
@@ -259,37 +249,35 @@ void GPU_SetDummyTexEnv(u8 num)
 void RenderTopScreen()
 {
 	// notes on the drawing process 
-	// GPU hangs if we attempt to draw an even number of arrays :/ which is why we draw the border 'twice'
 	// textures used here are actually 512x256. TODO: investigate if GPU_SetTexture() really has the params in the wrong order
 	// or if we did something wrong.
 	
 	
 	//general setup
 	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)gpuOut),0,0,240*2,400);
+
+	
 	GPU_DepthRange(-1.0f, 0.0f);
 	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00);
-	GPU_SetDepthTest(false, GPU_ALWAYS, 0x1F);
+	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
+	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	GPU_SetBlendingColor(0,0,0,0);
+	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_ALL);
 	
-	// ?
-	GPUCMD_AddSingleParam(0x00010062, 0x00000000); //param always 0x0 according to code
-	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+	GPUCMD_AddSingleParam(0x00010062, 0); 
+	GPUCMD_AddSingleParam(0x000F0118, 0);
 	
 	//setup shader
 	SHDR_UseProgram(shader, 0);
-		
-	//?
-	GPUCMD_AddSingleParam(0x000F0100, 0x00E40100);
-	GPUCMD_AddSingleParam(0x000F0101, 0x01010000);
-	GPUCMD_AddSingleParam(0x000F0104, 0x00000010);
 	
-	//texturing stuff
-	GPUCMD_AddSingleParam(0x0002006F, 0x00000100);
-	GPUCMD_AddSingleParam(0x000F0080, 0x00011001); //enables/disables texturing
-	//texenv
+	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+	GPU_SetAlphaTest(false, GPU_ALWAYS, 0x00);
+	
+	GPU_SetTextureEnable(GPU_TEXUNIT0);
+	
 	GPU_SetTexEnv(0, 
 		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
-		GPU_TEVSOURCES(GPU_CONSTANT, 0, 0),
+		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
 		GPU_TEVOPERANDS(0,0,0), 
 		GPU_TEVOPERANDS(0,0,0), 
 		GPU_REPLACE, GPU_REPLACE, 
@@ -299,8 +287,8 @@ void RenderTopScreen()
 	GPU_SetDummyTexEnv(3);
 	GPU_SetDummyTexEnv(4);
 	GPU_SetDummyTexEnv(5);
-	//texturing stuff
-	GPU_SetTexture((u32*)osConvertVirtToPhys((u32)BorderTex),256,512,0,GPU_RGBA8); // texture is actually 512x256
+	
+	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)BorderTex),256,512,0,GPU_RGBA8); // texture is actually 512x256
 	
 	//setup matrices
 	setUniformMatrix(0x24, mvMatrix);
@@ -311,24 +299,26 @@ void RenderTopScreen()
 		GPU_ATTRIBFMT(0, 3, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT),
 		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
 		
-	GPU_DrawArray(GPU_TRIANGLES, 3);
-	GPU_DrawArray(GPU_TRIANGLES, 2*3);
-
+	GPU_DrawArray(GPU_TRIANGLES, 2*3); 
+	GPU_FinishDrawing();
+	
 
 	// TODO: there are probably unneeded things in here. Investigate whenever we know the PICA200 better.
 	GPU_DepthRange(-1.0f, 0.0f);
 	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00);
-	GPU_SetDepthTest(false, GPU_ALWAYS, 0x1F);
+	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
+	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	GPU_SetBlendingColor(0,0,0,0);
+	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_ALL);
+	
 	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
 	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0100, 0x00000100);
-	GPUCMD_AddSingleParam(0x000F0101, 0x01010000);
-	GPUCMD_AddSingleParam(0x000F0104, 0x00000010);
 	
-	//texturing stuff
-	GPUCMD_AddSingleParam(0x0002006F, 0x00000700); // enables/disables texcoord output
-	GPUCMD_AddSingleParam(0x000F0080, 0x00011007); // enables/disables texturing
+	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+	GPU_SetAlphaTest(false, GPU_ALWAYS, 0x00);
+	
+	GPU_SetTextureEnable(GPU_TEXUNIT0|GPU_TEXUNIT1|GPU_TEXUNIT2);
+	
 	// TEXTURE ENV STAGES
 	// ---
 	// blending operation: (Main.Color +- (Sub.Color * Main.Alpha)) * Sub.Alpha
@@ -420,11 +410,12 @@ void RenderTopScreen()
 		GPU_ATTRIBFMT(0, 3, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT)|GPU_ATTRIBFMT(2, 2, GPU_FLOAT),
 		0xFFC, 0x210, 1, (u32[]){0x00000000}, (u64[]){0x210}, (u8[]){3});
 		
-	GPU_SetTexture((u32*)osConvertVirtToPhys((u32)MainScreenTex),256,256,0,GPU_RGBA5551);
-	GPU_SetTexture1((u32*)osConvertVirtToPhys((u32)SubScreenTex),256,256,0,GPU_RGBA5551);
-	GPU_SetTexture2((u32*)osConvertVirtToPhys((u32)BrightnessTex),256,8,0x200,GPU_A8);
+	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)MainScreenTex),256,256,0,GPU_RGBA5551);
+	GPU_SetTexture(GPU_TEXUNIT1, (u32*)osConvertVirtToPhys((u32)SubScreenTex),256,256,0,GPU_RGBA5551);
+	GPU_SetTexture(GPU_TEXUNIT2, (u32*)osConvertVirtToPhys((u32)BrightnessTex),256,8,0x200,GPU_A8);
 	
 	GPU_DrawArray(GPU_TRIANGLES, 2*3);
+	GPU_FinishDrawing();
 }
 
 
@@ -807,6 +798,7 @@ int main()
 	shader = SHDR_ParseSHBIN((u32*)blarg_shbin, blarg_shbin_size);
 	
 	GX_SetMemoryFill(gxCmdBuf, (u32*)gpuOut, 0x404040FF, (u32*)&gpuOut[0x2EE00], 0x201, (u32*)gpuDOut, 0x00000000, (u32*)&gpuDOut[0x2EE00], 0x201);
+	gspWaitForPSC0();
 	gfxSwapBuffersGpu();
 	
 	UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
@@ -829,7 +821,7 @@ int main()
 	FSUSER_OpenArchive(NULL, &sdmcArchive);
 	
 	if (!LoadBorder("/blargSnesBorder.bmp"))
-		CopyBitmapToTexture(defaultborder, BorderTex, 400, 240, 0xFF, 0, 64, 0x1);
+		CopyBitmapToTexture(defaultborder, BorderTex, 400, 240, /*0xFF*/0x80, 0, 64, 0x1);
 		
 	CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 0, 32, 0x3);
 	memset(SubScreenTex, 0, 256*256*2);
@@ -838,11 +830,9 @@ int main()
 	UI_Switch(&UI_ROMMenu);
 	
 	svcCreateEvent(&SPCSync, 0);
-	
-	aptSetupEventHandler();
 
 
-	APP_STATUS status;//u32 lastfc=0; u8 lastcnt=0;u64 lastbig=0;
+	APP_STATUS status;
 	while((status = aptGetStatus()) != APP_EXITING)
 	{
 		if(status == APP_RUNNING)
@@ -975,20 +965,21 @@ int main()
 							repeatstate = 2;
 					}
 				}
-				
+				 
 				gspWaitForP3D();
+
 				GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
 			}
 			
 			u8* bottomfb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
-			gfxSwapBuffersGpu();
+			
 			UI_SetFramebuffer(bottomfb);
 			UI_Render();
 			GSPGPU_FlushDataCache(NULL, bottomfb, 0x38400);
 			
 			// at this point, we were transferring a framebuffer. Wait for it to be done.
 			gspWaitForPPF();
-			
+			gfxSwapBuffersGpu();
 			VSyncAndFrameskip();
 		}
 		else if(status == APP_SUSPENDING)
