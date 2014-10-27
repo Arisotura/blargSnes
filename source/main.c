@@ -116,6 +116,11 @@ void debugcrapo(u32 op, u32 op2)
 	//ClearBottomBuffer();
 }
 
+void SPC_ReportUnk(u8 op, u32 pc)
+{
+	bprintf("SPC UNK %02X @ %04X\n", op, pc);
+}
+
 void ReportCrash()
 {
 	pause = 1;
@@ -903,6 +908,10 @@ int main()
 						CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 0, 32, 0x3);
 						memset(SubScreenTex, 0, 256*256*2);
 						memset(BrightnessTex, 0xFF, 224*8);
+					}
+					else if (release & KEY_X)
+					{
+						bprintf("PC: %02X|%04X\n", CPU_Regs.PBR, CPU_Regs.PC);
 					}
 					
 					if ((held & (KEY_L|KEY_R)) == (KEY_L|KEY_R))
