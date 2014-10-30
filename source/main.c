@@ -35,8 +35,8 @@
 
 
 extern u32* gxCmdBuf;
-u32* gpuOut = (u32*)0x1F119400;
-u32* gpuDOut = (u32*)0x1F370800;
+u32* gpuOut;
+u32* gpuDOut;
 DVLB_s* shader;
 
 u32 gpuCmdSize;
@@ -778,7 +778,8 @@ int main()
 	pause = 0;
 	exitspc = 0;
 	
-		
+	
+	VRAM_Init();
 	PPU_Init();
 	
 	
@@ -800,9 +801,12 @@ int main()
 	
 	svcSetThreadPriority(gspEventThread, 0x30);
 	
+	gpuOut = (u32*)VRAM_Alloc(400*240*2*4);
+	gpuDOut = (u32*)VRAM_Alloc(400*240*2*4);
+	
 	shader = SHDR_ParseSHBIN((u32*)blarg_shbin, blarg_shbin_size);
 	
-	GX_SetMemoryFill(gxCmdBuf, (u32*)gpuOut, 0x404040FF, (u32*)&gpuOut[0x2EE00], 0x201, (u32*)gpuDOut, 0x00000000, (u32*)&gpuDOut[0x2EE00], 0x201);
+	GX_SetMemoryFill(gxCmdBuf, gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
 	gspWaitForPSC0();
 	gfxSwapBuffersGpu();
 	
@@ -897,7 +901,7 @@ int main()
 				{
 					if (release & (KEY_TOUCH|KEY_A))
 					{
-						bprintf("Resume\n");
+						bprintf("Resume.\n");
 						pause = 0;
 					}
 					else if (release & KEY_SELECT)

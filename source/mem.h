@@ -22,4 +22,8 @@
 void* MemAlloc(u32 size);
 void MemFree(void* ptr);
 
+void VRAM_Init();
+void* VRAM_Alloc(u32 size);
+void VRAM_Free(void* ptr);
+
 #endif

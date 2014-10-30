@@ -2,9 +2,7 @@ TODO
 
 short term
 
- * change 16bit access handlers to use ldrh/strh since unaligned accesses seem to work on the 3DS
-   (done on main CPU side, has yet to be done for SPC700)
- * windows, those can be important
+ * rebuild the rendering system to make it more flexible etc
  
 long term
 
