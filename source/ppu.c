@@ -24,6 +24,9 @@ u32 Mem_WRAMAddr = 0;
 u8 SPC_IOPorts[8];
 
 
+// TODO
+// group that ugly chunk of globals in a structure!
+
 u16 PPU_VCount = 0;
 
 // 16+256+16: we leave 16 extra pixels on both sides so we don't have to handle tiles that are partially offscreen

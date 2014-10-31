@@ -301,7 +301,8 @@ SPC_Run:
 	LoadRegs
 	
 	ldr r12, =itercount
-	ldr r4, =17447			@ ~ SPC cycles per frame
+	@ldr r4, =17447			@ ~ SPC cycles per frame
+	mov r4, #0x200
 	@mov r4, #65
 	ldr r3, [r12]
 	add r3, r3, r4

@@ -22,6 +22,7 @@
 #include <3ds.h>
 
 #include "ui.h"
+#include "audio.h"
 
 #include "mem.h"
 #include "cpu.h"
@@ -37,6 +38,7 @@
 extern u32* gxCmdBuf;
 u32* gpuOut;
 u32* gpuDOut;
+u32* SNESFrame;
 DVLB_s* shader;
 
 u32 gpuCmdSize;
@@ -71,19 +73,29 @@ Result svcSetThreadPriority(Handle thread, s32 prio)
 
 
 Handle SPCSync;
+Handle SPCTimer;
 
 void SPCThread(u32 blarg)
 {
+	svcCreateTimer(&SPCTimer, 0);
+	svcSetTimer(SPCTimer, 500*1000, 500*1000);
+	
 	// 65 cycles per scanline (65.13994910941475826972010178117)
 	// -> 31931 Hz (31931.25)
 	while (!exitspc)
 	{
 		if (!pause)
+		{
 			SPC_Run();
+			Audio_Mix();
+		}
 		
-		svcWaitSynchronization(SPCSync, (s64)(17*1000*1000));
+		//svcWaitSynchronization(SPCSync, (s64)(17*1000*1000));
 		//svcWaitSynchronization(SPCSync, (s64)63613);
-		svcClearEvent(SPCSync);
+		//svcClearEvent(SPCSync);
+		svcWaitSynchronization(SPCTimer, U64_MAX);
+		svcClearTimer(SPCTimer);
+		svcSetTimer(SPCTimer, 500*1000, 500*1000);
 	}
 	
 	svcExitThread();
@@ -178,10 +190,18 @@ void dbgcolor(u32 col)
 
 
 
-float projMatrix[16] = 
+float screenProjMatrix[16] = 
 {
 	2.0f/240.0f, 0, 0, -1,
 	0, 2.0f/400.0f, 0, -1,
+	0, 0, 1, -1,
+	0, 0, 0, 1
+};
+
+float snesProjMatrix[16] = 
+{
+	2.0f/256.0f, 0, 0, -1,
+	0, 2.0f/240.0f, 0, -1,
 	0, 0, 1, -1,
 	0, 0, 0, 1
 };
@@ -197,22 +217,37 @@ float mvMatrix[16] =
 float vertexList[] = 
 {
 	// border
-	0.0, 0.0, 0.9,      0.78125, 0.0625,
+	/*0.0, 0.0, 0.9,      0.78125, 0.0625,
 	240.0, 0.0, 0.9,    0.78125, 1.0,
 	240.0, 400.0, 0.9,  0, 1.0,
 	
 	0.0, 0.0, 0.9,      0.78125, 0.0625,
 	240.0, 400.0, 0.9,  0, 1.0,
-	0.0, 400.0, 0.9,    0, 0.0625,
+	0.0, 400.0, 0.9,    0, 0.0625,*/
+	
+	0.0, 0.0, 0.9,      1.0, 0.0625,
+	240.0, 0.0, 0.9,    1.0, 0.9375, // should really be 0.875 -- investigate
+	240.0, 400.0, 0.9,  0.0, 0.9375,
+	
+	0.0, 0.0, 0.9,      1.0, 0.0625,
+	240.0, 400.0, 0.9,  0.0, 0.9375,
+	0.0, 400.0, 0.9,    0.0, 0.0625,
 	
 	// screen
-	8.0, 72.0, 0.5,     1.0, 0.125,  0.125, 0.125,
+	/*8.0, 72.0, 0.5,     1.0, 0.125,  0.125, 0.125,
 	232.0, 72.0, 0.5,   1.0, 1.0,    0.125, 1.0,
 	232.0, 328.0, 0.5,  0.0, 1.0,    0.0, 1.0,
 	
 	8.0, 72.0, 0.5,     1.0, 0.125,  0.125, 0.125,
 	232.0, 328.0, 0.5,  0.0, 1.0,    0.0,   1.0,
-	8.0, 328.0, 0.5,    0.0, 0.125,  0.0,   0.125,
+	8.0, 328.0, 0.5,    0.0, 0.125,  0.0,   0.125,*/
+	0.0, 0.0, 0.5,     0.0, 0.125,  0.125, 0.125,
+	256.0, 0.0, 0.5,   1.0, 0.125,    0.125, 1.0,
+	256.0, 224.0, 0.5,  1.0, 1.0,    0.0, 1.0,
+	
+	0.0, 0.0, 0.5,     0.0, 0.125,  0.125, 0.125,
+	256.0, 224.0, 0.5,  1.0, 1.0,    0.0,   1.0,
+	0.0, 224.0, 0.5,    0.0, 1.0,  0.0,   0.125,
 };
 float* borderVertices;
 float* screenVertices;
@@ -239,6 +274,15 @@ void setUniformMatrix(u32 startreg, float* m)
 	GPU_SetUniform(startreg, (u32*)param, 4);
 }
 
+int shaderset = 0;
+void GPU_SetShader()
+{
+	if (shaderset) return;
+	shaderset = 1;
+	
+	SHDR_UseProgram(shader, 0);
+}
+
 void GPU_SetDummyTexEnv(u8 num)
 {
 	GPU_SetTexEnv(num, 
@@ -253,71 +297,25 @@ void GPU_SetDummyTexEnv(u8 num)
 
 void RenderTopScreen()
 {
+	shaderset = 0;
 	// notes on the drawing process 
 	// textures used here are actually 512x256. TODO: investigate if GPU_SetTexture() really has the params in the wrong order
 	// or if we did something wrong.
 	
 	
-	//general setup
-	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)gpuOut),0,0,240*2,400);
-
+	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)SNESFrame),0,0,256,240);
 	
 	GPU_DepthRange(-1.0f, 0.0f);
 	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
 	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
 	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
 	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_ALL);
-	
-	GPUCMD_AddSingleParam(0x00010062, 0); 
-	GPUCMD_AddSingleParam(0x000F0118, 0);
-	
-	//setup shader
-	SHDR_UseProgram(shader, 0);
-	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(false, GPU_ALWAYS, 0x00);
-	
-	GPU_SetTextureEnable(GPU_TEXUNIT0);
-	
-	GPU_SetTexEnv(0, 
-		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
-		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_REPLACE, GPU_REPLACE, 
-		0xFFFFFFFF);
-	GPU_SetDummyTexEnv(1);
-	GPU_SetDummyTexEnv(2);
-	GPU_SetDummyTexEnv(3);
-	GPU_SetDummyTexEnv(4);
-	GPU_SetDummyTexEnv(5);
-	
-	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)BorderTex),256,512,0,GPU_RGBA8); // texture is actually 512x256
-	
-	//setup matrices
-	setUniformMatrix(0x24, mvMatrix);
-	setUniformMatrix(0x20, projMatrix);
-	
-	// border
-	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)borderVertices),
-		GPU_ATTRIBFMT(0, 3, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT),
-		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
-		
-	GPU_DrawArray(GPU_TRIANGLES, 2*3); 
-	GPU_FinishDrawing();
-	
-
-	// TODO: there are probably unneeded things in here. Investigate whenever we know the PICA200 better.
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
-	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_ALL);
+	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR); // we don't care about depth testing in this pass
 	
 	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
 	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+	
+	GPU_SetShader();
 	
 	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
 	GPU_SetAlphaTest(false, GPU_ALWAYS, 0x00);
@@ -409,18 +407,74 @@ void RenderTopScreen()
 		0xFFFFFFFF);
 	// STAGE 6: dummy
 	GPU_SetDummyTexEnv(5);
-	
-
-	GPU_SetAttributeBuffers(3, (u32*)osConvertVirtToPhys((u32)screenVertices),
-		GPU_ATTRIBFMT(0, 3, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT)|GPU_ATTRIBFMT(2, 2, GPU_FLOAT),
-		0xFFC, 0x210, 1, (u32[]){0x00000000}, (u64[]){0x210}, (u8[]){3});
 		
 	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)MainScreenTex),256,256,0,GPU_RGBA5551);
 	GPU_SetTexture(GPU_TEXUNIT1, (u32*)osConvertVirtToPhys((u32)SubScreenTex),256,256,0,GPU_RGBA5551);
 	GPU_SetTexture(GPU_TEXUNIT2, (u32*)osConvertVirtToPhys((u32)BrightnessTex),256,8,0x200,GPU_A8);
 	
+	setUniformMatrix(0x24, mvMatrix);
+	setUniformMatrix(0x20, snesProjMatrix);
+	
+	GPU_SetAttributeBuffers(3, (u32*)osConvertVirtToPhys((u32)screenVertices),
+		GPU_ATTRIBFMT(0, 3, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT)|GPU_ATTRIBFMT(2, 2, GPU_FLOAT),
+		0xFFC, 0x210, 1, (u32[]){0x00000000}, (u64[]){0x210}, (u8[]){3});
+	
 	GPU_DrawArray(GPU_TRIANGLES, 2*3);
+	//GPU_FinishDrawing();
+
+	
+	
+	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)gpuOut),0,0,240*2,400);
+	
+	GPU_DepthRange(-1.0f, 0.0f);
+	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
+	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
+	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	GPU_SetBlendingColor(0,0,0,0);
+	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_ALL);
+	
+	GPUCMD_AddSingleParam(0x00010062, 0); 
+	GPUCMD_AddSingleParam(0x000F0118, 0);
+	
+	//setup shader
+	GPU_SetShader();
+	
+	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+	GPU_SetAlphaTest(false, GPU_ALWAYS, 0x00);
+	
+	GPU_SetTextureEnable(GPU_TEXUNIT0);
+	
+	GPU_SetTexEnv(0, 
+		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
+		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_REPLACE, GPU_REPLACE, 
+		0xFFFFFFFF);
+	GPU_SetDummyTexEnv(1);
+	GPU_SetDummyTexEnv(2);
+	GPU_SetDummyTexEnv(3);
+	GPU_SetDummyTexEnv(4);
+	GPU_SetDummyTexEnv(5);
+	
+	//GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)BorderTex),256,512,0,GPU_RGBA8); // texture is actually 512x256
+	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)SNESFrame),256,256,0x6,GPU_RGBA8);
+	
+	//setup matrices
+	setUniformMatrix(0x24, mvMatrix);
+	setUniformMatrix(0x20, screenProjMatrix);
+	
+	// border
+	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)borderVertices),
+		GPU_ATTRIBFMT(0, 3, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT),
+		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
+		
+	GPU_DrawArray(GPU_TRIANGLES, 2*3); 
 	GPU_FinishDrawing();
+	
+
+	// TODO: there are probably unneeded things in here. Investigate whenever we know the PICA200 better.
+	
 }
 
 
@@ -601,7 +655,7 @@ bool LoadBorder(char* path)
 
 
 Handle spcthread = NULL;
-u8 spcthreadstack[0x400] __attribute__((aligned(8)));
+u8 spcthreadstack[0x4000] __attribute__((aligned(8)));
 
 bool StartROM(char* path)
 {
@@ -615,7 +669,7 @@ bool StartROM(char* path)
 		exitspc = 0;
 	}
 	
-	ClearConsole();
+	//ClearConsole();
 	bprintf("blargSNES console\n");
 	bprintf("http://blargsnes.kuribo64.net/\n");
 	
@@ -640,7 +694,7 @@ bool StartROM(char* path)
 	SkipThisFrame = false;
 	
 	// SPC700 thread (running on syscore)
-	res = svcCreateThread(&spcthread, SPCThread, 0, (u32*)(spcthreadstack+0x400), 0x30, 1);
+	res = svcCreateThread(&spcthread, SPCThread, 0, (u32*)(spcthreadstack+0x4000), 0x18, 1);
 	if (res)
 	{
 		bprintf("Failed to create SPC700 thread:\n -> %08X\n", res);
@@ -803,6 +857,7 @@ int main()
 	
 	gpuOut = (u32*)VRAM_Alloc(400*240*2*4);
 	gpuDOut = (u32*)VRAM_Alloc(400*240*2*4);
+	SNESFrame = (u32)VRAM_Alloc(256*240*4);
 	
 	shader = SHDR_ParseSHBIN((u32*)blarg_shbin, blarg_shbin_size);
 	
@@ -835,6 +890,8 @@ int main()
 	CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 0, 32, 0x3);
 	memset(SubScreenTex, 0, 256*256*2);
 	memset(BrightnessTex, 0xFF, 224*8);
+	
+	Audio_Init();
 	
 	UI_Switch(&UI_ROMMenu);
 	
