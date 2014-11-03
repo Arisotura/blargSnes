@@ -21,6 +21,9 @@
 
 extern u8 SPC_RAM[0x10040];
 
+extern u32 SPC_ElapsedCycles;
+extern u32 SPC_CyclesRemaining;
+
 typedef struct
 {
 	u32 _memoryMap;
@@ -41,7 +44,7 @@ extern struct SPC_TimersStruct SPC_Timers;
 
 	
 void SPC_Reset();
-void SPC_Run();
+void SPC_Run(u32 cycles);
 
 void SPC_InitMisc();
 

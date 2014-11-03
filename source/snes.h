@@ -112,4 +112,8 @@ u16 SNES_Read16(u32 addr);
 void SNES_Write8(u32 addr, u8 val);
 void SNES_Write16(u32 addr, u8 val);
 
+void SPC_IORead(int side);
+void SPC_IOWrite(int side);
+void SPC_IOWriteDone(int side);
+
 #endif

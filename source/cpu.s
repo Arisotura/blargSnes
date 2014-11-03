@@ -33,7 +33,7 @@
 
 #include "cpu.inc"
 
-.section    .data, "aw", %progbits
+.data
 
 .align 4
 .global CPU_Regs
@@ -56,7 +56,7 @@ CPU_Regs:
 @ --- General purpose read/write ----------------------------------------------
 @ may be slow as they handle any possible case
 
-.section    .text, "awx", %progbits
+.text
 
 _MemRead8:
 	bic r3, r0, #0x1800
@@ -616,8 +616,13 @@ CPU_GetReg:
 	bx lr
 	
 @ --- Main loop ---------------------------------------------------------------
+@
+@ Notes on SPC700 timing
+@
+@ SPC700 normally runs at 1.024 MHz, which is, 17066.666666 cycles per frame
+@ we approximate it to 65 cycles per scanline, plus 36 cycles to compensate
 
-.section    .data, "aw", %progbits
+.data
 
 CPU_Cycles:
 	.long 0
@@ -627,7 +632,7 @@ debugpc:
 	.long 0
 
 	
-.section    .text, "awx", %progbits
+.text
 
 	
 CPU_Run:
@@ -642,8 +647,10 @@ frameloop:
 		ldr r1, =PPU_VCount
 		strh r0, [r1]
 		stmdb sp!, {r12}
-		SafeCall DMA_ReloadHDMA
+		bl DMA_ReloadHDMA
 		bl DMA_DoHDMA
+		mov r0, #65
+		bl SPC_Run
 		mov r0, #0
 		bl PPU_RenderScanline
 		ldmia sp!, {r12}
@@ -652,6 +659,9 @@ frameloop:
 newline:
 			ldr r0, =0x05540001
 			add snesCycles, snesCycles, r0
+			
+			mov r0, #65
+			bl SPC_Run
 			
 			ldr r0, =PPU_VCount
 			strh snesCycles, [r0]
@@ -773,6 +783,9 @@ vblank_notfirst:
 		ldr r0, =262
 		ldr r1, =PPU_VCount
 		strh r0, [r1]
+		
+		mov r0, #36
+		bl SPC_Run
 		
 frame_end:
 	StoreRegs

@@ -21,27 +21,29 @@
 @ --- TODO --------------------------------------------------------------------
 @ * emulate dummy reads (trigger read-sensitive IO ports)
 @ * check the implementation of the H flag
-@ * REMOVE ASM STMDB/LDMIA IN C CODE!!!!!
 @
 @ search the code for 'todo' for more
 @ -----------------------------------------------------------------------------
 
 #include "spc700.inc"
 
-.section    .data, "aw", %progbits
+.data
 
 .align 4
 .global SPC_Regs
 SPC_Regs:
 	.long 0,0,0,0,0,0,0,0
 	
-.global itercount
-itercount:
-	.long 0
+.global SPC_CyclesRemaining
+.global SPC_ElapsedCycles
 	
 .global SPC_RAM
 .global SPC_ROM
 
+SPC_CyclesRemaining: @ -8
+	.long 0
+SPC_ElapsedCycles: @ -4
+	.long 0
 SPC_RAM:
 	.rept 0x10040
 	.byte 0
@@ -58,7 +60,7 @@ SPC_ROM:
 	
 .equ vec_Reset, 0xFFC0
 
-.section    .text, "awx", %progbits
+.text
 
 SPC_UpdateMemMap:
 	eor r3, r3, spcPSW, lsr #1
@@ -243,13 +245,13 @@ SPC_UpdateMemMap:
 .global SPC_Run
 
 .macro LoadRegs
-	ldr r0, =SPC_Regs
-	ldmia r0, {r5-r11}
+	ldr r12, =SPC_Regs
+	ldmia r12, {r5-r11}
 .endm
 
 .macro StoreRegs
-	ldr r0, =SPC_Regs
-	stmia r0, {r5-r11}
+	ldr r12, =SPC_Regs
+	stmia r12, {r5-r11}
 .endm
 
 
@@ -287,7 +289,7 @@ SPC_Reset:
 	mov spcCycles, #0
 	StoreRegs
 	
-	ldr r0, =itercount
+	ldr r0, =SPC_CyclesRemaining
 	mov r1, #0
 	str r1, [r0]
 	
@@ -296,21 +298,14 @@ SPC_Reset:
 	
 @ --- Main loop ---------------------------------------------------------------
 	
+@ r0 = number of cycles to run
 SPC_Run:
 	stmdb sp!, {r4-r12, lr}
 	LoadRegs
 	
-	ldr r12, =itercount
-	@ldr r4, =17447			@ ~ SPC cycles per frame
-	mov r4, #0x200
-	@mov r4, #65
-	ldr r3, [r12]
-	add r3, r3, r4
-	str r3, [r12]
-	
-frameloop:
-	@add r12, r12, #0x200
-	@add r12, r12, #0x0AA
+	ldr r3, [memory, #-8]
+	add r3, r3, r0
+	str r3, [memory, #-8]
 		
 bigemuloop:
 		add spcCycles, spcCycles, #0x40
@@ -385,6 +380,14 @@ noTimer2:
 		@ timers 0 and 1
 		
 		sub r4, r4, spcCycles
+		
+		ldr r12, [memory, #-4]
+		add r12, r12, r4
+		cmp r12, #0x4000
+		subge r12, r12, #0x4000
+		str r12, [memory, #-4]
+		blge DSP_BufferSwap
+		
 		ldr r12, =SPC_Timers
 		ldrb r0, [r12]
 		
@@ -416,19 +419,11 @@ noTimer0:
 		strb r1, [r12, #0xC]
 		
 noTimer1:
-		ldr r12, =itercount
-		ldr r3, [r12]
+		ldr r3, [memory, #-8]
 		subs r3, r3, r4
-		str r3, [r12]
+		str r3, [memory, #-8]
 		bpl bigemuloop
 		
-		@ wait for timer 0
-		@ (do not wait if we missed the IRQ)
-		@mov r0, #0
-		@mov r1, #0x00000008
-		@swi #0x40000
-		
-		@b frameloop
 	StoreRegs
 	ldmia sp!, {r4-r12, pc}
 		

@@ -73,29 +73,23 @@ Result svcSetThreadPriority(Handle thread, s32 prio)
 
 
 Handle SPCSync;
-Handle SPCTimer;
 
 void SPCThread(u32 blarg)
 {
-	svcCreateTimer(&SPCTimer, 0);
-	svcSetTimer(SPCTimer, 500*1000, 500*1000);
+	int i;
 	
-	// 65 cycles per scanline (65.13994910941475826972010178117)
-	// -> 31931 Hz (31931.25)
 	while (!exitspc)
 	{
+		svcWaitSynchronization(SPCSync, U64_MAX);
+		
 		if (!pause)
 		{
-			SPC_Run();
-			Audio_Mix();
+			for (i = 0; i < 32; i++)
+			{
+				DSP_ReplayWrites(i);
+				Audio_Mix();
+			}
 		}
-		
-		//svcWaitSynchronization(SPCSync, (s64)(17*1000*1000));
-		//svcWaitSynchronization(SPCSync, (s64)63613);
-		//svcClearEvent(SPCSync);
-		svcWaitSynchronization(SPCTimer, U64_MAX);
-		svcClearTimer(SPCTimer);
-		svcSetTimer(SPCTimer, 500*1000, 500*1000);
 	}
 	
 	svcExitThread();
@@ -669,7 +663,7 @@ bool StartROM(char* path)
 		exitspc = 0;
 	}
 	
-	//ClearConsole();
+	ClearConsole();
 	bprintf("blargSNES console\n");
 	bprintf("http://blargsnes.kuribo64.net/\n");
 	
@@ -903,7 +897,7 @@ int main()
 	{
 		if(status == APP_RUNNING)
 		{
-			svcSignalEvent(SPCSync);
+			//svcSignalEvent(SPCSync);
 			
 			hidScanInput();
 			u32 press = hidKeysDown();

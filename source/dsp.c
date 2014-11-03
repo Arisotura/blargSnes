@@ -7,6 +7,17 @@
 #include "dsp.h"
 #include "mixrate.h"
 
+// DSP write buffers
+// * 32 16-sample periods
+// * over a 16-sample period -> 512 cycles
+// * 4 cycles atleast per write -> 128 writes at most
+// * double-buffered
+// -> 8192 entries (16K)
+
+u16 DSP_WriteBuffer[2][32*128];
+u16* DSP_WritingWriteBuffer;
+u16* DSP_PlayingWriteBuffer;
+
 // Envelope timing table.  Number of counts that should be subtracted from the counter
 // The counter starts at 30720 (0x7800).
 static const s16 ENVCNT_START = 0x7800;
@@ -80,6 +91,11 @@ void DspReset() {
     echoCursor = 0;
     echoBase = APU_MEM;
 	int i=0,c=0;
+	
+	memset(DSP_WriteBuffer, 0, sizeof(DSP_WriteBuffer));
+	
+	DSP_WritingWriteBuffer = DSP_WriteBuffer[0];
+	DSP_PlayingWriteBuffer = DSP_WriteBuffer[1];
 
 /*    firOffset = 0;
     for (i = 0; i < 8*2*2; i++) {
@@ -344,11 +360,52 @@ void DspPrepareStateAfterReload() {
 	}
 }
 
-void DspWriteByte(u8 val, u8 address) {
+extern Handle SPCSync;
+void DspReplayWriteByte(u8 val, u8 address);
+
+void DSP_BufferSwap()
+{
+	int i;
+	
+	u16* tmp = DSP_WritingWriteBuffer;
+	DSP_WritingWriteBuffer = DSP_PlayingWriteBuffer;
+	DSP_PlayingWriteBuffer = tmp;
+	
+	for (i = 0; i < 32; i++)
+		DSP_WritingWriteBuffer[(i << 7) + 127] = 0;
+	
+	svcSignalEvent(SPCSync);
+}
+
+void DspWriteByte(u8 val, u8 address)
+{
+	if (address > 0x7f) return;
+	
+	u16* buffer = &DSP_WritingWriteBuffer[(SPC_ElapsedCycles & 0x3E00) >> 2];
+	
+	buffer[buffer[127]] = (address << 8) | val;
+	buffer[127]++;
+}
+
+void DSP_ReplayWrites(u32 idx)
+{
+	u16* buffer = &DSP_PlayingWriteBuffer[idx << 7];
+	u16 i;
+	
+	u16 num = buffer[127];
+	for (i = 0; i < num; i++)
+	{
+		u16 val = buffer[i];
+		DspReplayWriteByte(val & 0xFF, val >> 8);
+	}
+}
+
+void DspReplayWriteByte(u8 val, u8 address) 
+{
     u8 orig = DSP_MEM[address];
     DSP_MEM[address] = val;
 
-    if (address > 0x7f) return;
+    //if (address > 0x7f) return;
 
     switch (address & 0xf) {
         case DSP_VOL_L:

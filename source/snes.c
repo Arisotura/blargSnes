@@ -549,12 +549,16 @@ void SNES_JoyWrite16(u32 addr, u16 val)
 
 
 // this used for DMA
+// I/O only available for 4210-421F, they say
 
 u8 SNES_Read8(u32 addr)
 {
 	u32 ptr = Mem_PtrTable[addr >> 13];
 	if (ptr & MPTR_SPECIAL)
 	{
+		if ((addr & 0xFFF0) != 0x4210)
+			return 0xFF;
+		
 		return SNES_IORead8(addr);
 	}
 	else
@@ -569,6 +573,9 @@ u16 SNES_Read16(u32 addr)
 	u32 ptr = Mem_PtrTable[addr >> 13];
 	if (ptr & MPTR_SPECIAL)
 	{
+		if ((addr & 0xFFF0) != 0x4210)
+			return 0xFFFF;
+		
 		return SNES_IORead16(addr);
 	}
 	else
@@ -584,7 +591,11 @@ void SNES_Write8(u32 addr, u8 val)
 	u32 ptr = Mem_PtrTable[addr >> 13];
 	if (ptr & MPTR_READONLY) return;
 	if (ptr & MPTR_SPECIAL)
-		SNES_IOWrite8(addr, val);
+	{
+		// CHECKME: what are the writable ranges with DMA?
+		if ((addr & 0xFFF0) != 0x4000)
+			SNES_IOWrite8(addr, val);
+	}
 	else
 	{
 		u8* mptr = (u8*)(ptr & 0xFFFFFFF0);
@@ -597,7 +608,11 @@ void SNES_Write16(u32 addr, u8 val)
 	u32 ptr = Mem_PtrTable[addr >> 13];
 	if (ptr & MPTR_READONLY) return;
 	if (ptr & MPTR_SPECIAL)
-		SNES_IOWrite16(addr, val);
+	{
+		// CHECKME: what are the writable ranges with DMA?
+		if ((addr & 0xFFF0) != 0x4000)
+			SNES_IOWrite16(addr, val);
+	}
 	else
 	{
 		u8* mptr = (u8*)(ptr & 0xFFFFFFF0);

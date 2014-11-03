@@ -21,7 +21,7 @@
 
 #include "cpu.inc"
 
-.section    .text, "awx", %progbits
+.text
 
 .align 4
 .global SNES_IORead8
