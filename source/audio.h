@@ -21,4 +21,7 @@
 
 void Audio_Init();
 
+void Audio_Mix();
+void Audio_MixFinish();
+
 #endif

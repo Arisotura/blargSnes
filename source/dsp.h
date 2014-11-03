@@ -9,7 +9,7 @@ void DspPrepareStateAfterReload();
 extern u8 DSP_MEM[0x100];
 extern u16 dspPreamp;
 
-void DspMixSamplesStereo(u32 samples, u16 *mixBuf);
+void DspMixSamplesStereo(u32 samples, s16 *mixBuf);
 void DspWriteByte(u8 val, u8 address);
 
 struct _DspChannel {

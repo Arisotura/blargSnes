@@ -81,6 +81,7 @@ void SPCThread(u32 blarg)
 	while (!exitspc)
 	{
 		svcWaitSynchronization(SPCSync, U64_MAX);
+		svcClearEvent(SPCSync);
 		
 		if (!pause)
 		{
@@ -89,6 +90,8 @@ void SPCThread(u32 blarg)
 				DSP_ReplayWrites(i);
 				Audio_Mix();
 			}
+			
+			Audio_MixFinish();
 		}
 	}
 	
