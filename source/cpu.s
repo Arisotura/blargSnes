@@ -644,7 +644,7 @@ frameloop:
 		add snesCycles, snesCycles, r0
 		
 		mov r0, #0
-		ldr r1, =PPU_VCount
+		ldr r1, =(PPU+0)	@ VCount
 		strh r0, [r1]
 		stmdb sp!, {r12}
 		bl DMA_ReloadHDMA
@@ -663,7 +663,7 @@ newline:
 			mov r0, #65
 			bl SPC_Run
 			
-			ldr r0, =PPU_VCount
+			ldr r0, =(PPU+0)	@ VCount
 			strh snesCycles, [r0]
 			ldrh r0, [r0]
 			cmp r0, #0xE0
@@ -705,7 +705,7 @@ irq_h:
 irq_v:
 				ldr r0, =SNES_VMatch
 				ldrh r0, [r0]
-				ldr r1, =PPU_VCount
+				ldr r1, =(PPU+0)	@ VCount
 				ldrh r1, [r1]
 				cmp r0, r1
 				beq irq_trigger
@@ -718,7 +718,7 @@ irq_v:
 irq_hv:
 				ldr r0, =SNES_VMatch
 				ldrh r0, [r0]
-				ldr r1, =PPU_VCount
+				ldr r1, =(PPU+0)	@ VCount
 				ldrh r1, [r1]
 				cmp r0, r1
 				ldrneb r0, [memoryMap, #-0x5]
@@ -781,7 +781,7 @@ vblank_notfirst:
 			
 		sub snesCycles, snesCycles, r3
 		ldr r0, =262
-		ldr r1, =PPU_VCount
+		ldr r1, =(PPU+0)	@ VCount
 		strh r0, [r1]
 		
 		mov r0, #36

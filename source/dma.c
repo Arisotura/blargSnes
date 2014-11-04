@@ -88,29 +88,29 @@ void DMA_Enable(u8 flag)
 			{
 				while (bytecount > 1)
 				{
-					if (PPU_OAMAddr >= 0x200)
+					if (PPU.OAMAddr >= 0x200)
 					{
-						*(u16*)&PPU_OAM[PPU_OAMAddr & 0x21F] = SNES_Read16(membank|memaddr);
+						*(u16*)&PPU.OAM[PPU.OAMAddr & 0x21F] = SNES_Read16(membank|memaddr);
 					}
 					else
 					{
-						*(u16*)&PPU_OAM[PPU_OAMAddr] = SNES_Read16(membank|memaddr);
+						*(u16*)&PPU.OAM[PPU.OAMAddr] = SNES_Read16(membank|memaddr);
 					}
 					memaddr += maddrinc<<1;
 					bytecount -= 2;
-					PPU_OAMAddr += 2;
-					PPU_OAMAddr &= ~0x400;
+					PPU.OAMAddr += 2;
+					PPU.OAMAddr &= ~0x400;
 				}
 			}
 			else if (ppuaddr == 0x22)
 			{
 				while (bytecount > 1)
 				{
-					PPU_SetColor(PPU_CGRAMAddr >> 1, SNES_Read16(membank|memaddr));
+					PPU_SetColor(PPU.CGRAMAddr >> 1, SNES_Read16(membank|memaddr));
 					memaddr += maddrinc<<1;
 					bytecount -= 2;
-					PPU_CGRAMAddr += 2;
-					PPU_CGRAMAddr &= ~0x200;
+					PPU.CGRAMAddr += 2;
+					PPU.CGRAMAddr &= ~0x200;
 				}
 			}
 		}
@@ -120,10 +120,10 @@ void DMA_Enable(u8 flag)
 			{
 				while (bytecount > 1)
 				{
-					*(u16*)&PPU_VRAM[PPU_VRAMAddr] = SNES_Read16(membank|memaddr);
+					*(u16*)&PPU.VRAM[PPU.VRAMAddr] = SNES_Read16(membank|memaddr);
 					memaddr += maddrinc<<1;
 					bytecount -= 2;
-					PPU_VRAMAddr += PPU_VRAMStep;
+					PPU.VRAMAddr += PPU.VRAMStep;
 				}
 			}
 		}
@@ -297,7 +297,7 @@ const u8 hdma_sizes[8] = {1, 2, 2, 4, 4, 4, 2, 4};
 void DMA_DoHDMA()
 {
 	register u8 flag = DMA_HDMAFlag;
-	if (flag && (PPU_VCount < 224))
+	if (flag && (PPU.VCount < 224))
 	{
 		int c;
 		for (c = 0; c < 8; c++)

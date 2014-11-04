@@ -42,7 +42,10 @@ u32* SNESFrame;
 DVLB_s* shader;
 
 u32 gpuCmdSize;
+u32* gpuCmd0;
+u32* gpuCmd1;
 u32* gpuCmd;
+int curCmd = 0;
 
 u32* BorderTex;
 u16* MainScreenTex;
@@ -54,7 +57,6 @@ FS_archive sdmcArchive;
 
 int running = 0;
 int pause = 0;
-int exitspc = 0;
 u32 framecount = 0;
 
 int RenderState = 0;
@@ -72,7 +74,46 @@ Result svcSetThreadPriority(Handle thread, s32 prio)
 }
 
 
+Handle gputhread = NULL;
+u8 gputhreadstack[0x4000] __attribute__((aligned(8)));
+Handle GPURenderTrigger, GPURenderDone;
+int exitgpu = 0;
+
+void GPUThread(u32 blarg)
+{
+	for (;;)
+	{
+		svcWaitSynchronization(GPURenderTrigger, U64_MAX);
+		svcClearEvent(GPURenderTrigger);
+		if (exitgpu) break;
+		
+		
+		svcClearEvent(GPURenderDone);
+		
+		RenderTopScreen();
+		GPUCMD_Finalize();
+		GPUCMD_Run(gxCmdBuf);
+		gspWaitForP3D();
+		
+		GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
+		curCmd ^= 1;
+		gpuCmd = curCmd ? gpuCmd1 : gpuCmd0;
+		GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
+		gspWaitForPPF();
+		
+		gfxSwapBuffersGpu();
+		gspWaitForVBlank();
+		svcSignalEvent(GPURenderDone);
+	}
+	
+	svcExitThread();
+}
+
+
+Handle spcthread = NULL;
+u8 spcthreadstack[0x4000] __attribute__((aligned(8)));
 Handle SPCSync;
+int exitspc = 0;
 
 void SPCThread(u32 blarg)
 {
@@ -335,7 +376,7 @@ void RenderTopScreen()
 		GPU_ADD, 
 		0x80FFFFFF);
 	
-	if (PPU_Subtract)
+	if (PPU.Subtract)
 	{
 		// COLOR SUBTRACT
 		
@@ -651,9 +692,6 @@ bool LoadBorder(char* path)
 }
 
 
-Handle spcthread = NULL;
-u8 spcthreadstack[0x4000] __attribute__((aligned(8)));
-
 bool StartROM(char* path)
 {
 	char temppath[300];
@@ -749,7 +787,7 @@ void RenderPipelineVBlank()
 {
 	// SNES VBlank. Copy the freshly rendered framebuffers.
 	
-	GSPGPU_FlushDataCache(NULL, (u8*)PPU_MainBuffer, 256*512*2);
+	GSPGPU_FlushDataCache(NULL, (u8*)PPU.MainBuffer, 256*512*2);
 	
 	// in case we arrived here too early
 	if (RenderState != 1)
@@ -764,7 +802,7 @@ void RenderPipelineVBlank()
 	// copy new screen textures
 	// SetDisplayTransfer with flags=2 converts linear graphics to the tiled format used for textures
 	// since the two sets of buffers are contiguous, we can transfer them as one 256x512 texture
-	GX_SetDisplayTransfer(gxCmdBuf, (u32*)PPU_MainBuffer, 0x02000100, (u32*)MainScreenTex, 0x02000100, 0x3302);
+	GX_SetDisplayTransfer(gxCmdBuf, (u32*)PPU.MainBuffer, 0x02000100, (u32*)MainScreenTex, 0x02000100, 0x3302);
 	
 	// copy brightness.
 	// TODO do better
@@ -773,7 +811,7 @@ void RenderPipelineVBlank()
 	u8* bptr = BrightnessTex;
 	for (i = 0; i < 224;)
 	{
-		u32 pixels = *(u32*)&PPU_Brightness[i];
+		u32 pixels = *(u32*)&PPU.Brightness[i];
 		i += 4;
 		
 		*bptr = (u8)pixels;
@@ -847,14 +885,17 @@ int main()
 	
 	GPU_Init(NULL);
 	gpuCmdSize = 0x40000;
-	gpuCmd = (u32*)linearAlloc(gpuCmdSize*4);
+	gpuCmd0 = (u32*)linearAlloc(gpuCmdSize*4);
+	gpuCmd1 = (u32*)linearAlloc(gpuCmdSize*4);
+	curCmd = 0;
+	gpuCmd = gpuCmd0;
 	GPU_Reset(gxCmdBuf, gpuCmd, gpuCmdSize);
 	
 	svcSetThreadPriority(gspEventThread, 0x30);
 	
 	gpuOut = (u32*)VRAM_Alloc(400*240*2*4);
 	gpuDOut = (u32*)VRAM_Alloc(400*240*2*4);
-	SNESFrame = (u32)VRAM_Alloc(256*240*4);
+	SNESFrame = (u32*)VRAM_Alloc(256*240*4);
 	
 	shader = SHDR_ParseSHBIN((u32*)blarg_shbin, blarg_shbin_size);
 	
@@ -891,6 +932,12 @@ int main()
 	Audio_Init();
 	
 	UI_Switch(&UI_ROMMenu);
+	
+	/*GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
+	
+	svcCreateEvent(&GPURenderTrigger, 0);
+	svcCreateEvent(&GPURenderDone, 0);
+	svcCreateThread(&gputhread, GPUThread, 0, (u32*)(gputhreadstack+0x4000), 0x30, ~1);*/
 	
 	svcCreateEvent(&SPCSync, 0);
 
