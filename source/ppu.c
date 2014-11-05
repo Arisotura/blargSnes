@@ -16,6 +16,8 @@
     with blargSnes. If not, see http://www.gnu.org/licenses/.
 */
 
+#include <3ds.h>
+
 #include "snes.h"
 #include "ppu.h"
 
@@ -108,6 +110,11 @@ void PPU_Init()
 	PPU.SubBuffer = &PPU.MainBuffer[256*256];
 	
 	PPU.SubBackdrop = 0x0001;
+	
+	PPU_ColorEffectSection* c = &PPU.ColorEffectSections[0];
+	c->EndOffset = 240;
+	c->ColorMath = 0;
+	c->Brightness = 0xFF;
 }
 
 void PPU_Reset()
@@ -121,8 +128,6 @@ void PPU_Reset()
 	
 	PPU.MainBuffer = mbuf;
 	PPU.SubBuffer = sbuf;
-	
-	memset(PPU.Brightness, 0xFF, 224);
 	
 	for (i = 0; i < 4; i++)
 	{
@@ -139,6 +144,11 @@ void PPU_Reset()
 	s->EndOffset = 256;
 	s->WindowMask = 0x0F;
 	s->ColorMath = 0x10;
+	
+	PPU_ColorEffectSection* c = &PPU.ColorEffectSections[0];
+	c->EndOffset = 240;
+	c->ColorMath = 0;
+	c->Brightness = 0xFF;
 	
 	PPU.OBJTileset = (u16*)PPU.VRAM;
 	
@@ -348,12 +358,19 @@ void PPU_Write8(u32 addr, u8 val)
 				if (val & 0x80) val = 0;
 				else val &= 0x0F;
 				
+				u8 newbright;
 				if (val == 0xF) 
-					PPU.CurBrightness = 0xFF;
+					newbright = 0xFF;
 				else if (val)
-					PPU.CurBrightness = (val + 1) << 4;
+					newbright = (val + 1) << 4;
 				else
-					PPU.CurBrightness = 0;
+					newbright = 0;
+					
+				if (PPU.CurBrightness != newbright)
+				{
+					PPU.CurBrightness = newbright;
+					PPU.ColorEffectDirty = 1;
+				}
 			}
 			break;
 			
@@ -568,6 +585,8 @@ void PPU_Write8(u32 addr, u8 val)
 			PPU.ColorMath1 = val;
 			break;
 		case 0x31:
+			if ((PPU.ColorMath2 ^ val) & 0x80)
+				PPU.ColorEffectDirty = 1;
 			PPU.ColorMath2 = val;
 			break;
 			
@@ -801,8 +820,23 @@ void PPU_ComputeWindows()
 }
 
 
+extern u32* gxCmdBuf;
+extern u32* gpuOut;
+
+extern Handle gspEvents[GSPEVENT_MAX];
+
+
 void PPU_RenderScanline(u32 line)
 {
+	/*if (!(line & 7))
+	{
+		if (RenderState==1 && PeekEvent(gspEvents[GSPEVENT_P3D]))
+		{
+			GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
+			RenderState = 2;
+		}
+	}*/
+	
 	if (SkipThisFrame) return;
 	
 	// TODO switch etc
@@ -812,7 +846,16 @@ void PPU_RenderScanline(u32 line)
 void PPU_VBlank()
 {
 	if (!SkipThisFrame)
-		RenderPipelineVBlank();
+	{
+		extern int shaderset;
+		shaderset = 0;
+		
+		// TODO switch, same ol'
+		
+		PPU_VBlank_Soft();
+		
+		RenderTopScreen();
+	}
 	
 	PPU.OAMAddr = PPU.OAMReload;
 	

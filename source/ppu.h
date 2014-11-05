@@ -54,6 +54,14 @@ typedef struct
 	
 } PPU_WindowSegment;
 
+typedef struct
+{
+	u8 EndOffset;
+	u8 ColorMath;	// 0 = add, !0 = subtract
+	u8 Brightness;	// brightness (0-255)
+	
+} PPU_ColorEffectSection;
+
 
 typedef struct
 {
@@ -62,7 +70,6 @@ typedef struct
 	// 16+256+16: we leave 16 extra pixels on both sides so we don't have to handle tiles that are partially offscreen
 	u16* MainBuffer;
 	u16* SubBuffer;
-	u8 Brightness[224];
 
 	// OBJ layer
 	// bit0-7: color # (0-127, selecting from upper palette region)
@@ -98,8 +105,6 @@ typedef struct
 
 	u8 Mode;
 
-	/*u16 MainScreen;
-	u16 SubScreen;*/
 	union
 	{
 		struct
@@ -123,7 +128,9 @@ typedef struct
 
 	u16 SubBackdrop;
 
-	u8 Subtract;
+	PPU_ColorEffectSection ColorEffectSections[240];
+	PPU_ColorEffectSection* CurColorEffect;
+	u8 ColorEffectDirty;
 
 	u16 WinX[4];
 	u8 WinSel[4] __attribute__((aligned(4)));
@@ -173,6 +180,7 @@ extern PPUState PPU;
 
 
 extern bool SkipThisFrame;
+extern u8 RenderState;
 
 extern u16* PPU_MainBuffer;
 extern u16* PPU_SubBuffer;
@@ -207,7 +215,8 @@ void PPU_Write16(u32 addr, u16 val);
 void PPU_RenderScanline(u32 line);
 void PPU_VBlank();
 
-void RenderPipeline();
-void RenderPipelineVBlank();
+
+void PPU_RenderScanline_Soft(u32 line);
+void PPU_VBlank_Soft();
 
 #endif

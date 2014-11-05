@@ -16,6 +16,8 @@
     with blargSnes. If not, see http://www.gnu.org/licenses/.
 */
 
+#include <3ds.h>
+
 #include "snes.h"
 #include "ppu.h"
 
@@ -1227,9 +1229,20 @@ void PPU_RenderMode7(u16* buf, u32 line, u16 screen, u8 colormath)
 
 void PPU_RenderScanline_Soft(u32 line)
 {
-	if (!(line&7)) RenderPipeline();
+	if (!line) PPU.CurColorEffect = &PPU.ColorEffectSections[0];
 	
-	PPU.Brightness[line] = PPU.CurBrightness;
+	if (PPU.ColorEffectDirty)
+	{
+		PPU_ColorEffectSection* s = PPU.CurColorEffect;
+		s->EndOffset = line;
+		s++;
+		
+		s->ColorMath = (PPU.ColorMath2 & 0x80);
+		s->Brightness = PPU.CurBrightness;
+		PPU.CurColorEffect = s;
+		PPU.ColorEffectDirty = 0;
+	}
+	
 	if (!PPU.CurBrightness) return;
 	
 	if (PPU.WindowDirty)
@@ -1237,8 +1250,6 @@ void PPU_RenderScanline_Soft(u32 line)
 		PPU_ComputeWindows();
 		PPU.WindowDirty = 0;
 	}
-	
-	PPU.Subtract = (PPU.ColorMath2 & 0x80);
 	
 	int i;
 	u16* mbuf = &PPU.MainBuffer[line << 8];
@@ -1339,4 +1350,209 @@ void PPU_RenderScanline_Soft(u32 line)
 	
 	// that's all folks.
 	// color math and master brightness will be done in hardware from now on
+}
+
+
+extern u32* gxCmdBuf;
+extern void* vertexBuf;
+
+extern float snesProjMatrix[16];
+extern float mvMatrix[16];
+
+extern float* screenVertices;
+extern u32* gpuOut;
+extern u32* gpuDOut;
+extern u32* SNESFrame;
+extern DVLB_s* shader;
+extern u16* MainScreenTex;
+extern u16* SubScreenTex;
+
+float identity[16] = 
+{
+	1, 0, 0, 0,
+	0, 1, 0, 0,
+	0, 0, 1, 0,
+	0, 0, 0, 1
+};
+
+#define ADDVERTEX(x, y, s, t) \
+	*vptr++ = x; \
+	*vptr++ = y; \
+	*vptr++ = s; \
+	*vptr++ = t;
+	
+
+void PPU_VBlank_Soft()
+{
+	extern int shaderset;
+	shaderset = 0;
+	// NAIVE CODE
+	/*if (RenderState)
+	{
+		if (RenderState == 1)
+		{dbgcolor(0xFF00);
+			gspWaitForP3D();dbgcolor(0xFFFF00);
+			GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
+		}
+		dbgcolor(0xFF0000);
+		gspWaitForPPF();dbgcolor(0xFF00FF);
+		RenderState = 0;
+	}
+	dbgcolor(0xFF);*/
+	// copy new screen textures
+	// SetDisplayTransfer with flags=2 converts linear graphics to the tiled format used for textures
+	// since the two sets of buffers are contiguous, we can transfer them as one 256x512 texture
+	GSPGPU_FlushDataCache(NULL, (u8*)PPU.MainBuffer, 256*512*2);
+	GX_SetDisplayTransfer(gxCmdBuf, (u32*)PPU.MainBuffer, 0x02000100, (u32*)MainScreenTex, 0x02000100, 0x3302);
+	
+	
+	PPU_ColorEffectSection* s = &PPU.ColorEffectSections[0];
+	
+	PPU.CurColorEffect->EndOffset = 240;
+	int startoffset = 0;
+	
+	float* vptr = (float*)vertexBuf;
+	
+	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)SNESFrame),0,0,256,256);
+	
+	
+	
+	for (;;)
+	{
+		//bprintf("section %d %d %02X %d\n", startoffset, s->EndOffset, s->ColorMath, s->Brightness);
+		float fstart = (float)startoffset;
+		float fend = (float)s->EndOffset;
+		
+		GPU_DepthRange(-1.0f, 0.0f);
+	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
+	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
+	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	GPU_SetBlendingColor(0,0,0,0);
+	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR); // we don't care about depth testing in this pass
+	
+	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
+	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+	
+	GPU_SetShader();
+	
+	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+	GPU_SetAlphaTest(false, GPU_ALWAYS, 0x00);
+	
+	setUniformMatrix(0x24, mvMatrix);
+	setUniformMatrix(0x20, snesProjMatrix);
+		
+		GPU_SetTextureEnable(GPU_TEXUNIT0|GPU_TEXUNIT1);
+		
+		// TEXTURE ENV STAGES
+		// ---
+		// blending operation: (Main.Color +- (Sub.Color * Main.Alpha)) * Sub.Alpha
+		// Main.Alpha: 0 = no color math, 255 = color math
+		// Sub.Alpha: 0 = div2, 1 = no div2
+		// ---
+		// STAGE 1: Out.Color = Sub.Color * Main.Alpha, Out.Alpha = Sub.Alpha + 0.5
+		GPU_SetTexEnv(0, 
+			GPU_TEVSOURCES(GPU_TEXTURE1, GPU_TEXTURE0, 0), 
+			GPU_TEVSOURCES(GPU_TEXTURE1, GPU_CONSTANT, 0),
+			GPU_TEVOPERANDS(0,2,0), 
+			GPU_TEVOPERANDS(0,0,0), 
+			GPU_MODULATE, 
+			GPU_ADD, 
+			0x80FFFFFF);
+		
+		if (s->ColorMath)
+		{
+			// COLOR SUBTRACT
+			
+			// STAGE 2: Out.Color = Main.Color - Prev.Color, Out.Alpha = Prev.Alpha + (1-Main.Alpha) (cancel out div2 when color math doesn't happen)
+			GPU_SetTexEnv(1, 
+				GPU_TEVSOURCES(GPU_TEXTURE0, GPU_PREVIOUS, 0), 
+				GPU_TEVSOURCES(GPU_PREVIOUS, GPU_TEXTURE0, 0),
+				GPU_TEVOPERANDS(0,0,0), 
+				GPU_TEVOPERANDS(0,1,0), 
+				GPU_SUBTRACT, 
+				GPU_ADD, 
+				0xFFFFFFFF);
+			// STAGE 3: Out.Color = Prev.Color * Prev.Alpha, Out.Alpha = Prev.Alpha
+			GPU_SetTexEnv(2, 
+				GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
+				GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0),
+				GPU_TEVOPERANDS(0,2,0), 
+				GPU_TEVOPERANDS(0,0,0), 
+				GPU_MODULATE, 
+				GPU_REPLACE, 
+				0xFFFFFFFF);
+			// STAGE 4: dummy (no need to double color intensity)
+			GPU_SetDummyTexEnv(3);
+		}
+		else
+		{
+			// COLOR ADDITION
+			
+			// STAGE 2: Out.Color = Main.Color*0.5 + Prev.Color*0.5 (prevents overflow), Out.Alpha = Prev.Alpha + (1-Main.Alpha) (cancel out div2 when color math doesn't happen)
+			GPU_SetTexEnv(1, 
+				GPU_TEVSOURCES(GPU_TEXTURE0, GPU_PREVIOUS, GPU_CONSTANT), 
+				GPU_TEVSOURCES(GPU_PREVIOUS, GPU_TEXTURE0, 0),
+				GPU_TEVOPERANDS(0,0,0), 
+				GPU_TEVOPERANDS(0,1,0), 
+				GPU_INTERPOLATE,
+				GPU_ADD, 
+				0xFF808080);
+			// STAGE 3: Out.Color = Prev.Color * Prev.Alpha, Out.Alpha = Prev.Alpha
+			GPU_SetTexEnv(2, 
+				GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
+				GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0),
+				GPU_TEVOPERANDS(0,2,0), 
+				GPU_TEVOPERANDS(0,0,0), 
+				GPU_MODULATE, 
+				GPU_REPLACE, 
+				0xFFFFFFFF);
+			// STAGE 4: Out.Color = Prev.Color + Prev.Color (doubling color intensity), Out.Alpha = Const.Alpha
+			GPU_SetTexEnv(3, 
+				GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
+				GPU_TEVSOURCES(GPU_CONSTANT, 0, 0),
+				GPU_TEVOPERANDS(0,0,0), 
+				GPU_TEVOPERANDS(0,0,0), 
+				GPU_ADD, 
+				GPU_REPLACE, 
+				0xFFFFFFFF);
+		}
+		
+		// STAGE 5: master brightness - Out.Color = Prev.Color * Brightness, Out.Alpha = Const.Alpha
+		GPU_SetTexEnv(4, 
+			GPU_TEVSOURCES(GPU_PREVIOUS, GPU_CONSTANT, 0), 
+			GPU_TEVSOURCES(GPU_CONSTANT, 0, 0),
+			GPU_TEVOPERANDS(0,0,0), 
+			GPU_TEVOPERANDS(0,0,0), 
+			GPU_MODULATE, 
+			GPU_REPLACE, 
+			0xFF000000 | (s->Brightness*0x00010101));
+		// STAGE 6: dummy
+		GPU_SetDummyTexEnv(5);
+			
+		GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)MainScreenTex),256,256,0,GPU_RGBA5551);
+		GPU_SetTexture(GPU_TEXUNIT1, (u32*)osConvertVirtToPhys((u32)SubScreenTex),256,256,0,GPU_RGBA5551);
+		
+		GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
+			GPU_ATTRIBFMT(0, 2, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT),
+			0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
+		
+		ADDVERTEX(0, fstart, 0, 1-(fstart/256.0f));
+		ADDVERTEX(256, fstart, 1, 1-(fstart/256.0f));
+		ADDVERTEX(256, fend, 1, 1-(fend/256.0f));
+		ADDVERTEX(0, fstart, 0, 1-(fstart/256.0f));
+		ADDVERTEX(256, fend, 1, 1-(fend/256.0f));
+		ADDVERTEX(0, fend, 0, 1-(fend/256.0f));
+		vptr = (float*)((((u32)vptr) + 0xF) & ~0xF);
+		
+		GPU_DrawArray(GPU_TRIANGLES, 2*3);
+		
+		if (s->EndOffset == 240) break;
+		
+		GPU_FinishDrawing();
+		
+		startoffset = s->EndOffset;
+		s++;
+	}
+	
+	gspWaitForPPF();
 }

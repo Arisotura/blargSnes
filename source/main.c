@@ -47,10 +47,13 @@ u32* gpuCmd1;
 u32* gpuCmd;
 int curCmd = 0;
 
+void* vertexBuf0;
+void* vertexBuf1;
+void* vertexBuf;
+
 u32* BorderTex;
 u16* MainScreenTex;
 u16* SubScreenTex;
-u8* BrightnessTex;
 
 FS_archive sdmcArchive;
 
@@ -59,7 +62,7 @@ int running = 0;
 int pause = 0;
 u32 framecount = 0;
 
-int RenderState = 0;
+u8 RenderState = 0;
 int FramesSkipped = 0;
 bool SkipThisFrame = false;
 
@@ -74,47 +77,15 @@ Result svcSetThreadPriority(Handle thread, s32 prio)
 }
 
 
-Handle gputhread = NULL;
-u8 gputhreadstack[0x4000] __attribute__((aligned(8)));
-Handle GPURenderTrigger, GPURenderDone;
-int exitgpu = 0;
-
-void GPUThread(u32 blarg)
-{
-	for (;;)
-	{
-		svcWaitSynchronization(GPURenderTrigger, U64_MAX);
-		svcClearEvent(GPURenderTrigger);
-		if (exitgpu) break;
-		
-		
-		svcClearEvent(GPURenderDone);
-		
-		RenderTopScreen();
-		GPUCMD_Finalize();
-		GPUCMD_Run(gxCmdBuf);
-		gspWaitForP3D();
-		
-		GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
-		curCmd ^= 1;
-		gpuCmd = curCmd ? gpuCmd1 : gpuCmd0;
-		GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
-		gspWaitForPPF();
-		
-		gfxSwapBuffersGpu();
-		gspWaitForVBlank();
-		svcSignalEvent(GPURenderDone);
-	}
-	
-	svcExitThread();
-}
-
-
 Handle spcthread = NULL;
 u8 spcthreadstack[0x4000] __attribute__((aligned(8)));
 Handle SPCSync;
 int exitspc = 0;
 
+// TODO: correction
+// mixes 127995 samples every 4 seconds, instead of 128000 (128038.1356)
+// +43 samples every 4 seconds
+// +1 sample every 32 second
 void SPCThread(u32 blarg)
 {
 	int i;
@@ -239,7 +210,7 @@ float screenProjMatrix[16] =
 float snesProjMatrix[16] = 
 {
 	2.0f/256.0f, 0, 0, -1,
-	0, 2.0f/240.0f, 0, -1,
+	0, 2.0f/256.0f, 0, -1,
 	0, 0, 1, -1,
 	0, 0, 0, 1
 };
@@ -263,13 +234,14 @@ float vertexList[] =
 	240.0, 400.0, 0.9,  0, 1.0,
 	0.0, 400.0, 0.9,    0, 0.0625,*/
 	
-	0.0, 0.0, 0.9,      1.0, 0.0625,
-	240.0, 0.0, 0.9,    1.0, 0.9375, // should really be 0.875 -- investigate
-	240.0, 400.0, 0.9,  0.0, 0.9375,
+	// 0.0625 0.9375
+	0.0, 0.0, 0.9,      1.0, 0.875,
+	240.0, 0.0, 0.9,    1.0, 0.0, // should really be 0.875 -- investigate
+	240.0, 400.0, 0.9,  0.0, 0.0,
 	
-	0.0, 0.0, 0.9,      1.0, 0.0625,
-	240.0, 400.0, 0.9,  0.0, 0.9375,
-	0.0, 400.0, 0.9,    0.0, 0.0625,
+	0.0, 0.0, 0.9,      1.0, 0.875,
+	240.0, 400.0, 0.9,  0.0, 0.0,
+	0.0, 400.0, 0.9,    0.0, 0.875,
 	
 	// screen
 	/*8.0, 72.0, 0.5,     1.0, 0.125,  0.125, 0.125,
@@ -333,131 +305,28 @@ void GPU_SetDummyTexEnv(u8 num)
 		0xFFFFFFFF);
 }
 
+int isdrawing = 0;
+
 void RenderTopScreen()
 {
-	shaderset = 0;
+	/*if (RenderState)
+	{
+		if (RenderState == 1)
+		{
+			gspWaitForP3D();
+			GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
+		}
+		
+		gspWaitForPPF();
+	}*/
+	
+	//shaderset = 0;
 	// notes on the drawing process 
 	// textures used here are actually 512x256. TODO: investigate if GPU_SetTexture() really has the params in the wrong order
 	// or if we did something wrong.
 	
 	
-	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)SNESFrame),0,0,256,240);
 	
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
-	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR); // we don't care about depth testing in this pass
-	
-	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
-	
-	GPU_SetShader();
-	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(false, GPU_ALWAYS, 0x00);
-	
-	GPU_SetTextureEnable(GPU_TEXUNIT0|GPU_TEXUNIT1|GPU_TEXUNIT2);
-	
-	// TEXTURE ENV STAGES
-	// ---
-	// blending operation: (Main.Color +- (Sub.Color * Main.Alpha)) * Sub.Alpha
-	// Main.Alpha: 0 = no color math, 255 = color math
-	// Sub.Alpha: 0 = div2, 1 = no div2
-	// ---
-	// STAGE 1: Out.Color = Sub.Color * Main.Alpha, Out.Alpha = Sub.Alpha + 0.5
-	GPU_SetTexEnv(0, 
-		GPU_TEVSOURCES(GPU_TEXTURE1, GPU_TEXTURE0, 0), 
-		GPU_TEVSOURCES(GPU_TEXTURE1, GPU_CONSTANT, 0),
-		GPU_TEVOPERANDS(0,2,0), 
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_MODULATE, 
-		GPU_ADD, 
-		0x80FFFFFF);
-	
-	if (PPU.Subtract)
-	{
-		// COLOR SUBTRACT
-		
-		// STAGE 2: Out.Color = Main.Color - Prev.Color, Out.Alpha = Prev.Alpha + (1-Main.Alpha) (cancel out div2 when color math doesn't happen)
-		GPU_SetTexEnv(1, 
-			GPU_TEVSOURCES(GPU_TEXTURE0, GPU_PREVIOUS, 0), 
-			GPU_TEVSOURCES(GPU_PREVIOUS, GPU_TEXTURE0, 0),
-			GPU_TEVOPERANDS(0,0,0), 
-			GPU_TEVOPERANDS(0,1,0), 
-			GPU_SUBTRACT, 
-			GPU_ADD, 
-			0xFFFFFFFF);
-		// STAGE 3: Out.Color = Prev.Color * Prev.Alpha, Out.Alpha = Prev.Alpha
-		GPU_SetTexEnv(2, 
-			GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
-			GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0),
-			GPU_TEVOPERANDS(0,2,0), 
-			GPU_TEVOPERANDS(0,0,0), 
-			GPU_MODULATE, 
-			GPU_REPLACE, 
-			0xFFFFFFFF);
-		// STAGE 4: dummy (no need to double color intensity)
-		GPU_SetDummyTexEnv(3);
-	}
-	else
-	{
-		// COLOR ADDITION
-		
-		// STAGE 2: Out.Color = Main.Color*0.5 + Prev.Color*0.5 (prevents overflow), Out.Alpha = Prev.Alpha + (1-Main.Alpha) (cancel out div2 when color math doesn't happen)
-		GPU_SetTexEnv(1, 
-			GPU_TEVSOURCES(GPU_TEXTURE0, GPU_PREVIOUS, GPU_CONSTANT), 
-			GPU_TEVSOURCES(GPU_PREVIOUS, GPU_TEXTURE0, 0),
-			GPU_TEVOPERANDS(0,0,0), 
-			GPU_TEVOPERANDS(0,1,0), 
-			GPU_INTERPOLATE,
-			GPU_ADD, 
-			0xFF808080);
-		// STAGE 3: Out.Color = Prev.Color * Prev.Alpha, Out.Alpha = Prev.Alpha
-		GPU_SetTexEnv(2, 
-			GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
-			GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0),
-			GPU_TEVOPERANDS(0,2,0), 
-			GPU_TEVOPERANDS(0,0,0), 
-			GPU_MODULATE, 
-			GPU_REPLACE, 
-			0xFFFFFFFF);
-		// STAGE 4: Out.Color = Prev.Color + Prev.Color (doubling color intensity), Out.Alpha = Const.Alpha
-		GPU_SetTexEnv(3, 
-			GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
-			GPU_TEVSOURCES(GPU_CONSTANT, 0, 0),
-			GPU_TEVOPERANDS(0,0,0), 
-			GPU_TEVOPERANDS(0,0,0), 
-			GPU_ADD, 
-			GPU_REPLACE, 
-			0xFFFFFFFF);
-	}
-	
-	// STAGE 5: master brightness - Out.Color = Prev.Color * Bright.Alpha, Out.Alpha = Const.Alpha
-	GPU_SetTexEnv(4, 
-		GPU_TEVSOURCES(GPU_PREVIOUS, GPU_TEXTURE2, 0), 
-		GPU_TEVSOURCES(GPU_CONSTANT, 0, 0),
-		GPU_TEVOPERANDS(0,2,0), 
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_MODULATE, 
-		GPU_REPLACE, 
-		0xFFFFFFFF);
-	// STAGE 6: dummy
-	GPU_SetDummyTexEnv(5);
-		
-	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)MainScreenTex),256,256,0,GPU_RGBA5551);
-	GPU_SetTexture(GPU_TEXUNIT1, (u32*)osConvertVirtToPhys((u32)SubScreenTex),256,256,0,GPU_RGBA5551);
-	GPU_SetTexture(GPU_TEXUNIT2, (u32*)osConvertVirtToPhys((u32)BrightnessTex),256,8,0x200,GPU_A8);
-	
-	setUniformMatrix(0x24, mvMatrix);
-	setUniformMatrix(0x20, snesProjMatrix);
-	
-	GPU_SetAttributeBuffers(3, (u32*)osConvertVirtToPhys((u32)screenVertices),
-		GPU_ATTRIBFMT(0, 3, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT)|GPU_ATTRIBFMT(2, 2, GPU_FLOAT),
-		0xFFC, 0x210, 1, (u32[]){0x00000000}, (u64[]){0x210}, (u8[]){3});
-	
-	GPU_DrawArray(GPU_TRIANGLES, 2*3);
 	//GPU_FinishDrawing();
 
 	
@@ -510,9 +379,20 @@ void RenderTopScreen()
 	GPU_DrawArray(GPU_TRIANGLES, 2*3); 
 	GPU_FinishDrawing();
 	
-
-	// TODO: there are probably unneeded things in here. Investigate whenever we know the PICA200 better.
+	//dbgcolor(0xFF);
+	GPUCMD_Finalize();
+	GPUCMD_Run(gxCmdBuf);
+	//dbgcolor(0xFF00);
+	gspWaitForP3D();//dbgcolor(0xFFFF);
+	GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);//dbgcolor(0xFF0000);
+	gspWaitForPPF();
+	//dbgcolor(0xFFFF00);
+	//RenderState = 1;
 	
+	curCmd ^= 1;
+	gpuCmd = curCmd ? gpuCmd1 : gpuCmd0;
+	vertexBuf = curCmd ? vertexBuf1 : vertexBuf0;
+	GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);//dbgcolor(0xFFFFFF);
 }
 
 
@@ -766,71 +646,6 @@ bool PeekEvent(Handle evt)
 	return false;
 }
 
-void RenderPipeline()
-{
-	// PICA200 rendering.
-	// doing all this on a separate thread would normally work better,
-	// but the 3DS threads don't like to cooperate. Oh well.
-	
-	if (RenderState != 0) return;
-	
-	// check if rendering finished
-	if (PeekEvent(gspEvents[GSPEVENT_P3D]))
-	{
-		// in that case, send the color buffer to the LCD
-		GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
-		RenderState = 1;
-	}
-}
-
-void RenderPipelineVBlank()
-{
-	// SNES VBlank. Copy the freshly rendered framebuffers.
-	
-	GSPGPU_FlushDataCache(NULL, (u8*)PPU.MainBuffer, 256*512*2);
-	
-	// in case we arrived here too early
-	if (RenderState != 1)
-	{
-		gspWaitForP3D();
-		GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
-	}
-	
-	// wait for the previous copy to be done, just in case
-	gspWaitForPPF();
-	
-	// copy new screen textures
-	// SetDisplayTransfer with flags=2 converts linear graphics to the tiled format used for textures
-	// since the two sets of buffers are contiguous, we can transfer them as one 256x512 texture
-	GX_SetDisplayTransfer(gxCmdBuf, (u32*)PPU.MainBuffer, 0x02000100, (u32*)MainScreenTex, 0x02000100, 0x3302);
-	
-	// copy brightness.
-	// TODO do better
-	// although I don't think SetDisplayTransfer is fitted to handle alpha textures
-	int i;
-	u8* bptr = BrightnessTex;
-	for (i = 0; i < 224;)
-	{
-		u32 pixels = *(u32*)&PPU.Brightness[i];
-		i += 4;
-		
-		*bptr = (u8)pixels;
-		pixels >>= 8;
-		bptr += 2;
-		*bptr = (u8)pixels;
-		pixels >>= 8;
-		bptr += 6;
-		
-		*bptr = (u8)pixels;
-		pixels >>= 8;
-		bptr += 2;
-		*bptr = (u8)pixels;
-		pixels >>= 8;
-		bptr += 22;
-	}
-	GSPGPU_FlushDataCache(NULL, BrightnessTex, 8*256);
-}
-
 
 void VSyncAndFrameskip()
 {
@@ -891,11 +706,15 @@ int main()
 	gpuCmd = gpuCmd0;
 	GPU_Reset(gxCmdBuf, gpuCmd, gpuCmdSize);
 	
+	vertexBuf0 = linearAlloc(0x20000);
+	vertexBuf1 = linearAlloc(0x20000);
+	vertexBuf = vertexBuf0;
+	
 	svcSetThreadPriority(gspEventThread, 0x30);
 	
 	gpuOut = (u32*)VRAM_Alloc(400*240*2*4);
 	gpuDOut = (u32*)VRAM_Alloc(400*240*2*4);
-	SNESFrame = (u32*)VRAM_Alloc(256*240*4);
+	SNESFrame = (u32*)VRAM_Alloc(256*256*4);
 	
 	shader = SHDR_ParseSHBIN((u32*)blarg_shbin, blarg_shbin_size);
 	
@@ -909,7 +728,6 @@ int main()
 	BorderTex = (u32*)linearAlloc(512*256*4);
 	MainScreenTex = (u16*)linearAlloc(256*512*2);
 	SubScreenTex = &MainScreenTex[256*256];
-	BrightnessTex = (u8*)linearAlloc(8*256);
 	
 	borderVertices = (float*)linearAlloc(5*3 * 2 * sizeof(float));
 	screenVertices = (float*)linearAlloc(7*3 * 2 * sizeof(float));
@@ -927,17 +745,12 @@ int main()
 		
 	CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 0, 32, 0x3);
 	memset(SubScreenTex, 0, 256*256*2);
-	memset(BrightnessTex, 0xFF, 224*8);
 	
 	Audio_Init();
 	
 	UI_Switch(&UI_ROMMenu);
 	
-	/*GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
-	
-	svcCreateEvent(&GPURenderTrigger, 0);
-	svcCreateEvent(&GPURenderDone, 0);
-	svcCreateThread(&gputhread, GPUThread, 0, (u32*)(gputhreadstack+0x4000), 0x30, ~1);*/
+	GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
 	
 	svcCreateEvent(&SPCSync, 0);
 
@@ -947,8 +760,6 @@ int main()
 	{
 		if(status == APP_RUNNING)
 		{
-			//svcSignalEvent(SPCSync);
-			
 			hidScanInput();
 			u32 press = hidKeysDown();
 			u32 held = hidKeysHeld();
@@ -956,25 +767,6 @@ int main()
 			
 			if (running && !pause)
 			{
-				if (!SkipThisFrame)
-				{
-					// start PICA200 rendering
-					// we don't have to care about clearing the buffers since we always render a 400x240 border
-					// and don't use depth test
-					
-					RenderState = 0;
-					GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
-					RenderTopScreen();
-					GPUCMD_Finalize();
-					GPUCMD_Run(gxCmdBuf);
-				}
-				else
-				{
-					// when frameskipping, just copy the old frame
-					
-					GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
-				}
-				
 				// emulate
 				
 				CPU_Run(); // runs the SNES for one frame. Handles PPU rendering.
@@ -1012,7 +804,6 @@ int main()
 						
 						CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 0, 32, 0x3);
 						memset(SubScreenTex, 0, 256*256*2);
-						memset(BrightnessTex, 0xFF, 224*8);
 					}
 					else if (release & KEY_X)
 					{
@@ -1041,10 +832,8 @@ int main()
 						shot = 0;
 				}
 				
-				GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
+				shaderset = 0;
 				RenderTopScreen();
-				GPUCMD_Finalize();
-				GPUCMD_Run(gxCmdBuf);
 				
 				if (held & KEY_TOUCH)
 				{
@@ -1079,10 +868,6 @@ int main()
 							repeatstate = 2;
 					}
 				}
-				 
-				gspWaitForP3D();
-
-				GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
 			}
 			
 			u8* bottomfb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
@@ -1091,10 +876,11 @@ int main()
 			UI_Render();
 			GSPGPU_FlushDataCache(NULL, bottomfb, 0x38400);
 			
-			// at this point, we were transferring a framebuffer. Wait for it to be done.
-			gspWaitForPPF();
-			gfxSwapBuffersGpu();
-			VSyncAndFrameskip();
+			//if ((!SkipThisFrame) || (FramesSkipped > 1))
+				gfxSwapBuffersGpu();
+			
+			//VSyncAndFrameskip();
+			gspWaitForEvent(GSPEVENT_VBlank0, false);
 		}
 		else if(status == APP_SUSPENDING)
 		{
