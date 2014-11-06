@@ -32,14 +32,18 @@
 
 #include "defaultborder.h"
 #include "screenfill.h"
+
 #include "blarg_shbin.h"
+#include "render_soft_vsh_shbin.h"
 
 
 extern u32* gxCmdBuf;
 u32* gpuOut;
 u32* gpuDOut;
 u32* SNESFrame;
-DVLB_s* shader;
+
+DVLB_s* generalShader;
+DVLB_s* softRenderShader;
 
 u32 gpuCmdSize;
 u32* gpuCmd0;
@@ -284,11 +288,17 @@ void setUniformMatrix(u32 startreg, float* m)
 	GPU_SetUniform(startreg, (u32*)param, 4);
 }
 
-int shaderset = 0;
-void GPU_SetShader()
+DVLB_s* curshader = NULL;
+
+void GPU_ResetShader()
 {
-	if (shaderset) return;
-	shaderset = 1;
+	curshader = NULL;
+}
+
+void GPU_SetShader(DVLB_s* shader)
+{
+	if (shader == curshader) return;
+	curshader = shader;
 	
 	SHDR_UseProgram(shader, 0);
 }
@@ -329,8 +339,7 @@ void RenderTopScreen()
 	
 	//GPU_FinishDrawing();
 
-	
-	
+	GPU_SetShader(generalShader);
 	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)gpuOut),0,0,240*2,400);
 	
 	GPU_DepthRange(-1.0f, 0.0f);
@@ -344,7 +353,7 @@ void RenderTopScreen()
 	GPUCMD_AddSingleParam(0x000F0118, 0);
 	
 	//setup shader
-	GPU_SetShader();
+	
 	
 	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
 	GPU_SetAlphaTest(false, GPU_ALWAYS, 0x00);
@@ -716,7 +725,8 @@ int main()
 	gpuDOut = (u32*)VRAM_Alloc(400*240*2*4);
 	SNESFrame = (u32*)VRAM_Alloc(256*256*4);
 	
-	shader = SHDR_ParseSHBIN((u32*)blarg_shbin, blarg_shbin_size);
+	generalShader = SHDR_ParseSHBIN((u32*)blarg_shbin, blarg_shbin_size);
+	softRenderShader = SHDR_ParseSHBIN((u32*)render_soft_vsh_shbin, render_soft_vsh_shbin_size);
 	
 	GX_SetMemoryFill(gxCmdBuf, gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
 	gspWaitForPSC0();
@@ -832,7 +842,7 @@ int main()
 						shot = 0;
 				}
 				
-				shaderset = 0;
+				GPU_ResetShader();
 				RenderTopScreen();
 				
 				if (held & KEY_TOUCH)

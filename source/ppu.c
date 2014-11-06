@@ -847,8 +847,7 @@ void PPU_VBlank()
 {
 	if (!SkipThisFrame)
 	{
-		extern int shaderset;
-		shaderset = 0;
+		GPU_ResetShader();
 		
 		// TODO switch, same ol'
 		

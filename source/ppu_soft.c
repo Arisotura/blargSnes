@@ -1356,6 +1356,8 @@ void PPU_RenderScanline_Soft(u32 line)
 extern u32* gxCmdBuf;
 extern void* vertexBuf;
 
+extern DVLB_s* softRenderShader;
+
 extern float snesProjMatrix[16];
 extern float mvMatrix[16];
 
@@ -1363,7 +1365,6 @@ extern float* screenVertices;
 extern u32* gpuOut;
 extern u32* gpuDOut;
 extern u32* SNESFrame;
-extern DVLB_s* shader;
 extern u16* MainScreenTex;
 extern u16* SubScreenTex;
 
@@ -1384,8 +1385,6 @@ float identity[16] =
 
 void PPU_VBlank_Soft()
 {
-	extern int shaderset;
-	shaderset = 0;
 	// NAIVE CODE
 	/*if (RenderState)
 	{
@@ -1399,6 +1398,7 @@ void PPU_VBlank_Soft()
 		RenderState = 0;
 	}
 	dbgcolor(0xFF);*/
+	
 	// copy new screen textures
 	// SetDisplayTransfer with flags=2 converts linear graphics to the tiled format used for textures
 	// since the two sets of buffers are contiguous, we can transfer them as one 256x512 texture
@@ -1413,6 +1413,7 @@ void PPU_VBlank_Soft()
 	
 	float* vptr = (float*)vertexBuf;
 	
+	GPU_SetShader(softRenderShader);
 	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)SNESFrame),0,0,256,256);
 	
 	
@@ -1424,22 +1425,20 @@ void PPU_VBlank_Soft()
 		float fend = (float)s->EndOffset;
 		
 		GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
-	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR); // we don't care about depth testing in this pass
-	
-	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
-	
-	GPU_SetShader();
-	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(false, GPU_ALWAYS, 0x00);
-	
-	setUniformMatrix(0x24, mvMatrix);
-	setUniformMatrix(0x20, snesProjMatrix);
+		GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
+		GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
+		GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+		GPU_SetBlendingColor(0,0,0,0);
+		GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR); // we don't care about depth testing in this pass
+		
+		GPUCMD_AddSingleParam(0x00010062, 0x00000000);
+		GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+		
+		GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+		GPU_SetAlphaTest(false, GPU_ALWAYS, 0x00);
+		
+		setUniformMatrix(0x24, mvMatrix);
+		setUniformMatrix(0x20, snesProjMatrix);
 		
 		GPU_SetTextureEnable(GPU_TEXUNIT0|GPU_TEXUNIT1);
 		
@@ -1536,19 +1535,19 @@ void PPU_VBlank_Soft()
 			GPU_ATTRIBFMT(0, 2, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT),
 			0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
 		
-		ADDVERTEX(0, fstart, 0, 1-(fstart/256.0f));
-		ADDVERTEX(256, fstart, 1, 1-(fstart/256.0f));
-		ADDVERTEX(256, fend, 1, 1-(fend/256.0f));
-		ADDVERTEX(0, fstart, 0, 1-(fstart/256.0f));
-		ADDVERTEX(256, fend, 1, 1-(fend/256.0f));
-		ADDVERTEX(0, fend, 0, 1-(fend/256.0f));
+		ADDVERTEX(0.0, fstart,    0.0, 256.0-fstart);
+		ADDVERTEX(256.0, fstart,  256.0, 256.0-fstart);
+		ADDVERTEX(256.0, fend,    256.0, 256.0-fend);
+		ADDVERTEX(0.0, fstart,    0.0, 256.0-fstart);
+		ADDVERTEX(256.0, fend,    256.0, 256.0-fend);
+		ADDVERTEX(0.0, fend,      0.0, 256.0-fend);
 		vptr = (float*)((((u32)vptr) + 0xF) & ~0xF);
 		
 		GPU_DrawArray(GPU_TRIANGLES, 2*3);
 		
-		if (s->EndOffset == 240) break;
-		
 		GPU_FinishDrawing();
+		
+		if (s->EndOffset == 240) break;
 		
 		startoffset = s->EndOffset;
 		s++;
