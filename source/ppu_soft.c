@@ -1411,7 +1411,7 @@ void PPU_VBlank_Soft()
 	PPU.CurColorEffect->EndOffset = 240;
 	int startoffset = 0;
 	
-	float* vptr = (float*)vertexBuf;
+	u16* vptr = (u16*)vertexBuf;
 	
 	GPU_SetShader(softRenderShader);
 	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)SNESFrame),0,0,256,256);
@@ -1421,8 +1421,6 @@ void PPU_VBlank_Soft()
 	for (;;)
 	{
 		//bprintf("section %d %d %02X %d\n", startoffset, s->EndOffset, s->ColorMath, s->Brightness);
-		float fstart = (float)startoffset;
-		float fend = (float)s->EndOffset;
 		
 		GPU_DepthRange(-1.0f, 0.0f);
 		GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
@@ -1532,15 +1530,15 @@ void PPU_VBlank_Soft()
 		GPU_SetTexture(GPU_TEXUNIT1, (u32*)osConvertVirtToPhys((u32)SubScreenTex),256,256,0,GPU_RGBA5551);
 		
 		GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
-			GPU_ATTRIBFMT(0, 2, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT),
+			GPU_ATTRIBFMT(0, 2, GPU_SHORT)|GPU_ATTRIBFMT(1, 2, GPU_SHORT),
 			0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
 		
-		ADDVERTEX(0.0, fstart,    0.0, 256.0-fstart);
-		ADDVERTEX(256.0, fstart,  256.0, 256.0-fstart);
-		ADDVERTEX(256.0, fend,    256.0, 256.0-fend);
-		ADDVERTEX(0.0, fstart,    0.0, 256.0-fstart);
-		ADDVERTEX(256.0, fend,    256.0, 256.0-fend);
-		ADDVERTEX(0.0, fend,      0.0, 256.0-fend);
+		ADDVERTEX(0, startoffset,       0, 256-startoffset);
+		ADDVERTEX(256, startoffset,     256, 256-startoffset);
+		ADDVERTEX(256, s->EndOffset,    256, 256-s->EndOffset);
+		ADDVERTEX(0, startoffset,       0, 256-startoffset);
+		ADDVERTEX(256, s->EndOffset,    256, 256-s->EndOffset);
+		ADDVERTEX(0, s->EndOffset,      0, 256-s->EndOffset);
 		vptr = (float*)((((u32)vptr) + 0xF) & ~0xF);
 		
 		GPU_DrawArray(GPU_TRIANGLES, 2*3);
