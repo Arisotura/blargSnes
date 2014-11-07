@@ -1229,13 +1229,20 @@ void PPU_RenderMode7(u16* buf, u32 line, u16 screen, u8 colormath)
 
 void PPU_RenderScanline_Soft(u32 line)
 {
-	if (!line) PPU.CurColorEffect = &PPU.ColorEffectSections[0];
-	
-	if (PPU.ColorEffectDirty)
+	if ((!line) || PPU.ColorEffectDirty)
 	{
-		PPU_ColorEffectSection* s = PPU.CurColorEffect;
-		s->EndOffset = line;
-		s++;
+		PPU_ColorEffectSection* s;
+		if (!line)
+		{
+			PPU.CurColorEffect = &PPU.ColorEffectSections[0];
+			s = PPU.CurColorEffect;
+		}
+		else
+		{
+			s = PPU.CurColorEffect;
+			s->EndOffset = line;
+			s++;
+		}
 		
 		s->ColorMath = (PPU.ColorMath2 & 0x80);
 		s->Brightness = PPU.CurBrightness;
@@ -1385,19 +1392,11 @@ float identity[16] =
 
 void PPU_VBlank_Soft()
 {
-	// NAIVE CODE
-	/*if (RenderState)
+	if (RenderState) 
 	{
-		if (RenderState == 1)
-		{dbgcolor(0xFF00);
-			gspWaitForP3D();dbgcolor(0xFFFF00);
-			GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
-		}
-		dbgcolor(0xFF0000);
-		gspWaitForPPF();dbgcolor(0xFF00FF);
+		gspWaitForP3D();
 		RenderState = 0;
 	}
-	dbgcolor(0xFF);*/
 	
 	// copy new screen textures
 	// SetDisplayTransfer with flags=2 converts linear graphics to the tiled format used for textures

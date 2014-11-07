@@ -69,6 +69,7 @@ u32 framecount = 0;
 u8 RenderState = 0;
 int FramesSkipped = 0;
 bool SkipThisFrame = false;
+u64 LastVBlank = 0;
 
 // hax
 extern Handle gspEventThread;
@@ -315,20 +316,10 @@ void GPU_SetDummyTexEnv(u8 num)
 		0xFFFFFFFF);
 }
 
-int isdrawing = 0;
-
 void RenderTopScreen()
 {
-	/*if (RenderState)
-	{
-		if (RenderState == 1)
-		{
-			gspWaitForP3D();
-			GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
-		}
-		
-		gspWaitForPPF();
-	}*/
+	if (RenderState) gspWaitForP3D();
+	GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
 	
 	//shaderset = 0;
 	// notes on the drawing process 
@@ -351,9 +342,6 @@ void RenderTopScreen()
 	
 	GPUCMD_AddSingleParam(0x00010062, 0); 
 	GPUCMD_AddSingleParam(0x000F0118, 0);
-	
-	//setup shader
-	
 	
 	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
 	GPU_SetAlphaTest(false, GPU_ALWAYS, 0x00);
@@ -388,20 +376,17 @@ void RenderTopScreen()
 	GPU_DrawArray(GPU_TRIANGLES, 2*3); 
 	GPU_FinishDrawing();
 	
-	//dbgcolor(0xFF);
+	gspWaitForPPF();
+	// vsync here
+	
 	GPUCMD_Finalize();
 	GPUCMD_Run(gxCmdBuf);
-	//dbgcolor(0xFF00);
-	gspWaitForP3D();//dbgcolor(0xFFFF);
-	GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);//dbgcolor(0xFF0000);
-	gspWaitForPPF();
-	//dbgcolor(0xFFFF00);
-	//RenderState = 1;
+	RenderState = 1;
 	
 	curCmd ^= 1;
 	gpuCmd = curCmd ? gpuCmd1 : gpuCmd0;
 	vertexBuf = curCmd ? vertexBuf1 : vertexBuf0;
-	GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);//dbgcolor(0xFFFFFF);
+	GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
 }
 
 
@@ -661,8 +646,15 @@ void VSyncAndFrameskip()
 	if (running && !pause && PeekEvent(gspEvents[GSPEVENT_VBlank0]) && FramesSkipped<5)
 	{
 		// we missed the VBlank
-		// skip the next frame to compensate
-		// TODO: this doesn't work if we miss more than one VBlank!
+		// skip the next frames to compensate
+		
+		// TODO: doesn't work
+		/*s64 time = (s64)(svcGetSystemTick() - LastVBlank);
+		while (time > 4468724)
+		{
+			FramesSkipped++;
+			time -= 4468724;
+		}*/
 		
 		SkipThisFrame = true;
 		FramesSkipped++;
@@ -672,7 +664,9 @@ void VSyncAndFrameskip()
 		SkipThisFrame = false;
 		FramesSkipped = 0;
 		
+		gfxSwapBuffersGpu();
 		gspWaitForEvent(GSPEVENT_VBlank0, false);
+		//LastVBlank = svcGetSystemTick();
 	}
 }
 
@@ -844,6 +838,7 @@ int main()
 				
 				GPU_ResetShader();
 				RenderTopScreen();
+				VSyncAndFrameskip();
 				
 				if (held & KEY_TOUCH)
 				{
@@ -880,17 +875,20 @@ int main()
 				}
 			}
 			
-			u8* bottomfb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
-			
-			UI_SetFramebuffer(bottomfb);
-			UI_Render();
-			GSPGPU_FlushDataCache(NULL, bottomfb, 0x38400);
+			if (!SkipThisFrame)
+			{
+				u8* bottomfb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
+				
+				UI_SetFramebuffer(bottomfb);
+				UI_Render();
+				GSPGPU_FlushDataCache(NULL, bottomfb, 0x38400);
+			}
 			
 			//if ((!SkipThisFrame) || (FramesSkipped > 1))
-				gfxSwapBuffersGpu();
+			//	gfxSwapBuffersGpu();
 			
 			//VSyncAndFrameskip();
-			gspWaitForEvent(GSPEVENT_VBlank0, false);
+			//gspWaitForEvent(GSPEVENT_VBlank0, false);
 		}
 		else if(status == APP_SUSPENDING)
 		{

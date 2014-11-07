@@ -855,6 +855,7 @@ void PPU_VBlank()
 		
 		RenderTopScreen();
 	}
+	VSyncAndFrameskip();
 	
 	PPU.OAMAddr = PPU.OAMReload;
 	
