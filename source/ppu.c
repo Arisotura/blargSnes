@@ -115,17 +115,25 @@ void PPU_Init()
 	c->EndOffset = 240;
 	c->ColorMath = 0;
 	c->Brightness = 0xFF;
+	
+	// TODO! MAKE ME CONFIGURABLE
+	PPU.HardwareRenderer = 1;
+	
+	if (PPU.HardwareRenderer)
+		PPU_Init_Hard();
 }
 
 void PPU_Reset()
 {
 	int i;
 	
+	u8 hardrend = PPU.HardwareRenderer;
 	u16* mbuf = PPU.MainBuffer;
 	u16* sbuf = PPU.SubBuffer;
 	
 	memset(&PPU, 0, sizeof(PPUState));
 	
+	PPU.HardwareRenderer = hardrend;
 	PPU.MainBuffer = mbuf;
 	PPU.SubBuffer = sbuf;
 	
@@ -161,6 +169,9 @@ void PPU_Reset()
 void PPU_DeInit()
 {
 	linearFree(PPU.MainBuffer);
+	
+	if (PPU.HardwareRenderer)
+		PPU_DeInit_Hard();
 }
 
 
@@ -210,6 +221,7 @@ inline void PPU_SetBGCHR(int nbg, u8 val)
 
 inline void PPU_SetColor(u32 num, u16 val)
 {
+	if (PPU.CGRAM[num] == val) return;
 	PPU.CGRAM[num] = val;
 	
 	// RGB555, the 3DS way
@@ -217,6 +229,8 @@ inline void PPU_SetColor(u32 num, u16 val)
 	temp    |= (val & 0x03E0) << 1;
 	temp    |= (val & 0x7C00) >> 9;
 	PPU.Palette[num] = temp;
+	PPU.PaletteDirty[num >> 2] = 1;
+	PPU.PaletteOverallDirty = 1;
 }
 
 
@@ -471,14 +485,22 @@ void PPU_Write8(u32 addr, u8 val)
 		
 		case 0x18: // VRAM shit
 			{
-				PPU.VRAM[PPU.VRAMAddr] = val;
+				if (PPU.VRAM[PPU.VRAMAddr] != val)
+				{
+					PPU.VRAM[PPU.VRAMAddr] = val;
+					PPU.VRAMDirty[PPU.VRAMAddr >> 4] = 1;
+				}
 				if (!(PPU.VRAMInc & 0x80))
 					PPU.VRAMAddr += PPU.VRAMStep;
 			}
 			break;
 		case 0x19:
 			{
-				PPU.VRAM[PPU.VRAMAddr+1] = val;
+				if (PPU.VRAM[PPU.VRAMAddr+1] != val)
+				{
+					PPU.VRAM[PPU.VRAMAddr+1] = val;
+					PPU.VRAMDirty[PPU.VRAMAddr >> 4] = 1;
+				}
 				if (PPU.VRAMInc & 0x80)
 					PPU.VRAMAddr += PPU.VRAMStep;
 			}
@@ -634,7 +656,11 @@ void PPU_Write16(u32 addr, u16 val)
 			break;
 			
 		case 0x18:
-			*(u16*)&PPU.VRAM[PPU.VRAMAddr] = val;
+			if (*(u16*)&PPU.VRAM[PPU.VRAMAddr] != val)
+			{
+				*(u16*)&PPU.VRAM[PPU.VRAMAddr] = val;
+				PPU.VRAMDirty[PPU.VRAMAddr >> 4] = 1;
+			}
 			PPU.VRAMAddr += PPU.VRAMStep;
 			break;
 			
@@ -839,19 +865,24 @@ void PPU_RenderScanline(u32 line)
 	
 	if (SkipThisFrame) return;
 	
-	// TODO switch etc
-	PPU_RenderScanline_Soft(line);
+	if (PPU.HardwareRenderer)
+		PPU_RenderScanline_Hard(line);
+	else
+		PPU_RenderScanline_Soft(line);
 }
 
 void PPU_VBlank()
 {
+	int i;
+	
 	if (!SkipThisFrame)
 	{
 		GPU_ResetShader();
 		
-		// TODO switch, same ol'
-		
-		PPU_VBlank_Soft();
+		if (PPU.HardwareRenderer)
+			PPU_VBlank_Hard();
+		else
+			PPU_VBlank_Soft();
 		
 		RenderTopScreen();
 	}
@@ -861,4 +892,8 @@ void PPU_VBlank()
 	
 	if (!PPU.ForcedBlank)
 		PPU.OBJOverflow = 0;
+		
+	PPU.PaletteOverallDirty = 0;
+	for (i = 0; i < 64; i += 4) *(u32*)&PPU.PaletteDirty[i] = 0;
+	for (i = 0; i < 0x1000; i += 4) *(u32*)&PPU.VRAMDirty[i] = 0;
 }

@@ -35,6 +35,7 @@
 
 #include "blarg_shbin.h"
 #include "render_soft_vsh_shbin.h"
+#include "render_hard_vsh_shbin.h"
 
 
 extern u32* gxCmdBuf;
@@ -44,6 +45,7 @@ u32* SNESFrame;
 
 DVLB_s* generalShader;
 DVLB_s* softRenderShader;
+DVLB_s* hardRenderShader;
 
 u32 gpuCmdSize;
 u32* gpuCmd0;
@@ -240,13 +242,20 @@ float vertexList[] =
 	0.0, 400.0, 0.9,    0, 0.0625,*/
 	
 	// 0.0625 0.9375
-	0.0, 0.0, 0.9,      1.0, 0.875,
-	240.0, 0.0, 0.9,    1.0, 0.0, // should really be 0.875 -- investigate
+	/*0.0, 0.0, 0.9,      1.0, 0.875,
+	240.0, 0.0, 0.9,    1.0, 0.0,
 	240.0, 400.0, 0.9,  0.0, 0.0,
 	
 	0.0, 0.0, 0.9,      1.0, 0.875,
 	240.0, 400.0, 0.9,  0.0, 0.0,
-	0.0, 400.0, 0.9,    0.0, 0.875,
+	0.0, 400.0, 0.9,    0.0, 0.875,*/
+	8.0, 72.0, 0.9,      1.0, 0.875,
+	232.0, 72.0, 0.9,    1.0, 0.0,
+	232.0, 328.0, 0.9,  0.0, 0.0,
+	
+	8.0, 72.0, 0.9,      1.0, 0.875,
+	232.0, 328.0, 0.9,  0.0, 0.0,
+	8.0, 328.0, 0.9,    0.0, 0.875,
 	
 	// screen
 	/*8.0, 72.0, 0.5,     1.0, 0.125,  0.125, 0.125,
@@ -332,6 +341,14 @@ void RenderTopScreen()
 
 	GPU_SetShader(generalShader);
 	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)gpuOut),0,0,240*2,400);
+	
+	GPU_FinishDrawing();
+	// 1 = reverse scissor
+	// 0=2 = none
+	// 3 = normal scissor
+	GPUCMD_AddSingleParam(0x000F0065, 0);
+	GPUCMD_AddSingleParam(0x000F0066, 20|(20<<16));
+	GPUCMD_AddSingleParam(0x000F0067, 255|(255<<16));
 	
 	GPU_DepthRange(-1.0f, 0.0f);
 	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
@@ -721,6 +738,7 @@ int main()
 	
 	generalShader = SHDR_ParseSHBIN((u32*)blarg_shbin, blarg_shbin_size);
 	softRenderShader = SHDR_ParseSHBIN((u32*)render_soft_vsh_shbin, render_soft_vsh_shbin_size);
+	hardRenderShader = SHDR_ParseSHBIN((u32*)render_hard_vsh_shbin, render_hard_vsh_shbin_size);
 	
 	GX_SetMemoryFill(gxCmdBuf, gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
 	gspWaitForPSC0();

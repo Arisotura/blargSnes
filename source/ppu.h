@@ -66,6 +66,8 @@ typedef struct
 typedef struct
 {
 	u16 VCount;
+	
+	u8 HardwareRenderer;
 
 	// 16+256+16: we leave 16 extra pixels on both sides so we don't have to handle tiles that are partially offscreen
 	u16* MainBuffer;
@@ -82,12 +84,15 @@ typedef struct
 	u8 CGRAMVal;
 	u16 CGRAM[256];		// SNES CGRAM, xBGR1555
 	u16 Palette[256];	// our own palette, converted to RGBx5551
+	u8 PaletteDirty[64];
+	u8 PaletteOverallDirty;
 
 	u16 VRAMAddr;
 	u16 VRAMPref;
 	u8 VRAMInc;
 	u16 VRAMStep;
 	u8 VRAM[0x10000];
+	u8 VRAMDirty[0x1000];
 
 	u16 OAMAddr;
 	u8 OAMVal;
@@ -178,27 +183,8 @@ typedef struct
 
 extern PPUState PPU;
 
-
 extern bool SkipThisFrame;
 extern u8 RenderState;
-
-extern u16* PPU_MainBuffer;
-extern u16* PPU_SubBuffer;
-extern u8 PPU_Brightness[224];
-
-extern u16 PPU_CGRAM[256];
-extern u8 PPU_VRAM[0x10000];
-extern u8 PPU_OAM[0x220];
-
-extern u16 PPU_CGRAMAddr;
-extern u16 PPU_VRAMAddr;
-extern u16 PPU_VRAMStep;
-extern u8 PPU_VRAMInc;
-extern u16 PPU_OAMAddr;
-
-extern u16 PPU_VCount;
-
-extern u8 PPU_Subtract;
 
 
 void PPU_Init();
@@ -218,5 +204,12 @@ void PPU_VBlank();
 
 void PPU_RenderScanline_Soft(u32 line);
 void PPU_VBlank_Soft();
+
+
+void PPU_Init_Hard();
+void PPU_DeInit_Hard();
+
+void PPU_RenderScanline_Hard(u32 line);
+void PPU_VBlank_Hard();
 
 #endif

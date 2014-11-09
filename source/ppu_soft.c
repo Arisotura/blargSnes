@@ -1538,7 +1538,7 @@ void PPU_VBlank_Soft()
 		ADDVERTEX(0, startoffset,       0, 256-startoffset);
 		ADDVERTEX(256, s->EndOffset,    256, 256-s->EndOffset);
 		ADDVERTEX(0, s->EndOffset,      0, 256-s->EndOffset);
-		vptr = (float*)((((u32)vptr) + 0xF) & ~0xF);
+		vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
 		
 		GPU_DrawArray(GPU_TRIANGLES, 2*3);
 		

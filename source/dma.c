@@ -120,10 +120,16 @@ void DMA_Enable(u8 flag)
 			{
 				while (bytecount > 1)
 				{
-					*(u16*)&PPU.VRAM[PPU.VRAMAddr] = SNES_Read16(membank|memaddr);
+					u16 newval = SNES_Read16(membank|memaddr);
+					if (newval != *(u16*)&PPU.VRAM[PPU.VRAMAddr])
+					{
+						*(u16*)&PPU.VRAM[PPU.VRAMAddr] = newval;
+						PPU.VRAMDirty[PPU.VRAMAddr >> 4] = 1;
+					}
 					memaddr += maddrinc<<1;
 					bytecount -= 2;
 					PPU.VRAMAddr += PPU.VRAMStep;
+					
 				}
 			}
 		}
