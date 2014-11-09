@@ -379,7 +379,7 @@ void RenderTopScreen()
 	GPU_SetDummyTexEnv(5);
 	
 	//GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)BorderTex),256,512,0,GPU_RGBA8); // texture is actually 512x256
-	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)SNESFrame),256,256,0x6,GPU_RGBA8);
+	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)SNESFrame),256,256,/*0x6*/0,GPU_RGBA8);
 	
 	//setup matrices
 	setUniformMatrix(0x24, mvMatrix);

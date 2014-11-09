@@ -261,6 +261,102 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 
 
 
+#define ADDVERTEX(x, y, coord) \
+	*vptr++ = x; \
+	*vptr++ = y; \
+	*vptr++ = coord;
+
+
+int PPU_HardBGTest(u16* vptr, PPU_Background* bg, int ystart, int yend)
+{
+	u16* tilemap;// = bg->Tilemap;
+	u32 xoff, yoff;
+	u16 curtile;
+	int x, y;
+	u32 idx;
+	int ntiles = 0;
+	
+	yoff = bg->YScroll;
+	ystart -= (yoff & 7);
+	
+	for (y = ystart; y < yend; y += 8, yoff += 8)
+	{
+		tilemap = bg->Tilemap + ((yoff & 0xF8) << 2);
+		if (yoff & 0x100)
+		{
+			if (bg->Size & 0x2)
+				tilemap += (bg->Size & 0x1) ? 2048 : 1024;
+		}
+		
+		xoff = bg->XScroll;
+		x = -(xoff & 7);
+	
+			for (; x < 256; x += 8, xoff += 8)
+			{
+				idx = (xoff & 0xF8) >> 3;
+				if (xoff & 0x100)
+				{
+					if (bg->Size & 0x1)
+						idx += 1024;
+				}
+
+				curtile = tilemap[idx];
+				//if (curtile!=0x0122 && curtile!= 0 && curtile!=0x10F8) bprintf("%d/%d %d/%d %04X\n", x, y, xoff, yoff, curtile);
+				// render the tile
+				
+				// TODO: do this less hackishly
+				u32 addr = (((u32)bg->Tileset) - ((u32)&PPU.VRAM[0])) + ((curtile & 0x03FF) << 5);
+				u32 palid = (curtile & 0x1C00) >> 10;
+				
+				u32 coord = PPU_StoreTileInCache(1, palid, addr);
+				
+				switch (curtile & 0xC000)
+				{
+					case 0x0000:
+						ADDVERTEX(x,   y,     coord);
+						ADDVERTEX(x+8, y,     coord+0x0001);
+						ADDVERTEX(x+8, y+8,   coord+0x0101);
+						ADDVERTEX(x,   y,     coord);
+						ADDVERTEX(x+8, y+8,   coord+0x0101);
+						ADDVERTEX(x,   y+8,   coord+0x0100);
+						break;
+						
+					case 0x4000: // hflip
+						ADDVERTEX(x,   y,     coord+0x0001);
+						ADDVERTEX(x+8, y,     coord);
+						ADDVERTEX(x+8, y+8,   coord+0x0100);
+						ADDVERTEX(x,   y,     coord+0x0001);
+						ADDVERTEX(x+8, y+8,   coord+0x0100);
+						ADDVERTEX(x,   y+8,   coord+0x0101);
+						break;
+						
+					case 0x8000: // vflip
+						ADDVERTEX(x,   y,     coord+0x0100);
+						ADDVERTEX(x+8, y,     coord+0x0101);
+						ADDVERTEX(x+8, y+8,   coord+0x0001);
+						ADDVERTEX(x,   y,     coord+0x0100);
+						ADDVERTEX(x+8, y+8,   coord+0x0001);
+						ADDVERTEX(x,   y+8,   coord+0x0000);
+						break;
+						
+					case 0xC000: // hflip+vflip
+						ADDVERTEX(x,   y,     coord+0x0101);
+						ADDVERTEX(x+8, y,     coord+0x0100);
+						ADDVERTEX(x+8, y+8,   coord);
+						ADDVERTEX(x,   y,     coord+0x0101);
+						ADDVERTEX(x+8, y+8,   coord);
+						ADDVERTEX(x,   y+8,   coord+0x0001);
+						break;
+				}
+				
+				ntiles++;
+			}
+	}
+	
+	return ntiles;
+}
+
+
 
 // TEST
 
@@ -283,10 +379,6 @@ extern u32* gpuOut;
 extern u32* gpuDOut;
 extern u32* SNESFrame;
 
-#define ADDVERTEX(x, y, coord) \
-	*vptr++ = x; \
-	*vptr++ = y; \
-	*vptr++ = coord;
 	
 int lolz=0;
 void PPU_VBlank_Hard()
@@ -342,43 +434,12 @@ void PPU_VBlank_Hard()
 			GPU_ATTRIBFMT(0, 2, GPU_SHORT)|GPU_ATTRIBFMT(1, 2, GPU_UNSIGNED_BYTE),
 			0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
 			
-	
-		u32 coord = PPU_StoreTileInCache(1, 6, 0xC00);
-		ADDVERTEX(0, 0,   coord);
-		ADDVERTEX(8, 0,   coord+0x0001);
-		ADDVERTEX(8, 8,   coord+0x0101);
-		ADDVERTEX(0, 0,   coord);
-		ADDVERTEX(8, 8,   coord+0x0101);
-		ADDVERTEX(0, 8,   coord+0x0100);
-		
-		coord = PPU_StoreTileInCache(1, 6, 0xC20);
-		ADDVERTEX(8, 0,   coord);
-		ADDVERTEX(16, 0,   coord+0x0001);
-		ADDVERTEX(16, 8,   coord+0x0101);
-		ADDVERTEX(8, 0,   coord);
-		ADDVERTEX(16, 8,   coord+0x0101);
-		ADDVERTEX(8, 8,   coord+0x0100);
-		
-		coord = PPU_StoreTileInCache(1, 6, 0xC40);
-		ADDVERTEX(0, 8,   coord);
-		ADDVERTEX(8, 8,   coord+0x0001);
-		ADDVERTEX(8, 16,   coord+0x0101);
-		ADDVERTEX(0, 8,   coord);
-		ADDVERTEX(8, 16,   coord+0x0101);
-		ADDVERTEX(0, 16,   coord+0x0100);
-		
-		coord = PPU_StoreTileInCache(1, 6, 0xC60);
-		ADDVERTEX(8, 8,   coord);
-		ADDVERTEX(16, 8,   coord+0x0001);
-		ADDVERTEX(16, 16,   coord+0x0101);
-		ADDVERTEX(8, 8,   coord);
-		ADDVERTEX(16, 16,   coord+0x0101);
-		ADDVERTEX(8, 16,   coord+0x0100);
+		int ntiles = PPU_HardBGTest(vptr, &PPU.BG[0], 0, 224);
 		
 		vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
 	
 		
-		GPU_DrawArray(GPU_TRIANGLES, 4*2*3);
+		GPU_DrawArray(GPU_TRIANGLES, ntiles*2*3);
 		
 		GPU_FinishDrawing();
 		
