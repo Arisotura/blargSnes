@@ -221,6 +221,7 @@ inline void PPU_SetBGCHR(int nbg, u8 val)
 
 inline void PPU_SetColor(u32 num, u16 val)
 {
+	val &= ~0x8000;
 	if (PPU.CGRAM[num] == val) return;
 	PPU.CGRAM[num] = val;
 	
@@ -229,8 +230,8 @@ inline void PPU_SetColor(u32 num, u16 val)
 	temp    |= (val & 0x03E0) << 1;
 	temp    |= (val & 0x7C00) >> 9;
 	PPU.Palette[num] = temp;
-	PPU.PaletteDirty[num >> 2] = 1;
-	PPU.PaletteOverallDirty = 1;
+	PPU.PaletteUpdateCount[num >> 2]++;
+	PPU.PaletteUpdateCount256++;
 }
 
 
@@ -488,7 +489,7 @@ void PPU_Write8(u32 addr, u8 val)
 				if (PPU.VRAM[PPU.VRAMAddr] != val)
 				{
 					PPU.VRAM[PPU.VRAMAddr] = val;
-					PPU.VRAMDirty[PPU.VRAMAddr >> 4] = 1;
+					PPU.VRAMUpdateCount[PPU.VRAMAddr >> 4]++;
 				}
 				if (!(PPU.VRAMInc & 0x80))
 					PPU.VRAMAddr += PPU.VRAMStep;
@@ -499,7 +500,7 @@ void PPU_Write8(u32 addr, u8 val)
 				if (PPU.VRAM[PPU.VRAMAddr+1] != val)
 				{
 					PPU.VRAM[PPU.VRAMAddr+1] = val;
-					PPU.VRAMDirty[PPU.VRAMAddr >> 4] = 1;
+					PPU.VRAMUpdateCount[PPU.VRAMAddr >> 4]++;
 				}
 				if (PPU.VRAMInc & 0x80)
 					PPU.VRAMAddr += PPU.VRAMStep;
@@ -659,7 +660,7 @@ void PPU_Write16(u32 addr, u16 val)
 			if (*(u16*)&PPU.VRAM[PPU.VRAMAddr] != val)
 			{
 				*(u16*)&PPU.VRAM[PPU.VRAMAddr] = val;
-				PPU.VRAMDirty[PPU.VRAMAddr >> 4] = 1;
+				PPU.VRAMUpdateCount[PPU.VRAMAddr >> 4]++;
 			}
 			PPU.VRAMAddr += PPU.VRAMStep;
 			break;
@@ -892,8 +893,4 @@ void PPU_VBlank()
 	
 	if (!PPU.ForcedBlank)
 		PPU.OBJOverflow = 0;
-		
-	PPU.PaletteOverallDirty = 0;
-	for (i = 0; i < 64; i += 4) *(u32*)&PPU.PaletteDirty[i] = 0;
-	for (i = 0; i < 0x1000; i += 4) *(u32*)&PPU.VRAMDirty[i] = 0;
 }

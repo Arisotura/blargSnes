@@ -124,7 +124,7 @@ void DMA_Enable(u8 flag)
 					if (newval != *(u16*)&PPU.VRAM[PPU.VRAMAddr])
 					{
 						*(u16*)&PPU.VRAM[PPU.VRAMAddr] = newval;
-						PPU.VRAMDirty[PPU.VRAMAddr >> 4] = 1;
+						PPU.VRAMUpdateCount[PPU.VRAMAddr >> 4]++;
 					}
 					memaddr += maddrinc<<1;
 					bytecount -= 2;

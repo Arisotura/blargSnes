@@ -41,32 +41,17 @@
 // system for palette updates? (tile doesn't need to be redecoded, only recolored)
 // -> needs storing the tile in indexed format (might slow shit down when palette isn't updated)
 
-// tile hashing? (cycling tile animations would benefit)
-// -> check only 4 lines of the tile instead of all?
-// -> fuck that
 
-
-// tile type
-// 0 -> 2bpp		-> 4096 tiles -> 00000-07FFF 00-07
-// 1 -> 4bpp		-> 2048 tiles -> 08000-0BFFF 08-0B
-// 2 -> 8bpp		-> 1024 tiles -> 10000-11FFF 10-11
-// 3 -> 2bpp hires	-> 2048 tiles -> 0C000-0FFFF 0C-0F
-// 4 -> 4bpp hires	-> 1024 tiles -> 12000-13FFF 12-13
-// 5 -> 8bpp hires	-> 512 tiles  -> 14000-14FFF 14
-
-#define TILE_BASE_2BPP 			0x00000
-#define TILE_BASE_4BPP			0x08000
-#define TILE_BASE_8BPP			0x10000
-#define TILE_BASE_2BPP_HIRES	0x0C000
-#define TILE_BASE_4BPP_HIRES	0x12000
-#define TILE_BASE_8BPP_HIRES	0x14000
 
 
 u16* PPU_TileCache;
 u32 PPU_TileCacheIndex;
 
-u16 PPU_TileCacheList[0x10000];//0x15000];
+u16 PPU_TileCacheList[0x10000];
 u32 PPU_TileCacheReverseList[16384];
+
+u32 PPU_TileVRAMUpdate[0x10000];
+u32 PPU_TilePalUpdate[0x10000];
 
 
 void PPU_Init_Hard()
@@ -77,7 +62,11 @@ void PPU_Init_Hard()
 	PPU_TileCacheIndex = 0;
 	
 	for (i = 0; i < 0x10000; i++)
+	{
 		PPU_TileCacheList[i] = 0x8000;
+		PPU_TileVRAMUpdate[i] = 0;
+		PPU_TilePalUpdate[i] = 0;
+	}
 	
 	for (i = 0; i < 16384; i++)
 		PPU_TileCacheReverseList[i] = 0x80000000;
@@ -203,13 +192,13 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 	switch (type)
 	{
 		case 0: 
-			paldirty = PPU.PaletteDirty[palid];
-			vramdirty = PPU.VRAMDirty[addr >> 4];
+			paldirty = PPU.PaletteUpdateCount[palid];
+			vramdirty = PPU.VRAMUpdateCount[addr >> 4];
 			break;
 			
 		case 1: 
-			paldirty = *(u32*)&PPU.PaletteDirty[palid << 2];
-			vramdirty = *(u16*)&PPU.VRAMDirty[addr >> 4];
+			paldirty = *(u32*)&PPU.PaletteUpdateCount[palid << 2];
+			vramdirty = *(u16*)&PPU.VRAMUpdateCount[addr >> 4];
 			break;
 		
 		default:
@@ -225,7 +214,7 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 	if (coord != 0x8000) // tile already exists
 	{
 		// if the VRAM hasn't been modified in the meantime, just return the old tile
-		if (!(vramdirty|paldirty))
+		if (vramdirty == PPU_TileVRAMUpdate[key] && paldirty == PPU_TilePalUpdate[key])
 			return coord;
 		
 		tileidx = (coord & 0x7F) | ((0x7F00 - (coord & 0x7F00)) >> 1);
@@ -248,13 +237,14 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 		case 1: PPU_DecodeTile_4bpp(&PPU.VRAM[addr], &PPU.Palette[palid << 4], dst); break;
 	}
 	
+	PPU_TileVRAMUpdate[key] = vramdirty;
+	PPU_TilePalUpdate[key] = paldirty;
+	
 	// invalidate previous tile if need be
 	u32 oldkey = PPU_TileCacheReverseList[tileidx];
-	if (oldkey != key)
-	{
-		PPU_TileCacheReverseList[tileidx] = key;
+	PPU_TileCacheReverseList[tileidx] = key;
+	if (oldkey != key && oldkey != 0x80000000)
 		PPU_TileCacheList[oldkey] = 0x8000;
-	}
 	
 	return coord;
 }
