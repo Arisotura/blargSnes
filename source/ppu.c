@@ -164,6 +164,12 @@ void PPU_Reset()
 	PPU.OBJHeight = &PPU_OBJHeights[0];
 	
 	PPU.SubBackdrop = 0x0001;
+	
+	if (PPU.HardwareRenderer)
+	{
+		for (i = 1; i < 256; i++)
+			PPU.Palette[i] = 0x0001;
+	}
 }
 
 void PPU_DeInit()
@@ -229,9 +235,15 @@ inline void PPU_SetColor(u32 num, u16 val)
 	u16 temp = (val & 0x001F) << 11;
 	temp    |= (val & 0x03E0) << 1;
 	temp    |= (val & 0x7C00) >> 9;
-	PPU.Palette[num] = temp;
-	PPU.PaletteUpdateCount[num >> 2]++;
-	PPU.PaletteUpdateCount256++;
+	
+	if (PPU.HardwareRenderer)
+	{
+		PPU.Palette[num] = temp | 0x0001;
+		PPU.PaletteUpdateCount[num >> 2]++;
+		PPU.PaletteUpdateCount256++;
+	}
+	else
+		PPU.Palette[num] = temp;
 }
 
 

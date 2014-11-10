@@ -33,9 +33,10 @@
 #include "defaultborder.h"
 #include "screenfill.h"
 
-#include "blarg_shbin.h"
+#include "final_vsh_shbin.h"
 #include "render_soft_vsh_shbin.h"
 #include "render_hard_vsh_shbin.h"
+#include "plain_quad_vsh_shbin.h"
 
 
 extern u32* gxCmdBuf;
@@ -43,9 +44,10 @@ u32* gpuOut;
 u32* gpuDOut;
 u32* SNESFrame;
 
-DVLB_s* generalShader;
+DVLB_s* finalShader;
 DVLB_s* softRenderShader;
 DVLB_s* hardRenderShader;
+DVLB_s* plainQuadShader;
 
 u32 gpuCmdSize;
 u32* gpuCmd0;
@@ -222,14 +224,6 @@ float snesProjMatrix[16] =
 	0, 0, 0, 1
 };
 
-float mvMatrix[16] = 
-{
-	1, 0, 0, 0,
-	0, 1, 0, 0, 
-	0, 0, 1, 0, 
-	0, 0, 0, 1
-};
-
 float vertexList[] = 
 {
 	// border
@@ -339,7 +333,7 @@ void RenderTopScreen()
 	
 	//GPU_FinishDrawing();
 
-	GPU_SetShader(generalShader);
+	GPU_SetShader(finalShader);
 	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)gpuOut),0,0,240*2,400);
 	
 	GPU_FinishDrawing();
@@ -382,7 +376,6 @@ void RenderTopScreen()
 	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)SNESFrame),256,256,/*0x6*/0,GPU_RGBA8);
 	
 	//setup matrices
-	setUniformMatrix(0x24, mvMatrix);
 	setUniformMatrix(0x20, screenProjMatrix);
 	
 	// border
@@ -736,9 +729,10 @@ int main()
 	gpuDOut = (u32*)VRAM_Alloc(400*240*2*4);
 	SNESFrame = (u32*)VRAM_Alloc(256*256*4);
 	
-	generalShader = SHDR_ParseSHBIN((u32*)blarg_shbin, blarg_shbin_size);
+	finalShader = SHDR_ParseSHBIN((u32*)final_vsh_shbin, final_vsh_shbin_size);
 	softRenderShader = SHDR_ParseSHBIN((u32*)render_soft_vsh_shbin, render_soft_vsh_shbin_size);
 	hardRenderShader = SHDR_ParseSHBIN((u32*)render_hard_vsh_shbin, render_hard_vsh_shbin_size);
+	plainQuadShader = SHDR_ParseSHBIN((u32*)plain_quad_vsh_shbin, plain_quad_vsh_shbin_size);
 	
 	GX_SetMemoryFill(gxCmdBuf, gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
 	gspWaitForPSC0();

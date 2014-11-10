@@ -1366,7 +1366,6 @@ extern void* vertexBuf;
 extern DVLB_s* softRenderShader;
 
 extern float snesProjMatrix[16];
-extern float mvMatrix[16];
 
 extern float* screenVertices;
 extern u32* gpuOut;
@@ -1374,14 +1373,6 @@ extern u32* gpuDOut;
 extern u32* SNESFrame;
 extern u16* MainScreenTex;
 extern u16* SubScreenTex;
-
-float identity[16] = 
-{
-	1, 0, 0, 0,
-	0, 1, 0, 0,
-	0, 0, 1, 0,
-	0, 0, 0, 1
-};
 
 #define ADDVERTEX(x, y, s, t) \
 	*vptr++ = x; \
@@ -1433,8 +1424,7 @@ void PPU_VBlank_Soft()
 		
 		GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
 		GPU_SetAlphaTest(false, GPU_ALWAYS, 0x00);
-		
-		setUniformMatrix(0x24, mvMatrix);
+
 		setUniformMatrix(0x20, snesProjMatrix);
 		
 		GPU_SetTextureEnable(GPU_TEXUNIT0|GPU_TEXUNIT1);

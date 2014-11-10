@@ -22,6 +22,23 @@
 #include "ppu.h"
 
 
+extern u32* gxCmdBuf;
+extern void* vertexBuf;
+
+// ugly global but makes shit easier to deal with
+void* vertexPtr;
+
+extern DVLB_s* hardRenderShader;
+extern DVLB_s* plainQuadShader;
+
+extern float snesProjMatrix[16];
+
+extern float* screenVertices;
+extern u32* gpuOut;
+extern u32* gpuDOut;
+extern u32* SNESFrame;
+
+
 // tile cache:
 // 1024x1024 RGBA5551 texture (2 MB)
 // -> can hold 16384 tiles
@@ -41,6 +58,28 @@
 // system for palette updates? (tile doesn't need to be redecoded, only recolored)
 // -> needs storing the tile in indexed format (might slow shit down when palette isn't updated)
 
+
+// SHIT THAT CAN BE CHANGED MIDFRAME
+
+// * video mode
+
+// * mosaic
+
+// * master brightness
+// * color math add/sub
+
+// * layer scroll
+// * (layer tileset/tilemap address?)
+// * mode7 scroll/matrix/etc
+// * layer enable/disable
+
+// * OBJ tileset address
+
+// * window registers
+
+// * color math layer sel
+
+// * sub backdrop color
 
 
 
@@ -92,6 +131,9 @@ void PPU_DecodeTile_2bpp(u16* vram, u16* pal, u32* dst)
 	u8 p1, p2, p3, p4;
 	u32 col1, col2;
 	
+	u16 oldcolor0 = pal[0];
+	pal[0] = 0;
+	
 #define DO_MINIBLOCK(l1, l2) \
 	p1 = 0; p2 = 0; p3 = 0; p4 = 0; \
 	if (l2 & 0x0080) p1 |= 0x01; \
@@ -126,6 +168,8 @@ void PPU_DecodeTile_2bpp(u16* vram, u16* pal, u32* dst)
 		DO_MINIBLOCK(line1, line2);
 	}
 	
+	pal[0] = oldcolor0;
+	
 #undef DO_MINIBLOCK
 }
 
@@ -134,6 +178,9 @@ void PPU_DecodeTile_4bpp(u16* vram, u16* pal, u32* dst)
 	int i;
 	u8 p1, p2, p3, p4;
 	u32 col1, col2;
+	
+	u16 oldcolor0 = pal[0];
+	pal[0] = 0;
 	
 #define DO_MINIBLOCK(l1, l2) \
 	p1 = 0; p2 = 0; p3 = 0; p4 = 0; \
@@ -176,6 +223,8 @@ void PPU_DecodeTile_4bpp(u16* vram, u16* pal, u32* dst)
 		DO_MINIBLOCK(line1, line2);
 		DO_MINIBLOCK(line1, line2);
 	}
+	
+	pal[0] = oldcolor0;
 	
 #undef DO_MINIBLOCK
 }
@@ -251,6 +300,79 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 
 
 
+void PPU_ClearScreens()
+{
+	u8* vptr = (u8*)vertexPtr;
+	
+	u16 col = PPU.Palette[0];
+	u8 r = (col & 0xF800) >> 8; r |= (r >> 5);
+	u8 g = (col & 0x07C0) >> 3; g |= (g >> 5);
+	u8 b = (col & 0x003E) << 2; b |= (b >> 5);
+	
+#define ADDVERTEX(x, y, z, r, g, b, a) \
+	*(u16*)vptr = x; vptr += 2; \
+	*(u16*)vptr = y; vptr += 2; \
+	*(u16*)vptr = z; vptr += 2; \
+	*vptr++ = r; \
+	*vptr++ = g; \
+	*vptr++ = b; \
+	*vptr++ = a;
+	
+	GPU_SetShader(plainQuadShader);
+	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)SNESFrame),0,0,256,256);
+		
+	GPU_DepthRange(-1.0f, 0.0f);
+	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
+	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
+	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	GPU_SetBlendingColor(0,0,0,0);
+	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR); // we don't care about depth testing in this pass
+	
+	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
+	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+	
+	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+	GPU_SetAlphaTest(false, GPU_ALWAYS, 0);
+	
+	setUniformMatrix(0x20, snesProjMatrix);
+	
+	GPU_SetTextureEnable(0);
+	
+	GPU_SetTexEnv(0, 
+		GPU_TEVSOURCES(GPU_PRIMARY_COLOR, 0, 0), 
+		GPU_TEVSOURCES(GPU_PRIMARY_COLOR, 0, 0),
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_REPLACE, GPU_REPLACE, 
+		0xFFFFFFFF);
+	GPU_SetDummyTexEnv(1);
+	GPU_SetDummyTexEnv(2);
+	GPU_SetDummyTexEnv(3);
+	GPU_SetDummyTexEnv(4);
+	GPU_SetDummyTexEnv(5);
+	
+	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
+		GPU_ATTRIBFMT(0, 3, GPU_SHORT)|GPU_ATTRIBFMT(1, 4, GPU_UNSIGNED_BYTE),
+		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
+		
+	ADDVERTEX(0, 0, 1,      r, g, b, 255);
+	ADDVERTEX(256, 0, 1,    r, g, b, 255);
+	ADDVERTEX(256, 256, 1,  r, g, b, 255);
+	ADDVERTEX(0, 0, 1,      r, g, b, 255);
+	ADDVERTEX(256, 256, 1,  r, g, b, 255);
+	ADDVERTEX(0, 256, 1,    r, g, b, 255);
+	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
+	
+	GPU_DrawArray(GPU_TRIANGLES, 2*3);
+	
+	GPU_FinishDrawing();
+	vertexPtr = vptr;
+	
+#undef ADDVERTEX
+}
+
+
+
 #define ADDVERTEX(x, y, coord) \
 	*vptr++ = x; \
 	*vptr++ = y; \
@@ -259,7 +381,7 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 
 int PPU_HardBGTest(u16* vptr, PPU_Background* bg, int ystart, int yend)
 {
-	u16* tilemap;// = bg->Tilemap;
+	u16* tilemap;
 	u32 xoff, yoff;
 	u16 curtile;
 	int x, y;
@@ -281,66 +403,66 @@ int PPU_HardBGTest(u16* vptr, PPU_Background* bg, int ystart, int yend)
 		xoff = bg->XScroll;
 		x = -(xoff & 7);
 	
-			for (; x < 256; x += 8, xoff += 8)
+		for (; x < 256; x += 8, xoff += 8)
+		{
+			idx = (xoff & 0xF8) >> 3;
+			if (xoff & 0x100)
 			{
-				idx = (xoff & 0xF8) >> 3;
-				if (xoff & 0x100)
-				{
-					if (bg->Size & 0x1)
-						idx += 1024;
-				}
-
-				curtile = tilemap[idx];
-				//if (curtile!=0x0122 && curtile!= 0 && curtile!=0x10F8) bprintf("%d/%d %d/%d %04X\n", x, y, xoff, yoff, curtile);
-				// render the tile
-				
-				// TODO: do this less hackishly
-				u32 addr = (((u32)bg->Tileset) - ((u32)&PPU.VRAM[0])) + ((curtile & 0x03FF) << 5);
-				u32 palid = (curtile & 0x1C00) >> 10;
-				
-				u32 coord = PPU_StoreTileInCache(1, palid, addr);
-				
-				switch (curtile & 0xC000)
-				{
-					case 0x0000:
-						ADDVERTEX(x,   y,     coord);
-						ADDVERTEX(x+8, y,     coord+0x0001);
-						ADDVERTEX(x+8, y+8,   coord+0x0101);
-						ADDVERTEX(x,   y,     coord);
-						ADDVERTEX(x+8, y+8,   coord+0x0101);
-						ADDVERTEX(x,   y+8,   coord+0x0100);
-						break;
-						
-					case 0x4000: // hflip
-						ADDVERTEX(x,   y,     coord+0x0001);
-						ADDVERTEX(x+8, y,     coord);
-						ADDVERTEX(x+8, y+8,   coord+0x0100);
-						ADDVERTEX(x,   y,     coord+0x0001);
-						ADDVERTEX(x+8, y+8,   coord+0x0100);
-						ADDVERTEX(x,   y+8,   coord+0x0101);
-						break;
-						
-					case 0x8000: // vflip
-						ADDVERTEX(x,   y,     coord+0x0100);
-						ADDVERTEX(x+8, y,     coord+0x0101);
-						ADDVERTEX(x+8, y+8,   coord+0x0001);
-						ADDVERTEX(x,   y,     coord+0x0100);
-						ADDVERTEX(x+8, y+8,   coord+0x0001);
-						ADDVERTEX(x,   y+8,   coord+0x0000);
-						break;
-						
-					case 0xC000: // hflip+vflip
-						ADDVERTEX(x,   y,     coord+0x0101);
-						ADDVERTEX(x+8, y,     coord+0x0100);
-						ADDVERTEX(x+8, y+8,   coord);
-						ADDVERTEX(x,   y,     coord+0x0101);
-						ADDVERTEX(x+8, y+8,   coord);
-						ADDVERTEX(x,   y+8,   coord+0x0001);
-						break;
-				}
-				
-				ntiles++;
+				if (bg->Size & 0x1)
+					idx += 1024;
 			}
+
+			curtile = tilemap[idx];
+
+			// render the tile
+			
+			// TODO: do this less hackishly
+			u32 addr = (((u32)bg->Tileset) - ((u32)&PPU.VRAM[0])) + ((curtile & 0x03FF) << 5);
+			u32 palid = (curtile & 0x1C00) >> 10;
+			
+			u32 coord = PPU_StoreTileInCache(1, palid, addr);
+			
+			switch (curtile & 0xC000)
+			{
+				case 0x0000:
+					ADDVERTEX(x,   y,     coord);
+					ADDVERTEX(x+8, y,     coord+0x0001);
+					ADDVERTEX(x+8, y+8,   coord+0x0101);
+					ADDVERTEX(x,   y,     coord);
+					ADDVERTEX(x+8, y+8,   coord+0x0101);
+					ADDVERTEX(x,   y+8,   coord+0x0100);
+					break;
+					
+				case 0x4000: // hflip
+					ADDVERTEX(x,   y,     coord+0x0001);
+					ADDVERTEX(x+8, y,     coord);
+					ADDVERTEX(x+8, y+8,   coord+0x0100);
+					ADDVERTEX(x,   y,     coord+0x0001);
+					ADDVERTEX(x+8, y+8,   coord+0x0100);
+					ADDVERTEX(x,   y+8,   coord+0x0101);
+					break;
+					
+				case 0x8000: // vflip
+					ADDVERTEX(x,   y,     coord+0x0100);
+					ADDVERTEX(x+8, y,     coord+0x0101);
+					ADDVERTEX(x+8, y+8,   coord+0x0001);
+					ADDVERTEX(x,   y,     coord+0x0100);
+					ADDVERTEX(x+8, y+8,   coord+0x0001);
+					ADDVERTEX(x,   y+8,   coord);
+					break;
+					
+				case 0xC000: // hflip+vflip
+					ADDVERTEX(x,   y,     coord+0x0101);
+					ADDVERTEX(x+8, y,     coord+0x0100);
+					ADDVERTEX(x+8, y+8,   coord);
+					ADDVERTEX(x,   y,     coord+0x0101);
+					ADDVERTEX(x+8, y+8,   coord);
+					ADDVERTEX(x,   y+8,   coord+0x0001);
+					break;
+			}
+			
+			ntiles++;
+		}
 	}
 	
 	return ntiles;
@@ -356,21 +478,6 @@ void PPU_RenderScanline_Hard(u32 line)
 }
 
 
-extern u32* gxCmdBuf;
-extern void* vertexBuf;
-
-extern DVLB_s* hardRenderShader;
-
-extern float snesProjMatrix[16];
-extern float mvMatrix[16];
-
-extern float* screenVertices;
-extern u32* gpuOut;
-extern u32* gpuDOut;
-extern u32* SNESFrame;
-
-	
-int lolz=0;
 void PPU_VBlank_Hard()
 {
 	if (RenderState) 
@@ -379,65 +486,66 @@ void PPU_VBlank_Hard()
 		RenderState = 0;
 	}
 	
-	u16* vptr = (u16*)vertexBuf;
+	vertexPtr = vertexBuf;
+	
+	PPU_ClearScreens();
+	
 	
 	GPU_SetShader(hardRenderShader);
 	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)SNESFrame),0,0,256,256);
 	
-
-		//bprintf("section %d %d %02X %d\n", startoffset, s->EndOffset, s->ColorMath, s->Brightness);
-		
-		GPU_DepthRange(-1.0f, 0.0f);
-		GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-		GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
-		GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-		GPU_SetBlendingColor(0,0,0,0);
-		GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR); // we don't care about depth testing in this pass
-		
-		GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-		GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
-		
-		GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-		GPU_SetAlphaTest(false, GPU_ALWAYS, 0x00);
-		
-		setUniformMatrix(0x24, mvMatrix);
-		setUniformMatrix(0x20, snesProjMatrix);
-		
-		GPU_SetTextureEnable(GPU_TEXUNIT0);
-		
-		GPU_SetTexEnv(0, 
-			GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
-			GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
-			GPU_TEVOPERANDS(0,0,0), 
-			GPU_TEVOPERANDS(0,0,0), 
-			GPU_REPLACE, GPU_REPLACE, 
-			0xFFFFFFFF);
-		GPU_SetDummyTexEnv(1);
-		GPU_SetDummyTexEnv(2);
-		GPU_SetDummyTexEnv(3);
-		GPU_SetDummyTexEnv(4);
-		GPU_SetDummyTexEnv(5);
-			
-		GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)PPU_TileCache),1024,1024,0,GPU_RGBA5551);
-		
-		GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
-			GPU_ATTRIBFMT(0, 2, GPU_SHORT)|GPU_ATTRIBFMT(1, 2, GPU_UNSIGNED_BYTE),
-			0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
-			
-		int ntiles = PPU_HardBGTest(vptr, &PPU.BG[0], 0, 224);
-		
-		vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
 	
+
 		
-		GPU_DrawArray(GPU_TRIANGLES, ntiles*2*3);
 		
-		GPU_FinishDrawing();
+	GPU_DepthRange(-1.0f, 0.0f);
+	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
+	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
+	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	GPU_SetBlendingColor(0,0,0,0);
+	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR); // we don't care about depth testing in this pass
+	
+	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
+	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+	
+	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+	GPU_SetAlphaTest(true, GPU_GREATER, 0);
+	
+	setUniformMatrix(0x20, snesProjMatrix);
+	
+	GPU_SetTextureEnable(GPU_TEXUNIT0);
+	
+	GPU_SetTexEnv(0, 
+		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
+		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_REPLACE, GPU_REPLACE, 
+		0xFFFFFFFF);
+	GPU_SetDummyTexEnv(1);
+	GPU_SetDummyTexEnv(2);
+	GPU_SetDummyTexEnv(3);
+	GPU_SetDummyTexEnv(4);
+	GPU_SetDummyTexEnv(5);
 		
-		/*if (s->EndOffset == 240) break;
+	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)PPU_TileCache),1024,1024,0,GPU_RGBA5551);
+	
+	u16* vptr = (u16*)vertexPtr;
+	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
+		GPU_ATTRIBFMT(0, 2, GPU_SHORT)|GPU_ATTRIBFMT(1, 2, GPU_UNSIGNED_BYTE),
+		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
 		
-		startoffset = s->EndOffset;
-		s++;
-	}*/
+	// TEST
+	int ntiles = PPU_HardBGTest(vptr, &PPU.BG[0], 0, 224);
+	
+	vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
+	vertexPtr = vptr;
+
+	
+	GPU_DrawArray(GPU_TRIANGLES, ntiles*2*3);
+	
+	GPU_FinishDrawing();
+		
 	
 	GSPGPU_FlushDataCache(NULL, PPU_TileCache, 1024*1024*sizeof(u16));
 }
