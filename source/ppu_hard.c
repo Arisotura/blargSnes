@@ -326,7 +326,7 @@ void PPU_ClearScreens()
 	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
 	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
 	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR); // we don't care about depth testing in this pass
+	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR);
 	
 	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
 	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
@@ -373,99 +373,123 @@ void PPU_ClearScreens()
 
 
 
-#define ADDVERTEX(x, y, coord) \
-	*vptr++ = x; \
-	*vptr++ = y; \
-	*vptr++ = coord;
 
-
-int PPU_HardBGTest(u16* vptr, PPU_Background* bg, int ystart, int yend)
+void PPU_HardBGTest(PPU_Background* bg)
 {
 	u16* tilemap;
 	u32 xoff, yoff;
 	u16 curtile;
 	int x, y;
 	u32 idx;
+	int ystart = 0, yend;
 	int ntiles = 0;
+	u16* vptr = (u16*)vertexPtr;
 	
-	yoff = bg->YScroll;
-	ystart -= (yoff & 7);
+#define ADDVERTEX(x, y, coord) \
+	*vptr++ = x; \
+	*vptr++ = y; \
+	*vptr++ = coord;
 	
-	for (y = ystart; y < yend; y += 8, yoff += 8)
+	PPU_BGSection* s = &bg->Sections[0];
+	for (;;)
 	{
-		tilemap = bg->Tilemap + ((yoff & 0xF8) << 2);
-		if (yoff & 0x100)
+		yend = s->EndOffset;
+		
+		GPU_SetScissorTest(GPU_SCISSOR_NORMAL, 0, ystart, 256, yend);
+		
+		yoff = s->YScroll + ystart;
+		ystart -= (yoff & 7);
+		
+		GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
+			GPU_ATTRIBFMT(0, 2, GPU_SHORT)|GPU_ATTRIBFMT(1, 2, GPU_UNSIGNED_BYTE),
+			0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
+		
+		for (y = ystart; y < yend; y += 8, yoff += 8)
 		{
-			if (bg->Size & 0x2)
-				tilemap += (bg->Size & 0x1) ? 2048 : 1024;
+			tilemap = bg->Tilemap + ((yoff & 0xF8) << 2);
+			if (yoff & 0x100)
+			{
+				if (bg->Size & 0x2)
+					tilemap += (bg->Size & 0x1) ? 2048 : 1024;
+			}
+			
+			xoff = s->XScroll;
+			x = -(xoff & 7);
+		
+			for (; x < 256; x += 8, xoff += 8)
+			{
+				idx = (xoff & 0xF8) >> 3;
+				if (xoff & 0x100)
+				{
+					if (bg->Size & 0x1)
+						idx += 1024;
+				}
+
+				curtile = tilemap[idx];
+
+				// render the tile
+				
+				u32 addr = bg->TilesetOffset + ((curtile & 0x03FF) << 5);
+				u32 palid = (curtile & 0x1C00) >> 10;
+				
+				u32 coord = PPU_StoreTileInCache(1, palid, addr);
+				
+				switch (curtile & 0xC000)
+				{
+					case 0x0000:
+						ADDVERTEX(x,   y,     coord);
+						ADDVERTEX(x+8, y,     coord+0x0001);
+						ADDVERTEX(x+8, y+8,   coord+0x0101);
+						ADDVERTEX(x,   y,     coord);
+						ADDVERTEX(x+8, y+8,   coord+0x0101);
+						ADDVERTEX(x,   y+8,   coord+0x0100);
+						break;
+						
+					case 0x4000: // hflip
+						ADDVERTEX(x,   y,     coord+0x0001);
+						ADDVERTEX(x+8, y,     coord);
+						ADDVERTEX(x+8, y+8,   coord+0x0100);
+						ADDVERTEX(x,   y,     coord+0x0001);
+						ADDVERTEX(x+8, y+8,   coord+0x0100);
+						ADDVERTEX(x,   y+8,   coord+0x0101);
+						break;
+						
+					case 0x8000: // vflip
+						ADDVERTEX(x,   y,     coord+0x0100);
+						ADDVERTEX(x+8, y,     coord+0x0101);
+						ADDVERTEX(x+8, y+8,   coord+0x0001);
+						ADDVERTEX(x,   y,     coord+0x0100);
+						ADDVERTEX(x+8, y+8,   coord+0x0001);
+						ADDVERTEX(x,   y+8,   coord);
+						break;
+						
+					case 0xC000: // hflip+vflip
+						ADDVERTEX(x,   y,     coord+0x0101);
+						ADDVERTEX(x+8, y,     coord+0x0100);
+						ADDVERTEX(x+8, y+8,   coord);
+						ADDVERTEX(x,   y,     coord+0x0101);
+						ADDVERTEX(x+8, y+8,   coord);
+						ADDVERTEX(x,   y+8,   coord+0x0001);
+						break;
+				}
+				
+				ntiles++;
+			}
 		}
 		
-		xoff = bg->XScroll;
-		x = -(xoff & 7);
-	
-		for (; x < 256; x += 8, xoff += 8)
-		{
-			idx = (xoff & 0xF8) >> 3;
-			if (xoff & 0x100)
-			{
-				if (bg->Size & 0x1)
-					idx += 1024;
-			}
-
-			curtile = tilemap[idx];
-
-			// render the tile
-			
-			// TODO: do this less hackishly
-			u32 addr = (((u32)bg->Tileset) - ((u32)&PPU.VRAM[0])) + ((curtile & 0x03FF) << 5);
-			u32 palid = (curtile & 0x1C00) >> 10;
-			
-			u32 coord = PPU_StoreTileInCache(1, palid, addr);
-			
-			switch (curtile & 0xC000)
-			{
-				case 0x0000:
-					ADDVERTEX(x,   y,     coord);
-					ADDVERTEX(x+8, y,     coord+0x0001);
-					ADDVERTEX(x+8, y+8,   coord+0x0101);
-					ADDVERTEX(x,   y,     coord);
-					ADDVERTEX(x+8, y+8,   coord+0x0101);
-					ADDVERTEX(x,   y+8,   coord+0x0100);
-					break;
-					
-				case 0x4000: // hflip
-					ADDVERTEX(x,   y,     coord+0x0001);
-					ADDVERTEX(x+8, y,     coord);
-					ADDVERTEX(x+8, y+8,   coord+0x0100);
-					ADDVERTEX(x,   y,     coord+0x0001);
-					ADDVERTEX(x+8, y+8,   coord+0x0100);
-					ADDVERTEX(x,   y+8,   coord+0x0101);
-					break;
-					
-				case 0x8000: // vflip
-					ADDVERTEX(x,   y,     coord+0x0100);
-					ADDVERTEX(x+8, y,     coord+0x0101);
-					ADDVERTEX(x+8, y+8,   coord+0x0001);
-					ADDVERTEX(x,   y,     coord+0x0100);
-					ADDVERTEX(x+8, y+8,   coord+0x0001);
-					ADDVERTEX(x,   y+8,   coord);
-					break;
-					
-				case 0xC000: // hflip+vflip
-					ADDVERTEX(x,   y,     coord+0x0101);
-					ADDVERTEX(x+8, y,     coord+0x0100);
-					ADDVERTEX(x+8, y+8,   coord);
-					ADDVERTEX(x,   y,     coord+0x0101);
-					ADDVERTEX(x+8, y+8,   coord);
-					ADDVERTEX(x,   y+8,   coord+0x0001);
-					break;
-			}
-			
-			ntiles++;
-		}
+		vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
+		vertexPtr = vptr;
+		
+		GPU_DrawArray(GPU_TRIANGLES, ntiles*2*3);
+		
+		if (s->EndOffset >= 240) break;
+		ystart = yend;
+		s++;
 	}
 	
-	return ntiles;
+	GPU_FinishDrawing();
+	
+#undef ADDVERTEX
 }
 
 
@@ -474,17 +498,60 @@ int PPU_HardBGTest(u16* vptr, PPU_Background* bg, int ystart, int yend)
 
 void PPU_RenderScanline_Hard(u32 line)
 {
-	//
+	int i;
+	
+	if (!line)
+	{
+		for (i = 0; i < 4; i++)
+		{
+			PPU_Background* bg = &PPU.BG[i];
+			
+			bg->CurSection = &bg->Sections[0];
+			bg->CurSection->XScroll = bg->XScroll;
+			bg->CurSection->YScroll = bg->YScroll;
+			
+			bg->LastXScroll = bg->XScroll;
+			bg->LastYScroll = bg->YScroll;
+		}
+	}
+	
+	
+	for (i = 0; i < 4; i++)
+	{
+		PPU_Background* bg = &PPU.BG[i];
+		
+		if (bg->XScroll == bg->LastXScroll && bg->YScroll == bg->LastYScroll)
+			continue;
+			
+		bg->CurSection->EndOffset = line;
+		bg->CurSection++;
+		
+		bg->CurSection->XScroll = bg->XScroll;
+		bg->CurSection->YScroll = bg->YScroll;
+		
+		bg->LastXScroll = bg->XScroll;
+		bg->LastYScroll = bg->YScroll;
+	}
 }
 
 
 void PPU_VBlank_Hard()
 {
+	int i;
+	
 	if (RenderState) 
 	{
 		gspWaitForP3D();
 		RenderState = 0;
 	}
+	
+	
+	for (i = 0; i < 4; i++)
+	{
+		PPU_Background* bg = &PPU.BG[i];
+		bg->CurSection->EndOffset = 240;
+	}
+	
 	
 	vertexPtr = vertexBuf;
 	
@@ -503,7 +570,7 @@ void PPU_VBlank_Hard()
 	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
 	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
 	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR); // we don't care about depth testing in this pass
+	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR);
 	
 	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
 	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
@@ -530,21 +597,21 @@ void PPU_VBlank_Hard()
 		
 	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)PPU_TileCache),1024,1024,0,GPU_RGBA5551);
 	
-	u16* vptr = (u16*)vertexPtr;
-	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
+	//u16* vptr = (u16*)vertexPtr;
+	/*GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
 		GPU_ATTRIBFMT(0, 2, GPU_SHORT)|GPU_ATTRIBFMT(1, 2, GPU_UNSIGNED_BYTE),
-		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
+		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});*/
 		
 	// TEST
-	int ntiles = PPU_HardBGTest(vptr, &PPU.BG[0], 0, 224);
+	PPU_HardBGTest(&PPU.BG[0]);
 	
-	vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
-	vertexPtr = vptr;
+	/*vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
+	vertexPtr = vptr;*/
 
 	
-	GPU_DrawArray(GPU_TRIANGLES, ntiles*2*3);
+	/*GPU_DrawArray(GPU_TRIANGLES, ntiles*2*3);
 	
-	GPU_FinishDrawing();
+	GPU_FinishDrawing();*/
 		
 	
 	GSPGPU_FlushDataCache(NULL, PPU_TileCache, 1024*1024*sizeof(u16));

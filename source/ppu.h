@@ -31,17 +31,30 @@ typedef struct
 
 typedef struct
 {
+	u8 EndOffset;
+	u16 XScroll, YScroll;
+	
+} PPU_BGSection;
+
+typedef struct
+{
+	u16 TilesetOffset;
+	u16 TilemapOffset;
 	u16* Tileset;
 	u16* Tilemap;
 	u8 Size;
 	
 	u16 XScroll, YScroll;
-	
-	PPU_DeferredTile DeferredTiles[40];
-	u32 NumDeferredTiles;
+	u16 LastXScroll, LastYScroll;
 	
 	u8 WindowMask;
 	u16 WindowCombine;
+	
+	u32 NumDeferredTiles;
+	PPU_DeferredTile DeferredTiles[40];
+	
+	PPU_BGSection* CurSection;
+	PPU_BGSection Sections[240];
 
 } PPU_Background;
 

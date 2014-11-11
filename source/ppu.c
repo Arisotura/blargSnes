@@ -214,14 +214,16 @@ inline void PPU_SetBGSCR(int nbg, u8 val)
 	PPU_Background* bg = &PPU.BG[nbg];
 	
 	bg->Size = (val & 0x03);
-	bg->Tilemap = (u16*)&PPU.VRAM[(val & 0xFC) << 9];
+	bg->TilemapOffset = (val & 0xFC) << 9;
+	bg->Tilemap = (u16*)&PPU.VRAM[bg->TilemapOffset];
 }
 
 inline void PPU_SetBGCHR(int nbg, u8 val)
 {
 	PPU_Background* bg = &PPU.BG[nbg];
 	
-	bg->Tileset = (u16*)&PPU.VRAM[val << 13];
+	bg->TilesetOffset = val << 13;
+	bg->Tileset = (u16*)&PPU.VRAM[bg->TilesetOffset];
 }
 
 
