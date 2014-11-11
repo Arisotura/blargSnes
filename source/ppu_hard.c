@@ -438,9 +438,7 @@ void PPU_HardRenderBG_8x8(PPU_Background* bg, int type, u32 prio)
 	int x, y;
 	u32 idx;
 	int ystart = 0, yend;
-	int ystart2;
 	int ntiles = 0;
-	u16* vstart;
 	u16* vptr = (u16*)vertexPtr;
 	
 #define ADDVERTEX(x, y, coord) \
@@ -451,14 +449,11 @@ void PPU_HardRenderBG_8x8(PPU_Background* bg, int type, u32 prio)
 	PPU_BGSection* s = &bg->Sections[0];
 	for (;;)
 	{
-		vstart = vptr;
-		ystart2 = ystart;
 		yend = s->EndOffset;
-		
 		yoff = s->YScroll + ystart;
-		ystart -= (yoff & 7);
+		ntiles = 0;
 		
-		for (y = ystart; y < yend; y += 8, yoff += 8)
+		for (y = ystart - (yoff&7); y < yend; y += 8, yoff += 8)
 		{
 			tilemap = PPU.VRAM + s->TilemapOffset + ((yoff & 0xF8) << 3);
 			if (yoff & 0x100)
@@ -538,9 +533,9 @@ void PPU_HardRenderBG_8x8(PPU_Background* bg, int type, u32 prio)
 		
 		if (ntiles)
 		{
-			GPU_SetScissorTest(GPU_SCISSOR_NORMAL, 0, ystart2, 256, yend);
+			GPU_SetScissorTest(GPU_SCISSOR_NORMAL, 0, ystart, 256, yend);
 			
-			GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vstart),
+			GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vertexPtr),
 				GPU_ATTRIBFMT(0, 2, GPU_SHORT)|GPU_ATTRIBFMT(1, 2, GPU_UNSIGNED_BYTE),
 				0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
 			
@@ -559,14 +554,13 @@ void PPU_HardRenderBG_8x8(PPU_Background* bg, int type, u32 prio)
 }
 
 
-int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int ystart, int yend)
+int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int yend)
 {
 	s32 xoff;
 	u16 attrib;
 	u32 idx;
-	s32 x, y;
+	s32 x;
 	s32 width = (s32)PPU.OBJWidth[(oamextra & 0x2) >> 1];
-	s32 height = (s32)PPU.OBJHeight[(oamextra & 0x2) >> 1];
 	u32 palid, prio;
 	int ntiles = 0;
 	u16* vptr = (u16*)vertexPtr;
@@ -590,10 +584,6 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int ystart, int yend)
 	attrib = *(u16*)&oam[2];
 	
 	idx = (attrib & 0x01FF) << 5;
-	
-	/*if (attrib & 0x8000) line = ymask - line;
-	idx += (line & 0x07) | ((line & 0x38) << 5);*/
-	y = (s32)oam[1] + 1;
 	
 	if (attrib & 0x4000)
 		idx += ((width-1) & 0x38) << 2;
@@ -740,14 +730,14 @@ void PPU_HardRenderOBJs()
 		
 		if ((oy+oh) > ystart && oy < yend)
 		{
-			ntiles += PPU_HardRenderOBJ(oam, oamextra, ystart, yend);
+			ntiles += PPU_HardRenderOBJ(oam, oamextra, oy, oh, ystart, yend);
 		}
 		else if (oy >= 192)
 		{
 			oy -= 0x100;
 			if ((oy+oh) > 1 && (oy+oh) > ystart)
 			{
-				ntiles += PPU_HardRenderOBJ(oam, oamextra, ystart, yend);
+				ntiles += PPU_HardRenderOBJ(oam, oamextra, oy, oh, ystart, yend);
 			}
 		}
 
