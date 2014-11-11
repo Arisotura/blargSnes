@@ -173,6 +173,7 @@ typedef struct
 
 	PPU_Background BG[4];
 
+	u16 OBJTilesetAddr;
 	u16* OBJTileset;
 	u32 OBJGap;
 

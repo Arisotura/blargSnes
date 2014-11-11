@@ -408,7 +408,8 @@ void PPU_Write8(u32 addr, u8 val)
 				PPU.OBJWidth = &PPU_OBJWidths[(val & 0xE0) >> 4];
 				PPU.OBJHeight = &PPU_OBJHeights[(val & 0xE0) >> 4];
 				
-				PPU.OBJTileset = (u16*)&PPU.VRAM[(val & 0x03) << 14];
+				PPU.OBJTilesetAddr = (val & 0x03) << 14;
+				PPU.OBJTileset = (u16*)&PPU.VRAM[PPU.OBJTilesetAddr];
 				PPU.OBJGap = (val & 0x1C) << 9;
 			}
 			break;

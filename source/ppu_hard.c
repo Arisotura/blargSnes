@@ -82,6 +82,9 @@ extern u32* SNESFrame;
 // * sub backdrop color
 
 
+#define TILE_2BPP 0
+#define TILE_4BPP 1
+
 
 u16* PPU_TileCache;
 u32 PPU_TileCacheIndex;
@@ -240,12 +243,12 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 	
 	switch (type)
 	{
-		case 0: 
+		case TILE_2BPP: 
 			paldirty = PPU.PaletteUpdateCount[palid];
 			vramdirty = PPU.VRAMUpdateCount[addr >> 4];
 			break;
 			
-		case 1: 
+		case TILE_4BPP: 
 			paldirty = *(u32*)&PPU.PaletteUpdateCount[palid << 2];
 			vramdirty = *(u16*)&PPU.VRAMUpdateCount[addr >> 4];
 			break;
@@ -282,8 +285,8 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 	
 	switch (type)
 	{
-		case 0: PPU_DecodeTile_2bpp(&PPU.VRAM[addr], &PPU.Palette[palid << 2], dst); break;
-		case 1: PPU_DecodeTile_4bpp(&PPU.VRAM[addr], &PPU.Palette[palid << 4], dst); break;
+		case TILE_2BPP: PPU_DecodeTile_2bpp(&PPU.VRAM[addr], &PPU.Palette[palid << 2], dst); break;
+		case TILE_4BPP: PPU_DecodeTile_4bpp(&PPU.VRAM[addr], &PPU.Palette[palid << 4], dst); break;
 	}
 	
 	PPU_TileVRAMUpdate[key] = vramdirty;
@@ -372,11 +375,15 @@ void PPU_ClearScreens()
 }
 
 
+#define ADDVERTEX(x, y, coord) \
+	*vptr++ = x; \
+	*vptr++ = y; \
+	*vptr++ = coord;
 
-
-void PPU_HardBGTest(PPU_Background* bg)
+void PPU_HardRenderBG_8x8(PPU_Background* bg, int type)
 {
 	u16* tilemap;
+	int tileaddrshift = ((int[]){4, 5})[type];
 	u32 xoff, yoff;
 	u16 curtile;
 	int x, y;
@@ -384,11 +391,6 @@ void PPU_HardBGTest(PPU_Background* bg)
 	int ystart = 0, yend;
 	int ntiles = 0;
 	u16* vptr = (u16*)vertexPtr;
-	
-#define ADDVERTEX(x, y, coord) \
-	*vptr++ = x; \
-	*vptr++ = y; \
-	*vptr++ = coord;
 	
 	PPU_BGSection* s = &bg->Sections[0];
 	for (;;)
@@ -429,10 +431,10 @@ void PPU_HardBGTest(PPU_Background* bg)
 
 				// render the tile
 				
-				u32 addr = bg->TilesetOffset + ((curtile & 0x03FF) << 5);
+				u32 addr = bg->TilesetOffset + ((curtile & 0x03FF) << tileaddrshift);
 				u32 palid = (curtile & 0x1C00) >> 10;
 				
-				u32 coord = PPU_StoreTileInCache(1, palid, addr);
+				u32 coord = PPU_StoreTileInCache(type, palid, addr);
 				
 				switch (curtile & 0xC000)
 				{
@@ -486,15 +488,182 @@ void PPU_HardBGTest(PPU_Background* bg)
 		ystart = yend;
 		s++;
 	}
+}
+
+
+int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int ystart, int yend)
+{
+	s32 xoff;
+	u16 attrib;
+	u32 idx;
+	s32 x, y;
+	s32 width = (s32)PPU.OBJWidth[(oamextra & 0x2) >> 1];
+	s32 height = (s32)PPU.OBJHeight[(oamextra & 0x2) >> 1];
+	u32 palid, prio;
+	int ntiles = 0;
+	u16* vptr = (u16*)vertexPtr;
 	
-	GPU_FinishDrawing();
+	xoff = oam[0];
+	if (oamextra & 0x1) // xpos bit8, sign bit
+	{
+		xoff = 0x100 - xoff;
+		if (xoff >= width) return 0;
+		x = -xoff;
+	}
+	else
+		x = xoff;
+		
+	attrib = *(u16*)&oam[2];
 	
+	idx = (attrib & 0x01FF) << 5;
+	
+	/*if (attrib & 0x8000) line = ymask - line;
+	idx += (line & 0x07) | ((line & 0x38) << 5);*/
+	y = (s32)oam[1] + 1;
+	
+	if (attrib & 0x4000)
+		idx += ((width-1) & 0x38) << 2;
+	if (attrib & 0x8000)
+		idx += ((height-1) & 0x38) << 6;
+		
+	width += x;
+	if (width > 256) width = 256;
+	height += y;
+	if (height > yend) height = yend;
+	ystart -= 8;
+	
+	palid = 8 + ((oam[3] & 0x0E) >> 1);
+	
+	//prio = oam[3] & 0x30;
+	
+	for (; y < height; y += 8)
+	{
+		if (y <= ystart)
+		{
+			idx += (attrib & 0x8000) ? -512:512;
+			continue;
+		}
+		
+		u32 firstidx = idx;
+		s32 firstx = x;
+		
+		for (; x < width; x += 8)
+		{
+			// skip offscreen tiles
+			if (x <= -8)
+			{
+				idx += (attrib & 0x4000) ? -32:32;
+				continue;
+			}
+			
+			u32 addr = PPU.OBJTilesetAddr + idx;
+			u32 coord = PPU_StoreTileInCache(TILE_4BPP, palid, addr);
+			
+			switch (attrib & 0xC000)
+			{
+				case 0x0000:
+					ADDVERTEX(x,   y,     coord);
+					ADDVERTEX(x+8, y,     coord+0x0001);
+					ADDVERTEX(x+8, y+8,   coord+0x0101);
+					ADDVERTEX(x,   y,     coord);
+					ADDVERTEX(x+8, y+8,   coord+0x0101);
+					ADDVERTEX(x,   y+8,   coord+0x0100);
+					break;
+					
+				case 0x4000: // hflip
+					ADDVERTEX(x,   y,     coord+0x0001);
+					ADDVERTEX(x+8, y,     coord);
+					ADDVERTEX(x+8, y+8,   coord+0x0100);
+					ADDVERTEX(x,   y,     coord+0x0001);
+					ADDVERTEX(x+8, y+8,   coord+0x0100);
+					ADDVERTEX(x,   y+8,   coord+0x0101);
+					break;
+					
+				case 0x8000: // vflip
+					ADDVERTEX(x,   y,     coord+0x0100);
+					ADDVERTEX(x+8, y,     coord+0x0101);
+					ADDVERTEX(x+8, y+8,   coord+0x0001);
+					ADDVERTEX(x,   y,     coord+0x0100);
+					ADDVERTEX(x+8, y+8,   coord+0x0001);
+					ADDVERTEX(x,   y+8,   coord);
+					break;
+					
+				case 0xC000: // hflip+vflip
+					ADDVERTEX(x,   y,     coord+0x0101);
+					ADDVERTEX(x+8, y,     coord+0x0100);
+					ADDVERTEX(x+8, y+8,   coord);
+					ADDVERTEX(x,   y,     coord+0x0101);
+					ADDVERTEX(x+8, y+8,   coord);
+					ADDVERTEX(x,   y+8,   coord+0x0001);
+					break;
+			}
+			
+			ntiles++;
+			
+			idx += (attrib & 0x4000) ? -32:32;
+		}
+		
+		idx = firstidx + ((attrib & 0x8000) ? -512:512);
+		x = firstx;
+	}
+	
+	vertexPtr = vptr;
+	return ntiles;
+}
+
 #undef ADDVERTEX
+
+void PPU_HardRenderOBJs()
+{
+	int i = PPU.FirstOBJ;
+	i--;
+	if (i < 0) i = 127;
+	int last = i;
+	int ntiles = 0;
+	int ystart = 0, yend = 224;
+	void* vstart = vertexPtr;
+
+	do
+	{
+		u8* oam = &PPU.OAM[i << 2];
+		u8 oamextra = PPU.OAM[0x200 + (i >> 2)] >> ((i & 0x03) << 1);
+		s32 oy = (s32)oam[1] + 1;
+		s32 oh = (s32)PPU.OBJHeight[(oamextra & 0x2) >> 1];
+		
+		if ((oy+oh) > ystart && oy < yend)
+		{
+			//PPU_RenderOBJ(oam, oamextra, oh-1, buf, line-oy);
+			ntiles += PPU_HardRenderOBJ(oam, oamextra, ystart, yend);
+		}
+		else if (oy >= 192)
+		{
+			oy -= 0x100;
+			if ((oy+oh) > 1 && (oy+oh) > ystart)
+			{
+				//PPU_RenderOBJ(oam, oamextra, oh-1, buf, line-oy);
+				ntiles += PPU_HardRenderOBJ(oam, oamextra, ystart, yend);
+			}
+		}
+
+		i--;
+		if (i < 0) i = 127;
+	}
+	while (i != last);
+	if (!ntiles) return;
+	
+	vertexPtr = (u16*)((((u32)vertexPtr) + 0xF) & ~0xF);
+	
+	GPU_SetScissorTest(GPU_SCISSOR_NORMAL, 0, ystart, 256, yend);
+	
+	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vstart),
+		GPU_ATTRIBFMT(0, 2, GPU_SHORT)|GPU_ATTRIBFMT(1, 2, GPU_UNSIGNED_BYTE),
+		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
+	
+	GPU_DrawArray(GPU_TRIANGLES, ntiles*2*3);
 }
 
 
 
-// TEST
 
 void PPU_RenderScanline_Hard(u32 line)
 {
@@ -502,6 +671,8 @@ void PPU_RenderScanline_Hard(u32 line)
 	
 	if (!line)
 	{
+		// initialize stuff upon line 0
+		
 		for (i = 0; i < 4; i++)
 		{
 			PPU_Background* bg = &PPU.BG[i];
@@ -514,23 +685,62 @@ void PPU_RenderScanline_Hard(u32 line)
 			bg->LastYScroll = bg->YScroll;
 		}
 	}
-	
-	
-	for (i = 0; i < 4; i++)
+	else
 	{
-		PPU_Background* bg = &PPU.BG[i];
-		
-		if (bg->XScroll == bg->LastXScroll && bg->YScroll == bg->LastYScroll)
-			continue;
+		for (i = 0; i < 4; i++)
+		{
+			PPU_Background* bg = &PPU.BG[i];
 			
-		bg->CurSection->EndOffset = line;
-		bg->CurSection++;
-		
-		bg->CurSection->XScroll = bg->XScroll;
-		bg->CurSection->YScroll = bg->YScroll;
-		
-		bg->LastXScroll = bg->XScroll;
-		bg->LastYScroll = bg->YScroll;
+			if (bg->XScroll == bg->LastXScroll && bg->YScroll == bg->LastYScroll)
+				continue;
+				
+			bg->CurSection->EndOffset = line;
+			bg->CurSection++;
+			
+			bg->CurSection->XScroll = bg->XScroll;
+			bg->CurSection->YScroll = bg->YScroll;
+			
+			bg->LastXScroll = bg->XScroll;
+			bg->LastYScroll = bg->YScroll;
+		}
+	}
+}
+
+
+// TODO: later adjust for 16x16 layers
+#define RENDERBG(num, type) PPU_HardRenderBG_8x8(&PPU.BG[num], type)
+
+void PPU_HardRender_Mode1(int ystart, int yend, u32 screen, u32 mode)
+{
+	if (screen & 0x04) RENDERBG(2, TILE_2BPP);
+	
+	// SPRITES #0
+	
+	// BG3 highprio (!mode 9)
+	
+	// SPRITES #1
+	
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP);
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP);
+	
+	// SPRITES #2
+	
+	// BG2 highprio
+	// BG1 highprio
+	
+	// SPRITES #3
+	PPU_HardRenderOBJs(); //TEST
+	
+	// BG3 highprio (mode 9)
+}
+
+void PPU_HardRender()
+{
+	switch (PPU.Mode & 0x07)
+	{
+		case 1:
+			PPU_HardRender_Mode1(0, 224, PPU.MainScreen, PPU.Mode);
+			break;
 	}
 }
 
@@ -597,21 +807,9 @@ void PPU_VBlank_Hard()
 		
 	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)PPU_TileCache),1024,1024,0,GPU_RGBA5551);
 	
-	//u16* vptr = (u16*)vertexPtr;
-	/*GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
-		GPU_ATTRIBFMT(0, 2, GPU_SHORT)|GPU_ATTRIBFMT(1, 2, GPU_UNSIGNED_BYTE),
-		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});*/
-		
-	// TEST
-	PPU_HardBGTest(&PPU.BG[0]);
+	PPU_HardRender();
 	
-	/*vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
-	vertexPtr = vptr;*/
-
-	
-	/*GPU_DrawArray(GPU_TRIANGLES, ntiles*2*3);
-	
-	GPU_FinishDrawing();*/
+	GPU_FinishDrawing();
 		
 	
 	GSPGPU_FlushDataCache(NULL, PPU_TileCache, 1024*1024*sizeof(u16));
