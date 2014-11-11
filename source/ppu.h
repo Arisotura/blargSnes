@@ -32,20 +32,71 @@ typedef struct
 typedef struct
 {
 	u8 EndOffset;
-	u16 XScroll, YScroll;
+	
+	union
+	{
+		struct
+		{
+			u16 XScroll;
+			u16 YScroll;
+		};
+		u32 ScrollParams;
+	};
+	union
+	{
+		struct
+		{
+			u16 TilesetOffset;
+			u16 TilemapOffset;
+		};
+		u32 GraphicsParams;
+	};
 	
 } PPU_BGSection;
 
 typedef struct
 {
-	u16 TilesetOffset;
-	u16 TilemapOffset;
+	union
+	{
+		struct
+		{
+			u16 TilesetOffset;
+			u16 TilemapOffset;
+		};
+		u32 GraphicsParams;
+	};
+	union
+	{
+		struct
+		{
+			u16 LastTilesetOffset;
+			u16 LastTilemapOffset;
+		};
+		u32 LastGraphicsParams;
+	};
+	
 	u16* Tileset;
 	u16* Tilemap;
 	u8 Size;
 	
-	u16 XScroll, YScroll;
-	u16 LastXScroll, LastYScroll;
+	union
+	{
+		struct
+		{
+			u16 XScroll;
+			u16 YScroll;
+		};
+		u32 ScrollParams;
+	};
+	union
+	{
+		struct
+		{
+			u16 LastXScroll;
+			u16 LastYScroll;
+		};
+		u32 LastScrollParams;
+	};
 	
 	u8 WindowMask;
 	u16 WindowCombine;
