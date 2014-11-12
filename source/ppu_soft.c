@@ -1362,6 +1362,7 @@ void PPU_RenderScanline_Soft(u32 line)
 
 extern u32* gxCmdBuf;
 extern void* vertexBuf;
+extern void* vertexPtr;
 
 extern DVLB_s* softRenderShader;
 
@@ -1374,40 +1375,23 @@ extern u32* SNESFrame;
 extern u16* MainScreenTex;
 extern u16* SubScreenTex;
 
+
+void PPU_BlendScreens(u32 colorformat)
+{
+	int startoffset = 0;
+	
+	u16* vptr = (u16*)vertexPtr;
+	
+	GPU_SetShader(softRenderShader);
+	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)SNESFrame),0,0,256,256);
+	
 #define ADDVERTEX(x, y, s, t) \
 	*vptr++ = x; \
 	*vptr++ = y; \
 	*vptr++ = s; \
 	*vptr++ = t;
 	
-
-void PPU_VBlank_Soft()
-{
-	if (RenderState) 
-	{
-		gspWaitForP3D();
-		RenderState = 0;
-	}
-	
-	// copy new screen textures
-	// SetDisplayTransfer with flags=2 converts linear graphics to the tiled format used for textures
-	// since the two sets of buffers are contiguous, we can transfer them as one 256x512 texture
-	GSPGPU_FlushDataCache(NULL, (u8*)PPU.MainBuffer, 256*512*2);
-	GX_SetDisplayTransfer(gxCmdBuf, (u32*)PPU.MainBuffer, 0x02000100, (u32*)MainScreenTex, 0x02000100, 0x3302);
-	
-	
 	PPU_ColorEffectSection* s = &PPU.ColorEffectSections[0];
-	
-	PPU.CurColorEffect->EndOffset = 240;
-	int startoffset = 0;
-	
-	u16* vptr = (u16*)vertexBuf;
-	
-	GPU_SetShader(softRenderShader);
-	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)SNESFrame),0,0,256,256);
-	
-	
-	
 	for (;;)
 	{
 		//bprintf("section %d %d %02X %d\n", startoffset, s->EndOffset, s->ColorMath, s->Brightness);
@@ -1515,20 +1499,22 @@ void PPU_VBlank_Soft()
 		// STAGE 6: dummy
 		GPU_SetDummyTexEnv(5);
 			
-		GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)MainScreenTex),256,256,0,GPU_RGBA5551);
-		GPU_SetTexture(GPU_TEXUNIT1, (u32*)osConvertVirtToPhys((u32)SubScreenTex),256,256,0,GPU_RGBA5551);
+		GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)MainScreenTex),256,256,0,colorformat);
+		GPU_SetTexture(GPU_TEXUNIT1, (u32*)osConvertVirtToPhys((u32)SubScreenTex),256,256,0,colorformat);
 		
 		GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
 			GPU_ATTRIBFMT(0, 2, GPU_SHORT)|GPU_ATTRIBFMT(1, 2, GPU_SHORT),
 			0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
 		
-		ADDVERTEX(0, startoffset,       0, 256-startoffset);
-		ADDVERTEX(256, startoffset,     256, 256-startoffset);
-		ADDVERTEX(256, s->EndOffset,    256, 256-s->EndOffset);
-		ADDVERTEX(0, startoffset,       0, 256-startoffset);
-		ADDVERTEX(256, s->EndOffset,    256, 256-s->EndOffset);
-		ADDVERTEX(0, s->EndOffset,      0, 256-s->EndOffset);
+		ADDVERTEX(0, startoffset,       0, startoffset);
+		ADDVERTEX(256, startoffset,     256, startoffset);
+		ADDVERTEX(256, s->EndOffset,    256, s->EndOffset);
+		ADDVERTEX(0, startoffset,       0, startoffset);
+		ADDVERTEX(256, s->EndOffset,    256, s->EndOffset);
+		ADDVERTEX(0, s->EndOffset,      0, s->EndOffset);
+		
 		vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
+		vertexPtr = vptr;
 		
 		GPU_DrawArray(GPU_TRIANGLES, 2*3);
 		
@@ -1539,6 +1525,33 @@ void PPU_VBlank_Soft()
 		startoffset = s->EndOffset;
 		s++;
 	}
+	
+#undef ADDVERTEX
+}
+
+	
+
+void PPU_VBlank_Soft()
+{
+	if (RenderState) 
+	{
+		gspWaitForP3D();
+		RenderState = 0;
+	}
+	
+	// copy new screen textures
+	// SetDisplayTransfer with flags=2 converts linear graphics to the tiled format used for textures
+	// since the two sets of buffers are contiguous, we can transfer them as one 256x512 texture
+	GSPGPU_FlushDataCache(NULL, (u8*)PPU.MainBuffer, 256*512*2);
+	GX_SetDisplayTransfer(gxCmdBuf, (u32*)PPU.MainBuffer, 0x02000100, (u32*)MainScreenTex, 0x02000100, 0x3303);
+	
+	
+	PPU_ColorEffectSection* s = &PPU.ColorEffectSections[0];
+	PPU.CurColorEffect->EndOffset = 240;
+	
+	vertexPtr = vertexBuf;
+	
+	PPU_BlendScreens(GPU_RGBA5551);
 	
 	gspWaitForPPF();
 }

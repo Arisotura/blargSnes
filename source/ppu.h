@@ -126,6 +126,13 @@ typedef struct
 	
 } PPU_ColorEffectSection;
 
+typedef struct
+{
+	u8 EndOffset;
+	u8 Mode;
+	
+} PPU_ModeSection;
+
 
 typedef struct
 {
@@ -173,6 +180,10 @@ typedef struct
 	u8 ForcedBlank;
 
 	u8 Mode;
+	
+	u8 LastMode;
+	PPU_ModeSection ModeSections[240];
+	PPU_ModeSection* CurModeSection;
 
 	union
 	{

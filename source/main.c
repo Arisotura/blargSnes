@@ -58,6 +58,7 @@ int curCmd = 0;
 void* vertexBuf0;
 void* vertexBuf1;
 void* vertexBuf;
+void* vertexPtr;
 
 u32* BorderTex;
 u16* MainScreenTex;
@@ -742,8 +743,19 @@ int main()
 	ClearConsole();
 	
 	BorderTex = (u32*)linearAlloc(512*256*4);
-	MainScreenTex = (u16*)linearAlloc(256*512*2);
-	SubScreenTex = &MainScreenTex[256*256];
+	//MainScreenTex = (u16*)linearAlloc(256*512*2);
+	//SubScreenTex = &MainScreenTex[256*256];
+	
+	if (false) // TODO (software renderer)
+	{
+		MainScreenTex = (u16*)VRAM_Alloc(256*512*2);
+		SubScreenTex = &MainScreenTex[256*256];
+	}
+	else
+	{
+		MainScreenTex = (u16*)VRAM_Alloc(256*512*4);
+		SubScreenTex = &((u32*)MainScreenTex)[256*256];
+	}
 	
 	borderVertices = (float*)linearAlloc(5*3 * 2 * sizeof(float));
 	screenVertices = (float*)linearAlloc(7*3 * 2 * sizeof(float));
@@ -757,10 +769,16 @@ int main()
 	FSUSER_OpenArchive(NULL, &sdmcArchive);
 	
 	if (!LoadBorder("/blargSnesBorder.bmp"))
-		CopyBitmapToTexture(defaultborder, BorderTex, 400, 240, /*0xFF*/0x80, 0, 64, 0x1);
+		CopyBitmapToTexture(defaultborder, BorderTex, 400, 240, 0xFF, 0, 64, 0x1);
 		
-	CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 0, 32, 0x3);
-	memset(SubScreenTex, 0, 256*256*2);
+	/*CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 0, 32, 0x3);
+	memset(SubScreenTex, 0, 256*256*2);*/
+
+	u32* tempbuf = (u32*)linearAlloc(256*256*4);
+	CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x1);
+	GX_SetDisplayTransfer(gxCmdBuf, tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x8);
+	gspWaitForPPF();
+	linearFree(tempbuf);
 	
 	Audio_Init();
 	
