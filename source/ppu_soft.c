@@ -1394,8 +1394,6 @@ void PPU_BlendScreens(u32 colorformat)
 	PPU_ColorEffectSection* s = &PPU.ColorEffectSections[0];
 	for (;;)
 	{
-		//bprintf("section %d %d %02X %d\n", startoffset, s->EndOffset, s->ColorMath, s->Brightness);
-		
 		GPU_DepthRange(-1.0f, 0.0f);
 		GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
 		GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
@@ -1545,8 +1543,6 @@ void PPU_VBlank_Soft()
 	GSPGPU_FlushDataCache(NULL, (u8*)PPU.MainBuffer, 256*512*2);
 	GX_SetDisplayTransfer(gxCmdBuf, (u32*)PPU.MainBuffer, 0x02000100, (u32*)MainScreenTex, 0x02000100, 0x3303);
 	
-	
-	PPU_ColorEffectSection* s = &PPU.ColorEffectSections[0];
 	PPU.CurColorEffect->EndOffset = 240;
 	
 	vertexPtr = vertexBuf;

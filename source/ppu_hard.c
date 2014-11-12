@@ -1178,6 +1178,8 @@ void PPU_VBlank_Hard()
 		bg->CurSection->EndOffset = 240;
 	}
 	
+	PPU.CurColorEffect->EndOffset = 240;
+	
 	
 	vertexPtr = vertexBuf;
 	
