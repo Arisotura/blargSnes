@@ -893,7 +893,7 @@ void PPU_VBlank()
 	
 	if (!SkipThisFrame)
 	{
-		GPU_ResetShader();
+		myGPU_Reset();
 		
 		if (PPU.HardwareRenderer)
 			PPU_VBlank_Hard();

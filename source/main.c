@@ -60,6 +60,9 @@ void* vertexBuf1;
 void* vertexBuf;
 void* vertexPtr;
 
+int GPUState = 0;
+DVLB_s* CurShader = NULL;
+
 u32* BorderTex;
 u16* MainScreenTex;
 u16* SubScreenTex;
@@ -221,7 +224,7 @@ float snesProjMatrix[16] =
 {
 	2.0f/256.0f, 0, 0, -1,
 	0, 2.0f/256.0f, 0, -1,
-	0, 0, 1.0f/64.0f, -1,
+	0, 0, 1.0f/128.0f, -1,
 	0, 0, 0, 1
 };
 
@@ -293,21 +296,6 @@ void setUniformMatrix(u32 startreg, float* m)
 	GPU_SetUniform(startreg, (u32*)param, 4);
 }
 
-DVLB_s* curshader = NULL;
-
-void GPU_ResetShader()
-{
-	curshader = NULL;
-}
-
-void GPU_SetShader(DVLB_s* shader)
-{
-	if (shader == curshader) return;
-	curshader = shader;
-	
-	SHDR_UseProgram(shader, 0);
-}
-
 void GPU_SetDummyTexEnv(u8 num)
 {
 	GPU_SetTexEnv(num, 
@@ -318,6 +306,33 @@ void GPU_SetDummyTexEnv(u8 num)
 		GPU_REPLACE, 
 		GPU_REPLACE, 
 		0xFFFFFFFF);
+}
+
+void myGPU_Reset()
+{
+	GPUState = 0;
+	CurShader = NULL;
+}
+
+void myGPU_DrawArray(u32 type, u32 num)
+{
+	GPU_DrawArray(type, num);
+	GPUState = 1;
+}
+
+void myGPU_SetShaderAndViewport(DVLB_s* shader, u32* depth, u32* color, u32 x, u32 y, u32 w, u32 h)
+{
+	// FinishDrawing is required before changing shaders
+	// but not before changing viewport
+	
+	if (shader != CurShader)
+	{
+		if (GPUState) GPU_FinishDrawing();
+		SHDR_UseProgram(shader, 0);
+		CurShader = shader;
+	}
+	
+	GPU_SetViewport(depth, color, x, y, w, h);
 }
 
 void RenderTopScreen()
@@ -334,16 +349,7 @@ void RenderTopScreen()
 	
 	//GPU_FinishDrawing();
 
-	GPU_SetShader(finalShader);
-	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)gpuOut),0,0,240*2,400);
-	
-	GPU_FinishDrawing();
-	// 1 = reverse scissor
-	// 0=2 = none
-	// 3 = normal scissor
-	GPUCMD_AddSingleParam(0x000F0065, 0);
-	GPUCMD_AddSingleParam(0x000F0066, 20|(20<<16));
-	GPUCMD_AddSingleParam(0x000F0067, 255|(255<<16));
+	myGPU_SetShaderAndViewport(finalShader, (u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)gpuOut),0,0,240*2,400);
 	
 	GPU_DepthRange(-1.0f, 0.0f);
 	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
@@ -384,7 +390,7 @@ void RenderTopScreen()
 		GPU_ATTRIBFMT(0, 3, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT),
 		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
 		
-	GPU_DrawArray(GPU_TRIANGLES, 2*3); 
+	myGPU_DrawArray(GPU_TRIANGLES, 2*3); 
 	GPU_FinishDrawing();
 	
 	gspWaitForPPF();
@@ -866,7 +872,7 @@ int main()
 						shot = 0;
 				}
 				
-				GPU_ResetShader();
+				myGPU_Reset();
 				RenderTopScreen();
 				VSyncAndFrameskip();
 				

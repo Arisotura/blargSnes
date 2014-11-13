@@ -287,7 +287,7 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 		
 		default:
 			bprintf("unknown tile type %d\n", type);
-			return;
+			return 0xFFFF;
 	}
 	
 	key = (addr >> 4) | (palid << 12);
@@ -334,6 +334,51 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 }
 
 
+int doingBG = 0;
+
+void PPU_StartBG()
+{
+	if (doingBG) 
+	{
+		GPU_FinishDrawing();
+		return;
+	}
+	doingBG = 1;
+	
+	GPU_DepthRange(-1.0f, 0.0f);
+	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
+	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
+	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	GPU_SetBlendingColor(0,0,0,0);
+	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+	
+	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
+	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+	
+	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+	GPU_SetAlphaTest(true, GPU_GREATER, 0);
+	
+	SET_UNIFORM(0x24, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
+	
+	GPU_SetTextureEnable(GPU_TEXUNIT0);
+	
+	GPU_SetTexEnv(0, 
+		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
+		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_REPLACE, GPU_REPLACE, 
+		0xFFFFFFFF);
+	GPU_SetDummyTexEnv(1);
+	GPU_SetDummyTexEnv(2);
+	GPU_SetDummyTexEnv(3);
+	GPU_SetDummyTexEnv(4);
+	GPU_SetDummyTexEnv(5);
+		
+	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)PPU_TileCache),1024,1024,0,GPU_RGBA5551);
+}
+
+
 
 void PPU_ClearScreens()
 {
@@ -353,8 +398,7 @@ void PPU_ClearScreens()
 	*vptr++ = b; \
 	*vptr++ = a;
 	
-	GPU_SetShader(plainQuadShader);
-	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)MainScreenTex),0,0,256,256);
+	myGPU_SetShaderAndViewport(plainQuadShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)MainScreenTex),0,0,256,256);
 		
 	GPU_DepthRange(-1.0f, 0.0f);
 	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
@@ -391,18 +435,18 @@ void PPU_ClearScreens()
 		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
 		
 	u8 alpha = (PPU.ColorMath2 & 0x20) ? 0xFF:0x00;
-	ADDVERTEX(0, 0, 0x40,      r, g, b, alpha);
-	ADDVERTEX(256, 0, 0x40,    r, g, b, alpha);
-	ADDVERTEX(256, 256, 0x40,  r, g, b, alpha);
-	ADDVERTEX(0, 0, 0x40,      r, g, b, alpha);
-	ADDVERTEX(256, 256, 0x40,  r, g, b, alpha);
-	ADDVERTEX(0, 256, 0x40,    r, g, b, alpha);
+	ADDVERTEX(0, 0, 0x80,      r, g, b, alpha);
+	ADDVERTEX(256, 0, 0x80,    r, g, b, alpha);
+	ADDVERTEX(256, 256, 0x80,  r, g, b, alpha);
+	ADDVERTEX(0, 0, 0x80,      r, g, b, alpha);
+	ADDVERTEX(256, 256, 0x80,  r, g, b, alpha);
+	ADDVERTEX(0, 256, 0x80,    r, g, b, alpha);
 	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
 	
-	GPU_DrawArray(GPU_TRIANGLES, 2*3);
+	myGPU_DrawArray(GPU_TRIANGLES, 2*3);
 	
 	// clear the OBJ buffer
-	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)OBJColorBuffer),0,0,256,256);
+	myGPU_SetShaderAndViewport(plainQuadShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)OBJColorBuffer),0,0,256,256);
 		
 	GPU_DepthRange(-1.0f, 0.0f);
 	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
@@ -447,11 +491,11 @@ void PPU_ClearScreens()
 	ADDVERTEX(0, 256, 0,    0, 0, 0, 0);
 	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
 	
-	GPU_DrawArray(GPU_TRIANGLES, 2*3);
+	myGPU_DrawArray(GPU_TRIANGLES, 2*3);
 	
 	
 	// TEMP HACK
-	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)SubScreenTex),0,0,256,256);
+	myGPU_SetShaderAndViewport(plainQuadShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)SubScreenTex),0,0,256,256);
 		
 	GPU_DepthRange(-1.0f, 0.0f);
 	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
@@ -492,18 +536,16 @@ void PPU_ClearScreens()
 	g = (col & 0x07C0) >> 3; g |= (g >> 5);
 	b = (col & 0x003E) << 2; b |= (b >> 5);
 	alpha = 255;//(PPU.ColorMath2 & 0x20) ? 0xFF:0x00;
-	ADDVERTEX(0, 0, 0x40,      r, g, b, alpha);
-	ADDVERTEX(256, 0, 0x40,    r, g, b, alpha);
-	ADDVERTEX(256, 256, 0x40,  r, g, b, alpha);
-	ADDVERTEX(0, 0, 0x40,      r, g, b, alpha);
-	ADDVERTEX(256, 256, 0x40,  r, g, b, alpha);
-	ADDVERTEX(0, 256, 0x40,    r, g, b, alpha);
+	ADDVERTEX(0, 0, 0x80,      r, g, b, alpha);
+	ADDVERTEX(256, 0, 0x80,    r, g, b, alpha);
+	ADDVERTEX(256, 256, 0x80,  r, g, b, alpha);
+	ADDVERTEX(0, 0, 0x80,      r, g, b, alpha);
+	ADDVERTEX(256, 256, 0x80,  r, g, b, alpha);
+	ADDVERTEX(0, 256, 0x80,    r, g, b, alpha);
 	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
 	
-	GPU_DrawArray(GPU_TRIANGLES, 2*3);
+	myGPU_DrawArray(GPU_TRIANGLES, 2*3);
 	
-	
-	GPU_FinishDrawing();
 	vertexPtr = vptr;
 	
 #undef ADDVERTEX
@@ -523,15 +565,14 @@ void PPU_ClearAlpha()
 	*vptr++ = b; \
 	*vptr++ = a;
 	
-	GPU_SetShader(plainQuadShader);
-	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)MainScreenTex),0,0,256,256);
+	myGPU_SetShaderAndViewport(plainQuadShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)MainScreenTex),0,0,256,256);
 		
 	GPU_DepthRange(-1.0f, 0.0f);
 	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
 	GPU_SetStencilTest(true, GPU_EQUAL, 0x00, 0x02, 0xFF);
 	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
 	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_ALPHA);
+	GPU_SetDepthTestAndWriteMask(true, GPU_GEQUAL, GPU_WRITE_ALPHA);
 	
 	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
 	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
@@ -560,15 +601,62 @@ void PPU_ClearAlpha()
 		GPU_ATTRIBFMT(0, 3, GPU_SHORT)|GPU_ATTRIBFMT(1, 4, GPU_UNSIGNED_BYTE),
 		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
 		
-	ADDVERTEX(0, 0, 0,      255, 0, 255, 0);
-	ADDVERTEX(256, 0, 0,    255, 0, 255, 0);
-	ADDVERTEX(256, 256, 0,  255, 0, 255, 0);
-	ADDVERTEX(0, 0, 0,      255, 0, 255, 0);
-	ADDVERTEX(256, 256, 0,  255, 0, 255, 0);
-	ADDVERTEX(0, 256, 0,    255, 0, 255, 0);
+	u32 z = (PPU.ColorMath2 & 0x10) ? 0x40:0x00;
+	ADDVERTEX(0, 0, z,      255, 0, 255, 0);
+	ADDVERTEX(256, 0, z,    255, 0, 255, 0);
+	ADDVERTEX(256, 256, z,  255, 0, 255, 0);
+	ADDVERTEX(0, 0, z,      255, 0, 255, 0);
+	ADDVERTEX(256, 256, z,  255, 0, 255, 0);
+	ADDVERTEX(0, 256, z,    255, 0, 255, 0);
 	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
 	
-	GPU_DrawArray(GPU_TRIANGLES, 2*3);
+	myGPU_DrawArray(GPU_TRIANGLES, 2*3);
+	/*GPU_FinishDrawing();
+	
+	GPU_DepthRange(-1.0f, 0.0f);
+	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
+	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0xFF);
+	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	GPU_SetBlendingColor(0,0,0,0);
+	GPU_SetDepthTestAndWriteMask(true, GPU_GREATER, GPU_WRITE_ALPHA);
+	
+	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
+	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+	
+	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+	GPU_SetAlphaTest(false, GPU_ALWAYS, 0);
+	
+	setUniformMatrix(0x20, snesProjMatrix);
+	
+	GPU_SetTextureEnable(0);
+	
+	GPU_SetTexEnv(0, 
+		GPU_TEVSOURCES(GPU_PRIMARY_COLOR, 0, 0), 
+		GPU_TEVSOURCES(GPU_PRIMARY_COLOR, 0, 0),
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_REPLACE, GPU_REPLACE, 
+		0xFFFFFFFF);
+	GPU_SetDummyTexEnv(1);
+	GPU_SetDummyTexEnv(2);
+	GPU_SetDummyTexEnv(3);
+	GPU_SetDummyTexEnv(4);
+	GPU_SetDummyTexEnv(5);
+	
+	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
+		GPU_ATTRIBFMT(0, 3, GPU_SHORT)|GPU_ATTRIBFMT(1, 4, GPU_UNSIGNED_BYTE),
+		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
+		
+	u32 z = (PPU.ColorMath2 & 0x10) ? 0x40:0x80;
+	ADDVERTEX(0, 0, z,      255, 0, 255, 0);
+	ADDVERTEX(256, 0, z,    255, 0, 255, 0);
+	ADDVERTEX(256, 256, z,  255, 0, 255, 0);
+	ADDVERTEX(0, 0, z,      255, 0, 255, 0);
+	ADDVERTEX(256, 256, z,  255, 0, 255, 0);
+	ADDVERTEX(0, 256, z,    255, 0, 255, 0);
+	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
+	
+	myGPU_DrawArray(GPU_TRIANGLES, 2*3);*/
 
 	vertexPtr = vptr;
 	
@@ -691,6 +779,8 @@ void PPU_HardRenderBG_8x8(u32 setalpha, PPU_Background* bg, int type, u32 prio, 
 		
 		if (ntiles)
 		{
+			PPU_StartBG();
+			
 			GPU_SetScissorTest(GPU_SCISSOR_NORMAL, 0, systart, 256, syend);
 			
 			//SET_UNIFORM(0x25, 0.0f, 1.0f, (float)(0x80+(num<<4)), 0.0f);
@@ -708,8 +798,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, PPU_Background* bg, int type, u32 prio, 
 			vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
 			vertexPtr = vptr;
 			
-			GPU_DrawArray(GPU_TRIANGLES, ntiles*2*3);
-			GPU_FinishDrawing();
+			myGPU_DrawArray(GPU_TRIANGLES, ntiles*2*3);
 		}
 		
 		if (syend >= yend) break;
@@ -766,7 +855,7 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 	palid = 8 + ((oam[3] & 0x0E) >> 1);
 	
 	prio = (oam[3] & 0x30);
-	//if (palid >= 12) prio += 0x40;
+	if (palid < 12) prio += 0x40;
 	
 	for (; y < height; y += 8)
 	{
@@ -854,41 +943,6 @@ void PPU_HardRenderOBJs()
 	int ntiles = 0;
 	int ystart = 0, yend = 224;
 	void* vstart = vertexPtr;
-	
-	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)OBJColorBuffer),0,0,256,256);
-		
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
-	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_ALL);
-	
-	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
-	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(true, GPU_GREATER, 0);
-	
-	setUniformMatrix(0x20, snesProjMatrix);
-	SET_UNIFORM(0x24, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
-	
-	GPU_SetTextureEnable(GPU_TEXUNIT0);
-	
-	GPU_SetTexEnv(0, 
-		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
-		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_REPLACE, GPU_REPLACE, 
-		0xFFFFFFFF);
-	GPU_SetDummyTexEnv(1);
-	GPU_SetDummyTexEnv(2);
-	GPU_SetDummyTexEnv(3);
-	GPU_SetDummyTexEnv(4);
-	GPU_SetDummyTexEnv(5);
-		
-	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)PPU_TileCache),1024,1024,0,GPU_RGBA5551);
 
 	do
 	{
@@ -916,6 +970,42 @@ void PPU_HardRenderOBJs()
 	while (i != last);
 	if (!ntiles) return;
 	
+	myGPU_SetShaderAndViewport(hardRenderShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)OBJColorBuffer),0,0,256,256);
+		
+	GPU_DepthRange(-1.0f, 0.0f);
+	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
+	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
+	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	GPU_SetBlendingColor(0,0,0,0);
+	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_ALL);
+	
+	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
+	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+	
+	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+	GPU_SetAlphaTest(true, GPU_GREATER, 0);
+	
+	setUniformMatrix(0x20, snesProjMatrix);
+	SET_UNIFORM(0x24, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
+	SET_UNIFORM(0x25, 1.0f, 0.0f, 0.0f, 0.0f);
+	
+	GPU_SetTextureEnable(GPU_TEXUNIT0);
+	
+	GPU_SetTexEnv(0, 
+		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
+		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_REPLACE, GPU_REPLACE, 
+		0xFFFFFFFF);
+	GPU_SetDummyTexEnv(1);
+	GPU_SetDummyTexEnv(2);
+	GPU_SetDummyTexEnv(3);
+	GPU_SetDummyTexEnv(4);
+	GPU_SetDummyTexEnv(5);
+		
+	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)PPU_TileCache),1024,1024,0,GPU_RGBA5551);
+	
 	vertexPtr = (u16*)((((u32)vertexPtr) + 0xF) & ~0xF);
 	
 	GPU_SetScissorTest(GPU_SCISSOR_NORMAL, 0, ystart, 256, yend);
@@ -924,7 +1014,7 @@ void PPU_HardRenderOBJs()
 		GPU_ATTRIBFMT(0, 3, GPU_SHORT)|GPU_ATTRIBFMT(1, 2, GPU_UNSIGNED_BYTE),
 		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
 	
-	GPU_DrawArray(GPU_TRIANGLES, ntiles*2*3);
+	myGPU_DrawArray(GPU_TRIANGLES, ntiles*2*3);
 }
 
 void PPU_HardRenderOBJLayer(u32 prio, int ystart, int yend)
@@ -938,12 +1028,13 @@ void PPU_HardRenderOBJLayer(u32 prio, int ystart, int yend)
 	*vptr++ = s; \
 	*vptr++ = t;
 	
+	doingBG = 0;
 	GPU_FinishDrawing();
 	
 	GPU_DepthRange(-1.0f, 0.0f);
 	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
-	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x02);
+	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_AND_NOT);
 	GPU_SetBlendingColor(0,0,0,0);
 	GPU_SetDepthTestAndWriteMask(true, GPU_EQUAL, GPU_WRITE_COLOR);
 	
@@ -983,51 +1074,17 @@ void PPU_HardRenderOBJLayer(u32 prio, int ystart, int yend)
 	ADDVERTEX(0, ystart,   prio,  0, ystart);
 	ADDVERTEX(256, yend,   prio,  256, yend);
 	ADDVERTEX(0, yend,     prio,  0, yend);
-	/*prio += 0x40;
+	prio += 0x40;
 	ADDVERTEX(0, ystart,   prio,  0, ystart);
 	ADDVERTEX(256, ystart, prio,  256, ystart);
 	ADDVERTEX(256, yend,   prio,  256, yend);
 	ADDVERTEX(0, ystart,   prio,  0, ystart);
 	ADDVERTEX(256, yend,   prio,  256, yend);
-	ADDVERTEX(0, yend,     prio,  0, yend);*/
+	ADDVERTEX(0, yend,     prio,  0, yend);
 	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
 	vertexPtr = vptr;
 	
-	GPU_DrawArray(GPU_TRIANGLES, 2*2*3);
-	
-	GPU_FinishDrawing();
-	
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
-	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR);
-	
-	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
-	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(true, GPU_GREATER, 0);
-	
-	SET_UNIFORM(0x24, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
-	
-	GPU_SetTextureEnable(GPU_TEXUNIT0);
-	
-	GPU_SetTexEnv(0, 
-		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
-		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_REPLACE, GPU_REPLACE, 
-		0xFFFFFFFF);
-	GPU_SetDummyTexEnv(1);
-	GPU_SetDummyTexEnv(2);
-	GPU_SetDummyTexEnv(3);
-	GPU_SetDummyTexEnv(4);
-	GPU_SetDummyTexEnv(5);
-		
-	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)PPU_TileCache),1024,1024,0,GPU_RGBA5551);
+	myGPU_DrawArray(GPU_TRIANGLES, 2*2*3);
 	
 #undef ADDVERTEX
 }
@@ -1185,93 +1242,23 @@ void PPU_VBlank_Hard()
 	
 	PPU_ClearScreens();
 	
-	
-	GPU_SetShader(hardRenderShader);
-	
-	
 	PPU_HardRenderOBJs();
 	
 	// MAIN SCREEN
-	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)MainScreenTex),0,0,256,256);
-		
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
-	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+	myGPU_SetShaderAndViewport(hardRenderShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)MainScreenTex),0,0,256,256);
 	
-	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
-	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(true, GPU_GREATER, 0);
-	
-	setUniformMatrix(0x20, snesProjMatrix);
-	SET_UNIFORM(0x24, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
-	
-	GPU_SetTextureEnable(GPU_TEXUNIT0);
-	
-	GPU_SetTexEnv(0, 
-		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
-		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_REPLACE, GPU_REPLACE, 
-		0xFFFFFFFF);
-	GPU_SetDummyTexEnv(1);
-	GPU_SetDummyTexEnv(2);
-	GPU_SetDummyTexEnv(3);
-	GPU_SetDummyTexEnv(4);
-	GPU_SetDummyTexEnv(5);
-		
-	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)PPU_TileCache),1024,1024,0,GPU_RGBA5551);
-	
+	doingBG = 0;
 	PPU_HardRender(PPU.MainScreen, PPU.ColorMath2);
-	GPU_FinishDrawing();
 	
 	PPU_ClearAlpha();
-	GPU_FinishDrawing();
+	//GPU_FinishDrawing();
 	
 	// SUB SCREEN
-	GPU_SetShader(hardRenderShader);
-	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)SubScreenTex),0,0,256,256);
-		
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
-	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+	myGPU_SetShaderAndViewport(hardRenderShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)SubScreenTex),0,0,256,256);
 	
-	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
-	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(true, GPU_GREATER, 0);
-	
-	setUniformMatrix(0x20, snesProjMatrix);
-	SET_UNIFORM(0x24, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
-	
-	GPU_SetTextureEnable(GPU_TEXUNIT0);
-	
-	GPU_SetTexEnv(0, 
-		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
-		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_REPLACE, GPU_REPLACE, 
-		0xFFFFFFFF);
-	GPU_SetDummyTexEnv(1);
-	GPU_SetDummyTexEnv(2);
-	GPU_SetDummyTexEnv(3);
-	GPU_SetDummyTexEnv(4);
-	GPU_SetDummyTexEnv(5);
-		
-	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)PPU_TileCache),1024,1024,0,GPU_RGBA5551);
-	
+	doingBG = 0;
 	PPU_HardRender(PPU.SubScreen, 0x1F);
-	GPU_FinishDrawing();
+	//GPU_FinishDrawing();
 	
 	// TODO: appropriately clear alpha (for div2 shiz)
 	

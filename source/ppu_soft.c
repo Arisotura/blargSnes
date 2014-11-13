@@ -1382,8 +1382,7 @@ void PPU_BlendScreens(u32 colorformat)
 	
 	u16* vptr = (u16*)vertexPtr;
 	
-	GPU_SetShader(softRenderShader);
-	GPU_SetViewport((u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)SNESFrame),0,0,256,256);
+	myGPU_SetShaderAndViewport(softRenderShader, (u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)SNESFrame),0,0,256,256);
 	
 #define ADDVERTEX(x, y, s, t) \
 	*vptr++ = x; \
@@ -1514,12 +1513,11 @@ void PPU_BlendScreens(u32 colorformat)
 		vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
 		vertexPtr = vptr;
 		
-		GPU_DrawArray(GPU_TRIANGLES, 2*3);
-		
-		GPU_FinishDrawing();
+		myGPU_DrawArray(GPU_TRIANGLES, 2*3);
 		
 		if (s->EndOffset == 240) break;
 		
+		GPU_FinishDrawing();
 		startoffset = s->EndOffset;
 		s++;
 	}
