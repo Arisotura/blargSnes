@@ -130,6 +130,7 @@ typedef struct
 {
 	u8 EndOffset;
 	u8 Mode;
+	u16 MainScreen, SubScreen;
 	
 } PPU_ModeSection;
 
@@ -181,7 +182,7 @@ typedef struct
 
 	u8 Mode;
 	
-	u8 LastMode;
+	u8 ModeDirty;
 	PPU_ModeSection ModeSections[240];
 	PPU_ModeSection* CurModeSection;
 

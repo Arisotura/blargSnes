@@ -74,23 +74,22 @@ u32* OBJDepthBuffer;
 
 // SHIT THAT CAN BE CHANGED MIDFRAME
 
-// * video mode
+// + video mode
+// + layer enable/disable
 
 // * mosaic
 
-// * master brightness
-// * color math add/sub
+// + master brightness
+// + color math add/sub
 
 // + layer scroll
 // + layer tileset/tilemap address
 // * mode7 scroll/matrix/etc
-// * layer enable/disable
+// * color math layer sel
 
 // * OBJ tileset address
 
 // * window registers
-
-// * color math layer sel
 
 // * sub backdrop color
 
@@ -335,15 +334,23 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 
 
 int doingBG = 0;
+void* CurScreen;
+int shaderset = 0;
 
 void PPU_StartBG()
 {
 	if (doingBG) 
 	{
 		GPU_FinishDrawing();
-		return;
+		//return;
 	}
 	doingBG = 1;
+	
+	if (!shaderset)
+	{
+		myGPU_SetShaderAndViewport(hardRenderShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)CurScreen),0,0,256,256);
+		shaderset = 1;
+	}
 	
 	GPU_DepthRange(-1.0f, 0.0f);
 	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
@@ -483,12 +490,12 @@ void PPU_ClearScreens()
 		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
 		
 	// Z here doesn't matter
-	ADDVERTEX(0, 0, 0,      0, 0, 0, 0);
-	ADDVERTEX(256, 0, 0,    0, 0, 0, 0);
-	ADDVERTEX(256, 256, 0,  0, 0, 0, 0);
-	ADDVERTEX(0, 0, 0,      0, 0, 0, 0);
-	ADDVERTEX(256, 256, 0,  0, 0, 0, 0);
-	ADDVERTEX(0, 256, 0,    0, 0, 0, 0);
+	ADDVERTEX(0, 0, 0,      255, 0, 255, 0);
+	ADDVERTEX(256, 0, 0,    255, 0, 255, 0);
+	ADDVERTEX(256, 256, 0,  255, 0, 255, 0);
+	ADDVERTEX(0, 0, 0,      255, 0, 255, 0);
+	ADDVERTEX(256, 256, 0,  255, 0, 255, 0);
+	ADDVERTEX(0, 256, 0,    255, 0, 255, 0);
 	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
 	
 	myGPU_DrawArray(GPU_TRIANGLES, 2*3);
@@ -692,9 +699,17 @@ void PPU_HardRenderBG_8x8(u32 setalpha, PPU_Background* bg, int type, u32 prio, 
 			s++;
 			continue;
 		}
+		if (syend-systart < 2) // hack. Such sections cause problems?
+		{
+			systart = syend;
+			s++;
+			continue;
+		}
 
 		if (systart < ystart) systart = ystart;
 		if (syend > yend) syend = yend;
+		
+		//bprintf("BG%d section %d->%d (%d->%d)\n", (bg-(&PPU.BG[0])), systart, syend, ystart, yend);
 		
 		yoff = s->YScroll + systart;
 		ntiles = 0;
@@ -722,10 +737,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, PPU_Background* bg, int type, u32 prio, 
 
 				curtile = tilemap[idx];
 				if ((curtile ^ prio) & 0x2000)
-				{
-					idx++;
 					continue;
-				}
 
 				// render the tile
 				
@@ -781,15 +793,15 @@ void PPU_HardRenderBG_8x8(u32 setalpha, PPU_Background* bg, int type, u32 prio, 
 		{
 			PPU_StartBG();
 			
-			GPU_SetScissorTest(GPU_SCISSOR_NORMAL, 0, systart, 256, syend);
+			//GPU_SetScissorTest(GPU_SCISSOR_NORMAL, 0, systart, 256, syend);
 			
 			//SET_UNIFORM(0x25, 0.0f, 1.0f, (float)(0x80+(num<<4)), 0.0f);
 			
 			// if needed, set stencil bits indicating where we'll need to clear alpha
-			GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x02);
+			/*GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x02);
 			if (setalpha) GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
 			else          GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_AND_NOT);
-			GPU_SetBlendingColor(0,0,0,0);
+			GPU_SetBlendingColor(0,0,0,0);*/
 			
 			GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vertexPtr),
 				GPU_ATTRIBFMT(0, 2, GPU_SHORT)|GPU_ATTRIBFMT(1, 2, GPU_UNSIGNED_BYTE),
@@ -879,6 +891,9 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 			
 			u32 addr = PPU.OBJTilesetAddr + idx;
 			u32 coord = PPU_StoreTileInCache(TILE_4BPP, palid, addr);
+			
+			//if (x <= -8 || x > 255 || y <= -8 || y > 223)
+			//	bprintf("OBJ tile %d/%d %04X\n", x, y, coord);
 			
 			switch (attrib & 0xC000)
 			{
@@ -1028,8 +1043,16 @@ void PPU_HardRenderOBJLayer(u32 prio, int ystart, int yend)
 	*vptr++ = s; \
 	*vptr++ = t;
 	
-	doingBG = 0;
-	GPU_FinishDrawing();
+	if (!shaderset)
+	{
+		myGPU_SetShaderAndViewport(hardRenderShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)CurScreen),0,0,256,256);
+		shaderset = 1;
+	}
+	else if (doingBG)
+	{
+		doingBG = 0;
+		GPU_FinishDrawing();
+	}
 	
 	GPU_DepthRange(-1.0f, 0.0f);
 	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
@@ -1081,7 +1104,7 @@ void PPU_HardRenderOBJLayer(u32 prio, int ystart, int yend)
 	ADDVERTEX(0, ystart,   prio,  0, ystart);
 	ADDVERTEX(256, yend,   prio,  256, yend);
 	ADDVERTEX(0, yend,     prio,  0, yend);
-	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
+	vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
 	vertexPtr = vptr;
 	
 	myGPU_DrawArray(GPU_TRIANGLES, 2*2*3);
@@ -1102,7 +1125,9 @@ void PPU_RenderScanline_Hard(u32 line)
 		
 		PPU.CurModeSection = &PPU.ModeSections[0];
 		PPU.CurModeSection->Mode = PPU.Mode;
-		PPU.LastMode = PPU.Mode;
+		PPU.CurModeSection->MainScreen = PPU.MainScreen;
+		PPU.CurModeSection->SubScreen = PPU.SubScreen;
+		PPU.ModeDirty = 0;
 		
 		for (i = 0; i < 4; i++)
 		{
@@ -1123,13 +1148,15 @@ void PPU_RenderScanline_Hard(u32 line)
 	}
 	else
 	{
-		if (PPU.Mode != PPU.LastMode)
+		if (PPU.ModeDirty)
 		{
 			PPU.CurModeSection->EndOffset = line;
 			PPU.CurModeSection++;
 			
 			PPU.CurModeSection->Mode = PPU.Mode;
-			PPU.LastMode = PPU.Mode;
+			PPU.CurModeSection->MainScreen = PPU.MainScreen;
+			PPU.CurModeSection->SubScreen = PPU.SubScreen;
+			PPU.ModeDirty = 0;
 		}
 		
 		for (i = 0; i < 4; i++)
@@ -1206,7 +1233,7 @@ void PPU_HardRender(u32 screen, u32 colormath)
 		switch (s->Mode & 0x07)
 		{
 			case 1:
-				PPU_HardRender_Mode1(ystart, s->EndOffset, screen, s->Mode, colormath);
+				PPU_HardRender_Mode1(ystart, s->EndOffset, screen?s->SubScreen:s->MainScreen, s->Mode, colormath);
 				break;
 		}
 		
@@ -1242,28 +1269,37 @@ void PPU_VBlank_Hard()
 	
 	PPU_ClearScreens();
 	
-	PPU_HardRenderOBJs();
+	PPU_HardRenderOBJs(); // issues there?
 	
 	// MAIN SCREEN
-	myGPU_SetShaderAndViewport(hardRenderShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)MainScreenTex),0,0,256,256);
+	//myGPU_SetShaderAndViewport(hardRenderShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)MainScreenTex),0,0,256,256);
 	
 	doingBG = 0;
-	PPU_HardRender(PPU.MainScreen, PPU.ColorMath2);
+	shaderset = 0;
+	CurScreen = MainScreenTex;
+	PPU_HardRender(0, PPU.ColorMath2);
 	
 	PPU_ClearAlpha();
 	//GPU_FinishDrawing();
 	
 	// SUB SCREEN
-	myGPU_SetShaderAndViewport(hardRenderShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)SubScreenTex),0,0,256,256);
+	//myGPU_SetShaderAndViewport(hardRenderShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)SubScreenTex),0,0,256,256);
 	
 	doingBG = 0;
-	PPU_HardRender(PPU.SubScreen, 0x1F);
+	shaderset = 0;
+	CurScreen = SubScreenTex;
+	PPU_HardRender(1, 0x1F);
 	//GPU_FinishDrawing();
 	
 	// TODO: appropriately clear alpha (for div2 shiz)
 	
 	// reuse the color math system used by the soft renderer
 	PPU_BlendScreens(GPU_RGBA8);
+	
+	u32 taken = ((u32)vertexPtr - (u32)vertexBuf);
+	GSPGPU_FlushDataCache(NULL, vertexBuf, taken);
+	if (taken > 0x40000)
+		bprintf("OVERFLOW %05X/40000 (%d%%)\n", taken, (taken*100)/0x40000);
 		
 	
 	GSPGPU_FlushDataCache(NULL, PPU_TileCache, 1024*1024*sizeof(u16));

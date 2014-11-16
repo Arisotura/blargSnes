@@ -445,6 +445,7 @@ void PPU_Write8(u32 addr, u8 val)
 			
 		case 0x05:
 			PPU.Mode = val;
+			PPU.ModeDirty = 1;
 			break;
 			
 		case 0x06: // mosaic
@@ -607,16 +608,20 @@ void PPU_Write8(u32 addr, u8 val)
 			
 		case 0x2C:
 			PPU.MainLayerEnable = val;
+			PPU.ModeDirty = 1;
 			break;
 		case 0x2D:
 			PPU.SubLayerEnable = val;
+			PPU.ModeDirty = 1;
 			break;
 			
 		case 0x2E: // window enable
 			PPU.MainWindowEnable = val;
+			PPU.ModeDirty = 1;
 			break;
 		case 0x2F:
 			PPU.SubWindowEnable = val;
+			PPU.ModeDirty = 1;
 			break;
 		
 		case 0x30:

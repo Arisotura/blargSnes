@@ -32,7 +32,7 @@ INCLUDES	:=	include
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
-ARCH	:=	-marm
+ARCH	:=	-marm -mfloat-abi=softfp
 
 CFLAGS	:=	-g -Wall -O2 -mthumb-interwork -save-temps \
 			-mcpu=mpcore -mtune=mpcore -fomit-frame-pointer \

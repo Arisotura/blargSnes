@@ -21,6 +21,7 @@
 #include <string.h>
 #include <3ds.h>
 
+#include "blargGL.h"
 #include "ui.h"
 #include "audio.h"
 
@@ -39,7 +40,6 @@
 #include "plain_quad_vsh_shbin.h"
 
 
-extern u32* gxCmdBuf;
 u32* gpuOut;
 u32* gpuDOut;
 u32* SNESFrame;
@@ -49,14 +49,6 @@ DVLB_s* softRenderShader;
 DVLB_s* hardRenderShader;
 DVLB_s* plainQuadShader;
 
-u32 gpuCmdSize;
-u32* gpuCmd0;
-u32* gpuCmd1;
-u32* gpuCmd;
-int curCmd = 0;
-
-void* vertexBuf0;
-void* vertexBuf1;
 void* vertexBuf;
 void* vertexPtr;
 
@@ -231,22 +223,15 @@ float snesProjMatrix[16] =
 float vertexList[] = 
 {
 	// border
-	/*0.0, 0.0, 0.9,      0.78125, 0.0625,
+	0.0, 0.0, 0.9,      0.78125, 0.0625,
 	240.0, 0.0, 0.9,    0.78125, 1.0,
-	240.0, 400.0, 0.9,  0, 1.0,
+	240.0, 400.0, 0.9,  0.0, 1.0,
 	
 	0.0, 0.0, 0.9,      0.78125, 0.0625,
-	240.0, 400.0, 0.9,  0, 1.0,
-	0.0, 400.0, 0.9,    0, 0.0625,*/
+	240.0, 400.0, 0.9,  0.0, 1.0,
+	0.0, 400.0, 0.9,    0.0, 0.0625,
 	
-	// 0.0625 0.9375
-	/*0.0, 0.0, 0.9,      1.0, 0.875,
-	240.0, 0.0, 0.9,    1.0, 0.0,
-	240.0, 400.0, 0.9,  0.0, 0.0,
-	
-	0.0, 0.0, 0.9,      1.0, 0.875,
-	240.0, 400.0, 0.9,  0.0, 0.0,
-	0.0, 400.0, 0.9,    0.0, 0.875,*/
+	// screen
 	8.0, 72.0, 0.9,      1.0, 0.875,
 	232.0, 72.0, 0.9,    1.0, 0.0,
 	232.0, 328.0, 0.9,  0.0, 0.0,
@@ -254,25 +239,11 @@ float vertexList[] =
 	8.0, 72.0, 0.9,      1.0, 0.875,
 	232.0, 328.0, 0.9,  0.0, 0.0,
 	8.0, 328.0, 0.9,    0.0, 0.875,
-	
-	// screen
-	/*8.0, 72.0, 0.5,     1.0, 0.125,  0.125, 0.125,
-	232.0, 72.0, 0.5,   1.0, 1.0,    0.125, 1.0,
-	232.0, 328.0, 0.5,  0.0, 1.0,    0.0, 1.0,
-	
-	8.0, 72.0, 0.5,     1.0, 0.125,  0.125, 0.125,
-	232.0, 328.0, 0.5,  0.0, 1.0,    0.0,   1.0,
-	8.0, 328.0, 0.5,    0.0, 0.125,  0.0,   0.125,*/
-	0.0, 0.0, 0.5,     0.0, 0.125,  0.125, 0.125,
-	256.0, 0.0, 0.5,   1.0, 0.125,    0.125, 1.0,
-	256.0, 224.0, 0.5,  1.0, 1.0,    0.0, 1.0,
-	
-	0.0, 0.0, 0.5,     0.0, 0.125,  0.125, 0.125,
-	256.0, 224.0, 0.5,  1.0, 1.0,    0.0,   1.0,
-	0.0, 224.0, 0.5,    0.0, 1.0,  0.0,   0.125,
 };
 float* borderVertices;
 float* screenVertices;
+
+// TODO retire all this junk now that we have blargGL
 
 void setUniformMatrix(u32 startreg, float* m)
 {
@@ -338,72 +309,53 @@ void myGPU_SetShaderAndViewport(DVLB_s* shader, u32* depth, u32* color, u32 x, u
 void RenderTopScreen()
 {
 	if (RenderState) gspWaitForP3D();
-	GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
+	GX_SetDisplayTransfer(NULL, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
+	gspWaitForPPF(); // TODO do this shit differently so we're not waiting doing nothing
 	
-	//shaderset = 0;
-	// notes on the drawing process 
-	// textures used here are actually 512x256. TODO: investigate if GPU_SetTexture() really has the params in the wrong order
-	// or if we did something wrong.
-	
-	
-	
-	//GPU_FinishDrawing();
 
-	myGPU_SetShaderAndViewport(finalShader, (u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)gpuOut),0,0,240*2,400);
+	bglUseShader(finalShader);
 	
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
-	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_ALL);
+	bglOutputBuffers(gpuOut, gpuDOut);
+	bglViewport(0, 0, 240*2, 400);
 	
-	GPUCMD_AddSingleParam(0x00010062, 0); 
-	GPUCMD_AddSingleParam(0x000F0118, 0);
+	bglEnableDepthTest(false);
 	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(false, GPU_ALWAYS, 0x00);
+	bglEnableTextures(GPU_TEXUNIT0);
 	
-	GPU_SetTextureEnable(GPU_TEXUNIT0);
-	
-	GPU_SetTexEnv(0, 
+	bglTexEnv(0, 
 		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
 		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
 		GPU_TEVOPERANDS(0,0,0), 
 		GPU_TEVOPERANDS(0,0,0), 
 		GPU_REPLACE, GPU_REPLACE, 
 		0xFFFFFFFF);
-	GPU_SetDummyTexEnv(1);
-	GPU_SetDummyTexEnv(2);
-	GPU_SetDummyTexEnv(3);
-	GPU_SetDummyTexEnv(4);
-	GPU_SetDummyTexEnv(5);
+	bglDummyTexEnv(1);
+	bglDummyTexEnv(2);
+	bglDummyTexEnv(3);
+	bglDummyTexEnv(4);
+	bglDummyTexEnv(5);
 	
-	//GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)BorderTex),256,512,0,GPU_RGBA8); // texture is actually 512x256
-	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)SNESFrame),256,256,/*0x6*/0,GPU_RGBA8);
+	bglTexImage(GPU_TEXUNIT0, BorderTex,512,256,0,GPU_RGBA8);
 	
-	//setup matrices
-	setUniformMatrix(0x20, screenProjMatrix);
+	bglUniformMatrix(0x20, screenProjMatrix);
 	
-	// border
-	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)borderVertices),
-		GPU_ATTRIBFMT(0, 3, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT),
-		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
-		
-	myGPU_DrawArray(GPU_TRIANGLES, 2*3); 
-	GPU_FinishDrawing();
+	bglNumAttribs(2);
+	bglAttribType(0, GPU_FLOAT, 3);	// vertex
+	bglAttribType(1, GPU_FLOAT, 2);	// texcoord
+	bglAttribBuffer(borderVertices);
 	
-	gspWaitForPPF();
-	// vsync here
+	bglDrawArrays(GPU_TRIANGLES, 2*3); // border
 	
-	GPUCMD_Finalize();
-	GPUCMD_Run(gxCmdBuf);
+	
+	bglTexImage(GPU_TEXUNIT0, SNESFrame,256,256,/*0x6*/0,GPU_RGBA8);
+	
+	bglAttribBuffer(screenVertices);
+	
+	bglDrawArrays(GPU_TRIANGLES, 2*3); // screen
+	
+	
+	bglFlush();
 	RenderState = 1;
-	
-	curCmd ^= 1;
-	gpuCmd = curCmd ? gpuCmd1 : gpuCmd0;
-	vertexBuf = curCmd ? vertexBuf1 : vertexBuf0;
-	GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
 }
 
 
@@ -719,16 +671,10 @@ int main()
 	fsInit();
 	
 	GPU_Init(NULL);
-	gpuCmdSize = 0x40000;
-	gpuCmd0 = (u32*)linearAlloc(gpuCmdSize*4);
-	gpuCmd1 = (u32*)linearAlloc(gpuCmdSize*4);
-	curCmd = 0;
-	gpuCmd = gpuCmd0;
-	GPU_Reset(gxCmdBuf, gpuCmd, gpuCmdSize);
+	bglInit();
 	
-	vertexBuf0 = linearAlloc(0x20000);
-	vertexBuf1 = linearAlloc(0x20000);
-	vertexBuf = vertexBuf0;
+	vertexBuf = linearAlloc(0x40000);
+	vertexPtr = vertexBuf;
 	
 	svcSetThreadPriority(gspEventThread, 0x30);
 	
@@ -741,7 +687,7 @@ int main()
 	hardRenderShader = SHDR_ParseSHBIN((u32*)render_hard_vsh_shbin, render_hard_vsh_shbin_size);
 	plainQuadShader = SHDR_ParseSHBIN((u32*)plain_quad_vsh_shbin, plain_quad_vsh_shbin_size);
 	
-	GX_SetMemoryFill(gxCmdBuf, gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
+	GX_SetMemoryFill(NULL, gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
 	gspWaitForPSC0();
 	gfxSwapBuffersGpu();
 	
@@ -764,34 +710,31 @@ int main()
 	}
 	
 	borderVertices = (float*)linearAlloc(5*3 * 2 * sizeof(float));
-	screenVertices = (float*)linearAlloc(7*3 * 2 * sizeof(float));
+	screenVertices = (float*)linearAlloc(5*3 * 2 * sizeof(float));
 	
 	float* fptr = &vertexList[0];
 	for (i = 0; i < 5*3*2; i++) borderVertices[i] = *fptr++;
-	for (i = 0; i < 7*3*2; i++) screenVertices[i] = *fptr++;
+	for (i = 0; i < 5*3*2; i++) screenVertices[i] = *fptr++;
 	
 
 	sdmcArchive = (FS_archive){0x9, (FS_path){PATH_EMPTY, 1, (u8*)""}};
 	FSUSER_OpenArchive(NULL, &sdmcArchive);
 	
+	// load border
 	if (!LoadBorder("/blargSnesBorder.bmp"))
 		CopyBitmapToTexture(defaultborder, BorderTex, 400, 240, 0xFF, 0, 64, 0x1);
-		
-	/*CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 0, 32, 0x3);
-	memset(SubScreenTex, 0, 256*256*2);*/
 
+	// copy splashscreen
 	u32* tempbuf = (u32*)linearAlloc(256*256*4);
-	CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x1);
-	GX_SetDisplayTransfer(gxCmdBuf, tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x8);
+	CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x0);
+	GX_SetDisplayTransfer(NULL, tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
 	gspWaitForPPF();
 	linearFree(tempbuf);
 	
 	Audio_Init();
 	
 	UI_Switch(&UI_ROMMenu);
-	
-	GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
-	
+
 	svcCreateEvent(&SPCSync, 0);
 
 
@@ -872,7 +815,7 @@ int main()
 						shot = 0;
 				}
 				
-				myGPU_Reset();
+				//myGPU_Reset();
 				RenderTopScreen();
 				VSyncAndFrameskip();
 				
@@ -940,7 +883,7 @@ int main()
 	exitspc = 1;
 	if (spcthread) svcWaitSynchronization(spcthread, U64_MAX);
 	
-	linearFree(gpuCmd);
+	bglDeInit();
 	
 	PPU_DeInit();
 
