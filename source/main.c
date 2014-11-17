@@ -243,82 +243,30 @@ float vertexList[] =
 float* borderVertices;
 float* screenVertices;
 
-// TODO retire all this junk now that we have blargGL
 
-void setUniformMatrix(u32 startreg, float* m)
+bool PeekEvent(Handle evt)
 {
-	float param[16];
-	param[0x0]=m[3]; //w
-	param[0x1]=m[2]; //z
-	param[0x2]=m[1]; //y
-	param[0x3]=m[0]; //x
-	param[0x4]=m[7];
-	param[0x5]=m[6];
-	param[0x6]=m[5];
-	param[0x7]=m[4];
-	param[0x8]=m[11];
-	param[0x9]=m[10];
-	param[0xa]=m[9];
-	param[0xb]=m[8];
-	param[0xc]=m[15];
-	param[0xd]=m[14];
-	param[0xe]=m[13];
-	param[0xf]=m[12];
-	GPU_SetUniform(startreg, (u32*)param, 4);
-}
-
-void GPU_SetDummyTexEnv(u8 num)
-{
-	GPU_SetTexEnv(num, 
-		GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0), 
-		GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0), 
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_REPLACE, 
-		GPU_REPLACE, 
-		0xFFFFFFFF);
-}
-
-void myGPU_Reset()
-{
-	GPUState = 0;
-	CurShader = NULL;
-}
-
-void myGPU_DrawArray(u32 type, u32 num)
-{
-	GPU_DrawArray(type, num);
-	GPUState = 1;
-}
-
-void myGPU_SetShaderAndViewport(DVLB_s* shader, u32* depth, u32* color, u32 x, u32 y, u32 w, u32 h)
-{
-	// FinishDrawing is required before changing shaders
-	// but not before changing viewport
-	
-	if (shader != CurShader)
+	// do a wait that returns immediately.
+	// if we get a timeout error code, the event didn't occur
+	Result res = svcWaitSynchronization(evt, 0);
+	if (!res)
 	{
-		if (GPUState) GPU_FinishDrawing();
-		SHDR_UseProgram(shader, 0);
-		CurShader = shader;
+		svcClearEvent(evt);
+		return true;
 	}
 	
-	GPU_SetViewport(depth, color, x, y, w, h);
+	return false;
 }
 
 void RenderTopScreen()
 {
-	if (RenderState) gspWaitForP3D();
-	GX_SetDisplayTransfer(NULL, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
-	gspWaitForPPF(); // TODO do this shit differently so we're not waiting doing nothing
-	
-
 	bglUseShader(finalShader);
 	
 	bglOutputBuffers(gpuOut, gpuDOut);
 	bglViewport(0, 0, 240*2, 400);
 	
 	bglEnableDepthTest(false);
+	bglColorDepthMask(GPU_WRITE_ALL);
 	
 	bglEnableTextures(GPU_TEXUNIT0);
 	
@@ -354,8 +302,99 @@ void RenderTopScreen()
 	bglDrawArrays(GPU_TRIANGLES, 2*3); // screen
 	
 	
-	bglFlush();
-	RenderState = 1;
+	if (!RenderState)
+	{
+		bglFlush();
+		RenderState = 1;
+	}
+}
+
+void ContinueRendering()
+{
+	switch (RenderState)
+	{
+		case 0: return;
+		
+		case 3:
+			if (PeekEvent(gspEvents[GSPEVENT_PPF]))
+			{
+				bglFlush();
+				RenderState = 1;
+			}
+			break;
+			
+		case 1:
+			if (PeekEvent(gspEvents[GSPEVENT_P3D]))
+			{
+				GX_SetDisplayTransfer(NULL, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
+				RenderState = 2;
+			}
+			break;
+			
+		case 2:
+			if (PeekEvent(gspEvents[GSPEVENT_PPF]))
+			{
+				RenderState = 0;
+				VSyncAndFrameskip();
+			}
+			break;
+	}
+}
+
+void FinishRendering()
+{
+	if (RenderState == 3)
+	{
+		gspWaitForPPF();
+		bglFlush();
+		RenderState = 1;
+	}
+	if (RenderState == 1)
+	{
+		gspWaitForP3D();
+		GX_SetDisplayTransfer(NULL, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
+		RenderState = 2;
+	}
+	if (RenderState == 2)
+	{
+		gspWaitForPPF();
+		VSyncAndFrameskip();
+	}
+	if (RenderState == 4)
+	{
+		VSyncAndFrameskip();
+	}
+	
+	RenderState = 0;
+}
+
+void VSyncAndFrameskip()
+{
+	if (running && !pause && PeekEvent(gspEvents[GSPEVENT_VBlank0]) && FramesSkipped<5)
+	{
+		// we missed the VBlank
+		// skip the next frames to compensate
+		
+		// TODO: doesn't work
+		/*s64 time = (s64)(svcGetSystemTick() - LastVBlank);
+		while (time > 4468724)
+		{
+			FramesSkipped++;
+			time -= 4468724;
+		}*/
+		
+		SkipThisFrame = true;
+		FramesSkipped++;
+	}
+	else
+	{
+		SkipThisFrame = false;
+		FramesSkipped = 0;
+		
+		gfxSwapBuffersGpu();
+		gspWaitForEvent(GSPEVENT_VBlank0, false);
+		//LastVBlank = svcGetSystemTick();
+	}
 }
 
 
@@ -595,50 +634,6 @@ void reportshit(u32 pc)
 }
 
 
-bool PeekEvent(Handle evt)
-{
-	// do a wait that returns immediately.
-	// if we get a timeout error code, the event didn't occur
-	Result res = svcWaitSynchronization(evt, 0);
-	if (!res)
-	{
-		svcClearEvent(evt);
-		return true;
-	}
-	
-	return false;
-}
-
-
-void VSyncAndFrameskip()
-{
-	if (running && !pause && PeekEvent(gspEvents[GSPEVENT_VBlank0]) && FramesSkipped<5)
-	{
-		// we missed the VBlank
-		// skip the next frames to compensate
-		
-		// TODO: doesn't work
-		/*s64 time = (s64)(svcGetSystemTick() - LastVBlank);
-		while (time > 4468724)
-		{
-			FramesSkipped++;
-			time -= 4468724;
-		}*/
-		
-		SkipThisFrame = true;
-		FramesSkipped++;
-	}
-	else
-	{
-		SkipThisFrame = false;
-		FramesSkipped = 0;
-		
-		gfxSwapBuffersGpu();
-		gspWaitForEvent(GSPEVENT_VBlank0, false);
-		//LastVBlank = svcGetSystemTick();
-	}
-}
-
 
 int main() 
 {
@@ -672,6 +667,7 @@ int main()
 	
 	GPU_Init(NULL);
 	bglInit();
+	RenderState = 0;
 	
 	vertexBuf = linearAlloc(0x40000);
 	vertexPtr = vertexBuf;
@@ -695,20 +691,8 @@ int main()
 	ClearConsole();
 	
 	BorderTex = (u32*)linearAlloc(512*256*4);
-	//MainScreenTex = (u16*)linearAlloc(256*512*2);
-	//SubScreenTex = &MainScreenTex[256*256];
 	
-	if (false) // TODO (software renderer)
-	{
-		MainScreenTex = (u16*)VRAM_Alloc(256*512*2);
-		SubScreenTex = &MainScreenTex[256*256];
-	}
-	else
-	{
-		MainScreenTex = (u16*)VRAM_Alloc(256*512*4);
-		SubScreenTex = &((u32*)MainScreenTex)[256*256];
-	}
-	
+	// copy some fixed vertices to linear memory
 	borderVertices = (float*)linearAlloc(5*3 * 2 * sizeof(float));
 	screenVertices = (float*)linearAlloc(5*3 * 2 * sizeof(float));
 	
@@ -751,8 +735,11 @@ int main()
 			if (running && !pause)
 			{
 				// emulate
-				
+				//dbgcolor(0xFF);
 				CPU_Run(); // runs the SNES for one frame. Handles PPU rendering.
+				//dbgcolor(0xFF00);
+				ContinueRendering();
+				//dbgcolor(0xFF0000);
 				
 				// SRAM autosave check
 				// TODO: also save SRAM under certain circumstances (pausing, returning to home menu, etc)
@@ -815,9 +802,8 @@ int main()
 						shot = 0;
 				}
 				
-				//myGPU_Reset();
 				RenderTopScreen();
-				VSyncAndFrameskip();
+				FinishRendering();
 				
 				if (held & KEY_TOUCH)
 				{
@@ -854,7 +840,7 @@ int main()
 				}
 			}
 			
-			if (!SkipThisFrame)
+			//if (!SkipThisFrame)
 			{
 				u8* bottomfb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
 				
@@ -883,9 +869,14 @@ int main()
 	exitspc = 1;
 	if (spcthread) svcWaitSynchronization(spcthread, U64_MAX);
 	
-	bglDeInit();
-	
 	PPU_DeInit();
+	
+	linearFree(borderVertices);
+	linearFree(screenVertices);
+	
+	linearFree(BorderTex);
+	
+	bglDeInit();
 
 	fsExit();
 	hidExit();

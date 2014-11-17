@@ -279,6 +279,9 @@ void PPU_RenderScanline(u32 line);
 void PPU_VBlank();
 
 
+void PPU_Init_Soft();
+void PPU_DeInit_Soft();
+
 void PPU_RenderScanline_Soft(u32 line);
 void PPU_VBlank_Soft();
 

@@ -121,6 +121,8 @@ void PPU_Init()
 	
 	if (PPU.HardwareRenderer)
 		PPU_Init_Hard();
+	else
+		PPU_Init_Soft();
 }
 
 void PPU_Reset()
@@ -178,6 +180,8 @@ void PPU_DeInit()
 	
 	if (PPU.HardwareRenderer)
 		PPU_DeInit_Hard();
+	else
+		PPU_DeInit_Soft();
 }
 
 
@@ -875,14 +879,8 @@ extern Handle gspEvents[GSPEVENT_MAX];
 
 void PPU_RenderScanline(u32 line)
 {
-	/*if (!(line & 7))
-	{
-		if (RenderState==1 && PeekEvent(gspEvents[GSPEVENT_P3D]))
-		{
-			GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
-			RenderState = 2;
-		}
-	}*/
+	if (!(line & 7))
+		ContinueRendering();
 	
 	if (SkipThisFrame) return;
 	
@@ -896,10 +894,10 @@ void PPU_VBlank()
 {
 	int i;
 	
+	FinishRendering();
+	
 	if (!SkipThisFrame)
 	{
-		myGPU_Reset();
-		
 		if (PPU.HardwareRenderer)
 			PPU_VBlank_Hard();
 		else
@@ -907,7 +905,8 @@ void PPU_VBlank()
 		
 		RenderTopScreen();
 	}
-	VSyncAndFrameskip();
+	else
+		RenderState = 4;
 	
 	PPU.OAMAddr = PPU.OAMReload;
 	

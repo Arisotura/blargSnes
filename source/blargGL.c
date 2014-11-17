@@ -179,7 +179,7 @@ u32 blarg_computeInvValue(u32 val)
 	if(val==240)return 0x38111111;
 	if(val==480)return 0x37111111;
 	if(val==400)return 0x3747ae14;
-	// TODO: add 256 in here since we also use it a lot
+	if (val == 256) return 0x38000000; // blargSNES specific
 	
 	//but let's not limit ourselves to the usual
 	float fval=2.0/val;
@@ -253,7 +253,7 @@ void _bglUpdateState()
 	
 	if (bglState.DrawnSomething)
 	{
-		if ((dirty & 0x5) != 0x5)
+		if ((dirty & 0x5) != 0x4)
 			GPU_FinishDrawing();
 		bglState.DrawnSomething = false;
 	}
@@ -383,6 +383,21 @@ void bglViewport(u32 x, u32 y, u32 w, u32 h)
 	bglState.ViewportY = y;
 	bglState.ViewportW = w;
 	bglState.ViewportH = h;
+	bglState.DirtyFlags |= 0x4;
+}
+
+void bglScissorMode(GPU_SCISSORMODE mode)
+{
+	bglState.ScissorMode = mode;
+	bglState.DirtyFlags |= 0x4;
+}
+
+void bglScissor(u32 x, u32 y, u32 w, u32 h)
+{
+	bglState.ScissorX = x;
+	bglState.ScissorY = y;
+	bglState.ScissorW = w;
+	bglState.ScissorH = h;
 	bglState.DirtyFlags |= 0x4;
 }
 

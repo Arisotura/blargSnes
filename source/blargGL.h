@@ -32,6 +32,9 @@ void bglUniformMatrix(u32 id, float* val);
 void bglOutputBuffers(void* color, void* depth);
 void bglViewport(u32 x, u32 y, u32 w, u32 h);
 
+void bglScissorMode(GPU_SCISSORMODE mode);
+void bglScissor(u32 x, u32 y, u32 w, u32 h);
+
 void bglDepthRange(float min, float max);
 void bglEnableDepthTest(bool enable);
 void bglDepthFunc(GPU_TESTFUNC func);

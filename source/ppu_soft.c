@@ -18,8 +18,36 @@
 
 #include <3ds.h>
 
+#include "blargGL.h"
 #include "snes.h"
 #include "ppu.h"
+
+
+extern void* vertexBuf;
+extern void* vertexPtr;
+
+extern DVLB_s* softRenderShader;
+
+extern float snesProjMatrix[16];
+
+extern u32* gpuOut;
+extern u32* gpuDOut;
+extern u32* SNESFrame;
+extern u16* MainScreenTex;
+extern u16* SubScreenTex;
+
+
+void PPU_Init_Soft()
+{
+	// main/sub screen buffers, RGBA5551
+	MainScreenTex = (u16*)VRAM_Alloc(256*512*2);
+	SubScreenTex = &MainScreenTex[256*256];
+}
+
+void PPU_DeInit_Soft()
+{
+	linearFree(MainScreenTex);
+}
 
 
 
@@ -1259,8 +1287,8 @@ void PPU_RenderScanline_Soft(u32 line)
 	}
 	
 	int i;
-	u16* mbuf = &PPU.MainBuffer[line << 8];
-	u16* sbuf = &PPU.SubBuffer[line << 8];
+	u16* mbuf = &PPU.MainBuffer[(255-line) << 8];
+	u16* sbuf = &PPU.SubBuffer[(255-line) << 8];
 	
 	// main backdrop
 	u32 backdrop = PPU.Palette[0];
@@ -1360,29 +1388,30 @@ void PPU_RenderScanline_Soft(u32 line)
 }
 
 
-extern u32* gxCmdBuf;
-extern void* vertexBuf;
-extern void* vertexPtr;
-
-extern DVLB_s* softRenderShader;
-
-extern float snesProjMatrix[16];
-
-extern float* screenVertices;
-extern u32* gpuOut;
-extern u32* gpuDOut;
-extern u32* SNESFrame;
-extern u16* MainScreenTex;
-extern u16* SubScreenTex;
-
-
 void PPU_BlendScreens(u32 colorformat)
 {
 	int startoffset = 0;
 	
 	u16* vptr = (u16*)vertexPtr;
 	
-	myGPU_SetShaderAndViewport(softRenderShader, (u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)SNESFrame),0,0,256,256);
+	bglUseShader(softRenderShader);
+	
+	bglOutputBuffers(SNESFrame, gpuDOut); // depth buffer doesn't matter
+	bglViewport(0, 0, 256, 256);
+	
+	bglEnableDepthTest(false);
+	bglColorDepthMask(GPU_WRITE_COLOR);
+	bglEnableAlphaTest(false);
+
+	bglUniformMatrix(0x20, snesProjMatrix);
+	
+	bglEnableTextures(GPU_TEXUNIT0|GPU_TEXUNIT1);
+	bglTexImage(GPU_TEXUNIT0, MainScreenTex,256,256,0,colorformat);
+	bglTexImage(GPU_TEXUNIT1, SubScreenTex,256,256,0,colorformat);
+	
+	bglNumAttribs(2);
+	bglAttribType(0, GPU_SHORT, 2);	// vertex
+	bglAttribType(1, GPU_SHORT, 2);	// texcoord
 	
 #define ADDVERTEX(x, y, s, t) \
 	*vptr++ = x; \
@@ -1393,23 +1422,6 @@ void PPU_BlendScreens(u32 colorformat)
 	PPU_ColorEffectSection* s = &PPU.ColorEffectSections[0];
 	for (;;)
 	{
-		GPU_DepthRange(-1.0f, 0.0f);
-		GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-		GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
-		GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-		GPU_SetBlendingColor(0,0,0,0);
-		GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR); // we don't care about depth testing in this pass
-		
-		GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-		GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
-		
-		GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-		GPU_SetAlphaTest(false, GPU_ALWAYS, 0x00);
-
-		setUniformMatrix(0x20, snesProjMatrix);
-		
-		GPU_SetTextureEnable(GPU_TEXUNIT0|GPU_TEXUNIT1);
-		
 		// TEXTURE ENV STAGES
 		// ---
 		// blending operation: (Main.Color +- (Sub.Color * Main.Alpha)) * Sub.Alpha
@@ -1417,7 +1429,7 @@ void PPU_BlendScreens(u32 colorformat)
 		// Sub.Alpha: 0 = div2, 1 = no div2
 		// ---
 		// STAGE 1: Out.Color = Sub.Color * Main.Alpha, Out.Alpha = Sub.Alpha + 0.5
-		GPU_SetTexEnv(0, 
+		bglTexEnv(0, 
 			GPU_TEVSOURCES(GPU_TEXTURE1, GPU_TEXTURE0, 0), 
 			GPU_TEVSOURCES(GPU_TEXTURE1, GPU_CONSTANT, 0),
 			GPU_TEVOPERANDS(0,2,0), 
@@ -1431,7 +1443,7 @@ void PPU_BlendScreens(u32 colorformat)
 			// COLOR SUBTRACT
 			
 			// STAGE 2: Out.Color = Main.Color - Prev.Color, Out.Alpha = Prev.Alpha + (1-Main.Alpha) (cancel out div2 when color math doesn't happen)
-			GPU_SetTexEnv(1, 
+			bglTexEnv(1, 
 				GPU_TEVSOURCES(GPU_TEXTURE0, GPU_PREVIOUS, 0), 
 				GPU_TEVSOURCES(GPU_PREVIOUS, GPU_TEXTURE0, 0),
 				GPU_TEVOPERANDS(0,0,0), 
@@ -1440,7 +1452,7 @@ void PPU_BlendScreens(u32 colorformat)
 				GPU_ADD, 
 				0xFFFFFFFF);
 			// STAGE 3: Out.Color = Prev.Color * Prev.Alpha, Out.Alpha = Prev.Alpha
-			GPU_SetTexEnv(2, 
+			bglTexEnv(2, 
 				GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
 				GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0),
 				GPU_TEVOPERANDS(0,2,0), 
@@ -1449,14 +1461,14 @@ void PPU_BlendScreens(u32 colorformat)
 				GPU_REPLACE, 
 				0xFFFFFFFF);
 			// STAGE 4: dummy (no need to double color intensity)
-			GPU_SetDummyTexEnv(3);
+			bglDummyTexEnv(3);
 		}
 		else
 		{
 			// COLOR ADDITION
 			
 			// STAGE 2: Out.Color = Main.Color*0.5 + Prev.Color*0.5 (prevents overflow), Out.Alpha = Prev.Alpha + (1-Main.Alpha) (cancel out div2 when color math doesn't happen)
-			GPU_SetTexEnv(1, 
+			bglTexEnv(1, 
 				GPU_TEVSOURCES(GPU_TEXTURE0, GPU_PREVIOUS, GPU_CONSTANT), 
 				GPU_TEVSOURCES(GPU_PREVIOUS, GPU_TEXTURE0, 0),
 				GPU_TEVOPERANDS(0,0,0), 
@@ -1465,7 +1477,7 @@ void PPU_BlendScreens(u32 colorformat)
 				GPU_ADD, 
 				0xFF808080);
 			// STAGE 3: Out.Color = Prev.Color * Prev.Alpha, Out.Alpha = Prev.Alpha
-			GPU_SetTexEnv(2, 
+			bglTexEnv(2, 
 				GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
 				GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0),
 				GPU_TEVOPERANDS(0,2,0), 
@@ -1474,7 +1486,7 @@ void PPU_BlendScreens(u32 colorformat)
 				GPU_REPLACE, 
 				0xFFFFFFFF);
 			// STAGE 4: Out.Color = Prev.Color + Prev.Color (doubling color intensity), Out.Alpha = Const.Alpha
-			GPU_SetTexEnv(3, 
+			bglTexEnv(3, 
 				GPU_TEVSOURCES(GPU_PREVIOUS, GPU_PREVIOUS, 0), 
 				GPU_TEVSOURCES(GPU_CONSTANT, 0, 0),
 				GPU_TEVOPERANDS(0,0,0), 
@@ -1485,7 +1497,7 @@ void PPU_BlendScreens(u32 colorformat)
 		}
 		
 		// STAGE 5: master brightness - Out.Color = Prev.Color * Brightness, Out.Alpha = Const.Alpha
-		GPU_SetTexEnv(4, 
+		bglTexEnv(4, 
 			GPU_TEVSOURCES(GPU_PREVIOUS, GPU_CONSTANT, 0), 
 			GPU_TEVSOURCES(GPU_CONSTANT, 0, 0),
 			GPU_TEVOPERANDS(0,0,0), 
@@ -1494,14 +1506,9 @@ void PPU_BlendScreens(u32 colorformat)
 			GPU_REPLACE, 
 			0xFF000000 | (s->Brightness*0x00010101));
 		// STAGE 6: dummy
-		GPU_SetDummyTexEnv(5);
-			
-		GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)MainScreenTex),256,256,0,colorformat);
-		GPU_SetTexture(GPU_TEXUNIT1, (u32*)osConvertVirtToPhys((u32)SubScreenTex),256,256,0,colorformat);
+		bglDummyTexEnv(5);
 		
-		GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
-			GPU_ATTRIBFMT(0, 2, GPU_SHORT)|GPU_ATTRIBFMT(1, 2, GPU_SHORT),
-			0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
+		bglAttribBuffer(vptr);
 		
 		ADDVERTEX(0, startoffset,       0, startoffset);
 		ADDVERTEX(256, startoffset,     256, startoffset);
@@ -1513,11 +1520,10 @@ void PPU_BlendScreens(u32 colorformat)
 		vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
 		vertexPtr = vptr;
 		
-		myGPU_DrawArray(GPU_TRIANGLES, 2*3);
+		bglDrawArrays(GPU_TRIANGLES, 2*3);
 		
 		if (s->EndOffset == 240) break;
 		
-		GPU_FinishDrawing();
 		startoffset = s->EndOffset;
 		s++;
 	}
@@ -1529,17 +1535,11 @@ void PPU_BlendScreens(u32 colorformat)
 
 void PPU_VBlank_Soft()
 {
-	if (RenderState) 
-	{
-		gspWaitForP3D();
-		RenderState = 0;
-	}
-	
 	// copy new screen textures
 	// SetDisplayTransfer with flags=2 converts linear graphics to the tiled format used for textures
 	// since the two sets of buffers are contiguous, we can transfer them as one 256x512 texture
 	GSPGPU_FlushDataCache(NULL, (u8*)PPU.MainBuffer, 256*512*2);
-	GX_SetDisplayTransfer(gxCmdBuf, (u32*)PPU.MainBuffer, 0x02000100, (u32*)MainScreenTex, 0x02000100, 0x3303);
+	GX_SetDisplayTransfer(gxCmdBuf, (u32*)PPU.MainBuffer, 0x02000100, (u32*)MainScreenTex, 0x02000100, 0x3302);
 	
 	PPU.CurColorEffect->EndOffset = 240;
 	
@@ -1547,5 +1547,5 @@ void PPU_VBlank_Soft()
 	
 	PPU_BlendScreens(GPU_RGBA5551);
 	
-	gspWaitForPPF();
+	RenderState = 3;
 }
