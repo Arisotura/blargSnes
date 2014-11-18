@@ -685,13 +685,8 @@ void PPU_ClearAlpha(u32 snum)
 	bglStencilFunc(GPU_EQUAL, 0x00, 0x02, 0xFF);
 	bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
 	
-	if (!snum)
-	{
-		bglEnableDepthTest(true);
-		bglDepthFunc(GPU_GEQUAL);
-	}
-	else
-		bglEnableDepthTest(false);
+	bglEnableDepthTest(true);
+	bglDepthFunc(GPU_GEQUAL);
 	bglEnableAlphaTest(false);
 	
 	bglScissorMode(GPU_SCISSOR_DISABLE);
@@ -729,7 +724,7 @@ void PPU_ClearAlpha(u32 snum)
 		
 		u32 z;
 		if (!snum) z = (s->ColorMath2 & 0x10) ? 0x40:0x00;
-		else z = 0x80;
+		else       z = (s->ColorMath2 & 0x40) ? 0x00:0x80;
 		
 		//if (height > 1)
 		{
