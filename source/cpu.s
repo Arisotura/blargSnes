@@ -672,6 +672,21 @@ newline:
 			
 emuloop:
 				mov r3, snesCycles, asr #0x10
+				
+				@tst snesP, #flagRender
+				@bne norender
+				@ldr r0, =(1364-512)
+				@cmp r0, r3
+				@bne norender
+				@orr snesP, snesP, #flagRender
+				
+				@sub r0, snesCycles, r3, lsl #0x10
+				@cmp r0, #0xE0
+				@bge norender
+				@SafeCall_3 PPU_RenderScanline
+				
+norender:
+				
 				ldrh r0, [memoryMap, #-0x6] @ IRQ cond in lower bits, flags in higher bits
 				tst r0, #0x4000				@ check if we gotta handle the HBlank
 				bne hblank_end
@@ -757,6 +772,7 @@ emulate_hardware:
 			ldrb r2, [memoryMap, #-0x5]
 			bic r2, r2, #0x48				@ clear HBlank and per-scanline IRQ flags
 			strb r2, [memoryMap, #-0x5]
+			@bic snesP, snesP, #flagRender
 			mov r1, snesCycles, lsl #0x10
 			
 			cmp r1, #0xDF0000

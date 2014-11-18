@@ -1226,7 +1226,7 @@ void PPU_RenderScanline_Hard(u32 line)
 		
 		PPU.CurSubBackdrop = &PPU.SubBackdropSections[0];
 		PPU.CurSubBackdrop->Color = PPU.SubBackdrop;
-		PPU.CurSubBackdrop->Div2 = !(PPU.ColorMath1 & 0x02);
+		PPU.CurSubBackdrop->Div2 = (!(PPU.ColorMath1 & 0x02)) && (PPU.ColorMath2 & 0x40);
 	}
 	else
 	{
@@ -1276,7 +1276,7 @@ void PPU_RenderScanline_Hard(u32 line)
 			PPU.CurSubBackdrop++;
 			
 			PPU.CurSubBackdrop->Color = PPU.SubBackdrop;
-			PPU.CurSubBackdrop->Div2 = !(PPU.ColorMath1 & 0x02);
+			PPU.CurSubBackdrop->Div2 = (!(PPU.ColorMath1 & 0x02)) && (PPU.ColorMath2 & 0x40);
 			PPU.SubBackdropDirty = 0;
 		}
 	}
