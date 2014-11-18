@@ -107,6 +107,7 @@ int doingBG = 0;
 
 #define TILE_2BPP 0
 #define TILE_4BPP 1
+#define TILE_8BPP 2
 
 
 u16* PPU_TileCache;
@@ -263,6 +264,82 @@ void PPU_DecodeTile_4bpp(u16* vram, u16* pal, u32* dst)
 #undef DO_MINIBLOCK
 }
 
+void PPU_DecodeTile_8bpp(u16* vram, u16* pal, u32* dst)
+{
+	int i;
+	u8 p1, p2, p3, p4;
+	u32 col1, col2;
+	
+	u16 oldcolor0 = pal[0];
+	pal[0] = 0;
+	
+#define DO_MINIBLOCK(l11, l12, l21, l22) \
+	p1 = 0; p2 = 0; p3 = 0; p4 = 0; \
+	if (l21 & 0x00000080) p1 |= 0x01; \
+	if (l21 & 0x00008000) p1 |= 0x02; \
+	if (l21 & 0x00800000) p1 |= 0x04; \
+	if (l21 & 0x80000000) p1 |= 0x08; \
+	if (l22 & 0x00000080) p1 |= 0x10; \
+	if (l22 & 0x00008000) p1 |= 0x20; \
+	if (l22 & 0x00800000) p1 |= 0x40; \
+	if (l22 & 0x80000000) p1 |= 0x80; \
+	if (l21 & 0x00000040) p2 |= 0x01; \
+	if (l21 & 0x00004000) p2 |= 0x02; \
+	if (l21 & 0x00400000) p2 |= 0x04; \
+	if (l21 & 0x40000000) p2 |= 0x08; \
+	if (l22 & 0x00000040) p2 |= 0x10; \
+	if (l22 & 0x00004000) p2 |= 0x20; \
+	if (l22 & 0x00400000) p2 |= 0x40; \
+	if (l22 & 0x40000000) p2 |= 0x80; \
+	l21 <<= 2; l22 <<= 2; \
+	col1 = pal[p1] | (pal[p2] << 16); \
+	if (l11 & 0x00000080) p3 |= 0x01; \
+	if (l11 & 0x00008000) p3 |= 0x02; \
+	if (l11 & 0x00800000) p3 |= 0x04; \
+	if (l11 & 0x80000000) p3 |= 0x08; \
+	if (l12 & 0x00000080) p3 |= 0x10; \
+	if (l12 & 0x00008000) p3 |= 0x20; \
+	if (l12 & 0x00800000) p3 |= 0x40; \
+	if (l12 & 0x80000000) p3 |= 0x80; \
+	if (l11 & 0x00000040) p4 |= 0x01; \
+	if (l11 & 0x00004000) p4 |= 0x02; \
+	if (l11 & 0x00400000) p4 |= 0x04; \
+	if (l11 & 0x40000000) p4 |= 0x08; \
+	if (l12 & 0x00000040) p4 |= 0x10; \
+	if (l12 & 0x00004000) p4 |= 0x20; \
+	if (l12 & 0x00400000) p4 |= 0x40; \
+	if (l12 & 0x40000000) p4 |= 0x80; \
+	l11 <<= 2; l12 <<= 2; \
+	col2 = pal[p3] | (pal[p4] << 16); \
+	*dst++ = col1; \
+	*dst++ = col2; 
+	
+	for (i = 4; i >= 0; i -= 4)
+	{
+		u32 line11 = vram[i+0 ] | (vram[i+8 ] << 16);
+		u32 line12 = vram[i+16] | (vram[i+24] << 16);
+		u32 line21 = vram[i+1 ] | (vram[i+9 ] << 16);
+		u32 line22 = vram[i+17] | (vram[i+25] << 16);
+		u32 line31 = vram[i+2 ] | (vram[i+10] << 16);
+		u32 line32 = vram[i+18] | (vram[i+26] << 16);
+		u32 line41 = vram[i+3 ] | (vram[i+11] << 16);
+		u32 line42 = vram[i+19] | (vram[i+27] << 16);
+		
+		DO_MINIBLOCK(line31, line32, line41, line42);
+		DO_MINIBLOCK(line31, line32, line41, line42);
+		DO_MINIBLOCK(line11, line12, line21, line22);
+		DO_MINIBLOCK(line11, line12, line21, line22);
+		DO_MINIBLOCK(line31, line32, line41, line42);
+		DO_MINIBLOCK(line31, line32, line41, line42);
+		DO_MINIBLOCK(line11, line12, line21, line22);
+		DO_MINIBLOCK(line11, line12, line21, line22);
+	}
+	
+	pal[0] = oldcolor0;
+	
+#undef DO_MINIBLOCK
+}
+
 
 
 u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
@@ -282,6 +359,11 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 		case TILE_4BPP: 
 			paldirty = *(u32*)&PPU.PaletteUpdateCount[palid << 2];
 			vramdirty = *(u16*)&PPU.VRAMUpdateCount[addr >> 4];
+			break;
+			
+		case TILE_8BPP: 
+			paldirty = PPU.PaletteUpdateCount256;
+			vramdirty = *(u32*)&PPU.VRAMUpdateCount[addr >> 4];
 			break;
 		
 		default:
@@ -318,6 +400,11 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 	{
 		case TILE_2BPP: PPU_DecodeTile_2bpp(&PPU.VRAM[addr], &PPU.Palette[palid << 2], dst); break;
 		case TILE_4BPP: PPU_DecodeTile_4bpp(&PPU.VRAM[addr], &PPU.Palette[palid << 4], dst); break;
+		
+		case TILE_8BPP: 
+			// TODO: direct color!
+			PPU_DecodeTile_8bpp(&PPU.VRAM[addr], &PPU.Palette[0], dst); 
+			break;
 	}
 	
 	PPU_TileVRAMUpdate[key] = vramdirty;
@@ -512,6 +599,7 @@ void PPU_ClearAlpha()
 	
 	bglEnableDepthTest(true);
 	bglDepthFunc(GPU_GEQUAL);
+	bglEnableAlphaTest(false);
 	
 	bglScissorMode(GPU_SCISSOR_DISABLE);
 	
@@ -549,52 +637,6 @@ void PPU_ClearAlpha()
 	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
 	
 	bglDrawArrays(GPU_TRIANGLES, 2*3);
-	/*GPU_FinishDrawing();
-	
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0xFF);
-	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(true, GPU_GREATER, GPU_WRITE_ALPHA);
-	
-	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
-	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(false, GPU_ALWAYS, 0);
-	
-	setUniformMatrix(0x20, snesProjMatrix);
-	
-	GPU_SetTextureEnable(0);
-	
-	GPU_SetTexEnv(0, 
-		GPU_TEVSOURCES(GPU_PRIMARY_COLOR, 0, 0), 
-		GPU_TEVSOURCES(GPU_PRIMARY_COLOR, 0, 0),
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_REPLACE, GPU_REPLACE, 
-		0xFFFFFFFF);
-	GPU_SetDummyTexEnv(1);
-	GPU_SetDummyTexEnv(2);
-	GPU_SetDummyTexEnv(3);
-	GPU_SetDummyTexEnv(4);
-	GPU_SetDummyTexEnv(5);
-	
-	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
-		GPU_ATTRIBFMT(0, 3, GPU_SHORT)|GPU_ATTRIBFMT(1, 4, GPU_UNSIGNED_BYTE),
-		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
-		
-	u32 z = (PPU.ColorMath2 & 0x10) ? 0x40:0x80;
-	ADDVERTEX(0, 0, z,      255, 0, 255, 0);
-	ADDVERTEX(256, 0, z,    255, 0, 255, 0);
-	ADDVERTEX(256, 256, z,  255, 0, 255, 0);
-	ADDVERTEX(0, 0, z,      255, 0, 255, 0);
-	ADDVERTEX(256, 256, z,  255, 0, 255, 0);
-	ADDVERTEX(0, 256, z,    255, 0, 255, 0);
-	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
-	
-	myGPU_DrawArray(GPU_TRIANGLES, 2*3);*/
 
 	vertexPtr = vptr;
 	
@@ -605,7 +647,7 @@ void PPU_ClearAlpha()
 void PPU_HardRenderBG_8x8(u32 setalpha, PPU_Background* bg, int type, u32 prio, int ystart, int yend)
 {
 	u16* tilemap;
-	int tileaddrshift = ((int[]){4, 5})[type];
+	int tileaddrshift = ((int[]){4, 5, 6})[type];
 	u32 xoff, yoff;
 	u16 curtile;
 	int x, y;
@@ -625,12 +667,6 @@ void PPU_HardRenderBG_8x8(u32 setalpha, PPU_Background* bg, int type, u32 prio, 
 		syend = s->EndOffset;
 		
 		if (syend <= ystart)
-		{
-			systart = syend;
-			s++;
-			continue;
-		}
-		if (syend-systart < 2) // hack. Such sections cause problems?
 		{
 			systart = syend;
 			s++;
@@ -1117,6 +1153,29 @@ void PPU_RenderScanline_Hard(u32 line)
 // TODO: later adjust for 16x16 layers
 #define RENDERBG(num, type, prio) PPU_HardRenderBG_8x8(colormath&(1<<num), &PPU.BG[num], type, prio?0x2000:0, ystart, yend)
 
+void PPU_HardRender_Mode0(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
+{
+	if (screen & 0x08) RENDERBG(3, TILE_2BPP, 0);
+	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 0);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(0x00, ystart, yend);
+	
+	if (screen & 0x08) RENDERBG(3, TILE_2BPP, 1);
+	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 1);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(0x10, ystart, yend);
+	
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_2BPP, 0);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(0x20, ystart, yend);
+	
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 1);
+	if (screen & 0x01) RENDERBG(0, TILE_2BPP, 1);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(0x30, ystart, yend);
+}
+
 void PPU_HardRender_Mode1(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
 {
 	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 0);
@@ -1148,6 +1207,63 @@ void PPU_HardRender_Mode1(int ystart, int yend, u32 screen, u32 mode, u32 colorm
 	}
 }
 
+void PPU_HardRender_Mode2(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
+{
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(0x00, ystart, yend);
+	
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(0x10, ystart, yend);
+	
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 1);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(0x20, ystart, yend);
+	
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 1);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(0x30, ystart, yend);
+}
+
+void PPU_HardRender_Mode3(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
+{
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(0x00, ystart, yend);
+	
+	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 0);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(0x10, ystart, yend);
+	
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 1);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(0x20, ystart, yend);
+	
+	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 1);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(0x30, ystart, yend);
+}
+
+void PPU_HardRender_Mode4(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
+{
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 0);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(0x00, ystart, yend);
+	
+	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 0);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(0x10, ystart, yend);
+	
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 1);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(0x20, ystart, yend);
+	
+	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 1);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(0x30, ystart, yend);
+}
+
 void PPU_HardRender(u32 screen, u32 colormath)
 {
 	PPU_ModeSection* s = &PPU.ModeSections[0];
@@ -1157,8 +1273,24 @@ void PPU_HardRender(u32 screen, u32 colormath)
 	{
 		switch (s->Mode & 0x07)
 		{
+			case 0:
+				PPU_HardRender_Mode0(ystart, s->EndOffset, screen?s->SubScreen:s->MainScreen, s->Mode, colormath);
+				break;
+				
 			case 1:
 				PPU_HardRender_Mode1(ystart, s->EndOffset, screen?s->SubScreen:s->MainScreen, s->Mode, colormath);
+				break;
+				
+			case 2:
+				PPU_HardRender_Mode2(ystart, s->EndOffset, screen?s->SubScreen:s->MainScreen, s->Mode, colormath);
+				break;
+				
+			case 3:
+				PPU_HardRender_Mode3(ystart, s->EndOffset, screen?s->SubScreen:s->MainScreen, s->Mode, colormath);
+				break;
+				
+			case 4:
+				PPU_HardRender_Mode4(ystart, s->EndOffset, screen?s->SubScreen:s->MainScreen, s->Mode, colormath);
 				break;
 		}
 		
