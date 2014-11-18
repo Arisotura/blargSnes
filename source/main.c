@@ -391,6 +391,14 @@ void VSyncAndFrameskip()
 		SkipThisFrame = false;
 		FramesSkipped = 0;
 		
+		{
+			u8* bottomfb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
+			
+			UI_SetFramebuffer(bottomfb);
+			UI_Render();
+			GSPGPU_FlushDataCache(NULL, bottomfb, 0x38400);
+		}
+		
 		gfxSwapBuffersGpu();
 		gspWaitForEvent(GSPEVENT_VBlank0, false);
 		//LastVBlank = svcGetSystemTick();
@@ -669,7 +677,7 @@ int main()
 	bglInit();
 	RenderState = 0;
 	
-	vertexBuf = linearAlloc(0x40000);
+	vertexBuf = linearAlloc(0x80000);
 	vertexPtr = vertexBuf;
 	
 	svcSetThreadPriority(gspEventThread, 0x30);
@@ -841,13 +849,13 @@ int main()
 			}
 			
 			//if (!SkipThisFrame)
-			{
+			/*{
 				u8* bottomfb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
 				
 				UI_SetFramebuffer(bottomfb);
 				UI_Render();
 				GSPGPU_FlushDataCache(NULL, bottomfb, 0x38400);
-			}
+			}*/
 			
 			//if ((!SkipThisFrame) || (FramesSkipped > 1))
 			//	gfxSwapBuffersGpu();

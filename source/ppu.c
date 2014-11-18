@@ -611,29 +611,45 @@ void PPU_Write8(u32 addr, u8 val)
 			break;
 			
 		case 0x2C:
-			PPU.MainLayerEnable = val;
-			PPU.ModeDirty = 1;
+			if (PPU.MainLayerEnable != val)
+			{
+				PPU.MainLayerEnable = val;
+				PPU.ModeDirty = 1;
+			}
 			break;
 		case 0x2D:
-			PPU.SubLayerEnable = val;
-			PPU.ModeDirty = 1;
+			if (PPU.SubLayerEnable != val)
+			{
+				PPU.SubLayerEnable = val;
+				PPU.ModeDirty = 1;
+			}
 			break;
 			
 		case 0x2E: // window enable
-			PPU.MainWindowEnable = val;
-			PPU.ModeDirty = 1;
+			if (PPU.MainWindowEnable != val)
+			{
+				PPU.MainWindowEnable = val;
+				PPU.ModeDirty = 1;
+			}
 			break;
 		case 0x2F:
-			PPU.SubWindowEnable = val;
-			PPU.ModeDirty = 1;
+			if (PPU.SubWindowEnable != val)
+			{
+				PPU.SubWindowEnable = val;
+				PPU.ModeDirty = 1;
+			}
 			break;
 		
 		case 0x30:
+			if ((PPU.ColorMath1 ^ val) & 0x03)
+				PPU.ModeDirty = 1;
 			PPU.ColorMath1 = val;
 			break;
 		case 0x31:
 			if ((PPU.ColorMath2 ^ val) & 0x80)
 				PPU.ColorEffectDirty = 1;
+			if ((PPU.ColorMath2 ^ val) & 0x7F)
+				PPU.ModeDirty = 1;
 			PPU.ColorMath2 = val;
 			break;
 			
@@ -643,6 +659,7 @@ void PPU_Write8(u32 addr, u8 val)
 				if (val & 0x20) PPU.SubBackdrop = (PPU.SubBackdrop & ~0xF800) | (intensity << 11);
 				if (val & 0x40) PPU.SubBackdrop = (PPU.SubBackdrop & ~0x07C0) | (intensity << 6);
 				if (val & 0x80) PPU.SubBackdrop = (PPU.SubBackdrop & ~0x003E) | (intensity << 1);
+				PPU.SubBackdropDirty = 1;
 			}
 			break;
 			

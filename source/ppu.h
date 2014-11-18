@@ -131,8 +131,17 @@ typedef struct
 	u8 EndOffset;
 	u8 Mode;
 	u16 MainScreen, SubScreen;
+	u8 ColorMath1, ColorMath2;
 	
 } PPU_ModeSection;
+
+typedef struct
+{
+	u8 EndOffset;
+	u16 Color;
+	u8 Div2;
+	
+} PPU_SubBackdropSection;
 
 
 typedef struct
@@ -208,6 +217,10 @@ typedef struct
 	u8 ColorMath2;
 
 	u16 SubBackdrop;
+	
+	u8 SubBackdropDirty;
+	PPU_SubBackdropSection SubBackdropSections[240];
+	PPU_SubBackdropSection* CurSubBackdrop;
 
 	PPU_ColorEffectSection ColorEffectSections[240];
 	PPU_ColorEffectSection* CurColorEffect;
