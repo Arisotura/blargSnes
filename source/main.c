@@ -62,6 +62,7 @@ u16* SubScreenTex;
 FS_archive sdmcArchive;
 
 
+int forceexit = 0;
 int running = 0;
 int pause = 0;
 u32 framecount = 0;
@@ -110,6 +111,8 @@ void SPCThread(u32 blarg)
 			
 			Audio_MixFinish();
 		}
+		else
+			Audio_Pause();
 	}
 	
 	svcExitThread();
@@ -589,8 +592,10 @@ bool StartROM(char* path)
 	
 	if (spcthread)
 	{
-		exitspc = 1;
+		exitspc = 1; pause = 1;
+		svcSignalEvent(SPCSync);
 		svcWaitSynchronization(spcthread, U64_MAX);
+		svcCloseHandle(spcthread);
 		exitspc = 0;
 	}
 	
@@ -606,7 +611,7 @@ bool StartROM(char* path)
 	
 	if (!SNES_LoadROM(temppath))
 		return false;
-		
+	
 	CPU_Reset();
 	SPC_Reset();
 
@@ -653,6 +658,7 @@ int main()
 	int repeatstate = 0;
 	int repeatcount = 0;
 	
+	forceexit = 0;
 	running = 0;
 	pause = 0;
 	exitspc = 0;
@@ -731,7 +737,7 @@ int main()
 
 
 	APP_STATUS status;
-	while((status = aptGetStatus()) != APP_EXITING)
+	while(!forceexit && (status = aptGetStatus()) != APP_EXITING)
 	{
 		if(status == APP_RUNNING)
 		{
@@ -761,6 +767,7 @@ int main()
 					bprintf("Tap screen or press A to resume.\n");
 					bprintf("Press Select to load another game.\n");
 					pause = 1;
+					svcSignalEvent(SPCSync);
 				}
 			}
 			else
@@ -780,8 +787,13 @@ int main()
 						running = 0;
 						UI_Switch(&UI_ROMMenu);
 						
-						CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 0, 32, 0x3);
-						memset(SubScreenTex, 0, 256*256*2);
+						// copy splashscreen
+						FinishRendering();
+						u32* tempbuf = (u32*)linearAlloc(256*256*4);
+						CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x0);
+						GX_SetDisplayTransfer(NULL, tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
+						gspWaitForPPF();
+						linearFree(tempbuf);
 					}
 					else if (release & KEY_X)
 					{
@@ -865,17 +877,24 @@ int main()
 		}
 		else if(status == APP_SUSPENDING)
 		{
+			FinishRendering();
 			aptReturnToMenu();
 		}
 		else if(status == APP_PREPARE_SLEEPMODE)
 		{
+			FinishRendering();
 			aptSignalReadyForSleep();
 			aptWaitStatusEvent();
 		}
 	}
-	 
-	exitspc = 1;
-	if (spcthread) svcWaitSynchronization(spcthread, U64_MAX);
+	
+	exitspc = 1; pause = 1;
+	svcSignalEvent(SPCSync);
+	if (spcthread) 
+	{
+		svcWaitSynchronization(spcthread, U64_MAX);
+		svcCloseHandle(spcthread);
+	}
 	
 	PPU_DeInit();
 	
@@ -890,7 +909,7 @@ int main()
 	hidExit();
 	gfxExit();
 	aptExit();
-	svcExitProcess();
+	srvExit();
 
     return 0;
 }

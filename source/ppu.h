@@ -166,7 +166,7 @@ typedef struct
 	u16 CGRAM[256];		// SNES CGRAM, xBGR1555
 	u16 Palette[256];	// our own palette, converted to RGBx5551
 	u8 PaletteUpdateCount[64];
-	u8 PaletteUpdateCount256;
+	u16 PaletteUpdateCount256;
 
 	u16 VRAMAddr;
 	u16 VRAMPref;

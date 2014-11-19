@@ -66,12 +66,10 @@ void DrawROMList()
 	int maxfile;
 	int menuy;
 	
-	DrawText(0, 0, RGB(255,255,255), "blargSNES 1.1 - by StapleButter");
+	DrawToolbar();
 	
-	y = 13;  FillRect(0, 319, y, y, RGB(0,255,255));
-	y++;     FillRect(0, 319, y, y, RGB(0,128,255));
-	y += 5;
-	menuy = y;
+	menuy = 26;
+	y = menuy;
 	
 	if (nfiles < 1)
 	{
@@ -198,13 +196,13 @@ void ROMMenu_ButtonPress(u32 btn)
 
 void ROMMenu_Touch(int touch, u32 x, u32 y)
 {
-	int menuy = 19;
+	int menuy = 26;
 	
 	if (y >= menuy)
 	{
 		if (x < 308)
 		{
-			y -= 19;
+			y -= menuy;
 			y /= 12;
 			
 			y += menuscroll;
@@ -247,6 +245,8 @@ void ROMMenu_Touch(int touch, u32 x, u32 y)
 			menudirty = 2;
 		}*/
 	}
+	else if (touch == 0)
+		HandleToolbar(x, y);
 }
 
 

@@ -153,7 +153,6 @@ void PPU_Init_Hard()
 void PPU_DeInit_Hard()
 {
 	linearFree(PPU_TileCache);
-	linearFree(MainScreenTex);
 }
 
 

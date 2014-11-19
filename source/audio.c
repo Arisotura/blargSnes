@@ -66,6 +66,11 @@ void Audio_Init()
 	// TODO: DSP black magic
 }
 
+void Audio_Pause()
+{
+	memset(Audio_Buffer, 0, MIXBUFSIZE*4*4);
+}
+
 void Audio_Mix()
 {
 	DspMixSamplesStereo(DSPMIXBUFSIZE, &Audio_Buffer[cursample]);
