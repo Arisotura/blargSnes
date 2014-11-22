@@ -900,7 +900,7 @@ void PPU_RenderBG_Mode7(u16* buffer, u32 line, u16* pal, u32 alpha, u32 window)
 				if ((x|y) & 0xFFFC0000)
 				{
 					// wraparound
-					if ((PPU.M7Sel & 0xC0) == 0x40)
+					if ((PPU.M7Sel & 0xC0) == 0x80)
 					{
 						// skip pixel (transparent)
 						i++;

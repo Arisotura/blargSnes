@@ -111,6 +111,13 @@ typedef struct
 
 typedef struct
 {
+	u16 Address;
+	u16 Color;		// 3DS-format color
+	
+} PPU_PaletteChange;
+
+typedef struct
+{
 	// no start offset in here; start offset is the end offset of the previous segment
 	u16 EndOffset;	// 256 = final segment
 	u8 WindowMask;	// each 2 bits: 2=inside, 3=outside
@@ -167,6 +174,10 @@ typedef struct
 	u16 Palette[256];	// our own palette, converted to RGBx5551
 	u8 PaletteUpdateCount[64];
 	u16 PaletteUpdateCount256;
+	
+	// mid-frame palette changes
+	//PPU_PaletteChange PaletteChanges[240][64];
+	//u8 NumPaletteChanges[240];
 
 	u16 VRAMAddr;
 	u16 VRAMPref;

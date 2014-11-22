@@ -647,7 +647,6 @@ void reportshit(u32 pc)
 }
 
 
-
 int main() 
 {
 	int i;
@@ -668,7 +667,7 @@ int main()
 	PPU_Init();
 	
 	
-	srvInit();
+	srvInit(); 
 		
 	aptInit();
 	aptOpenSession();
@@ -725,6 +724,7 @@ int main()
 	// copy splashscreen
 	u32* tempbuf = (u32*)linearAlloc(256*256*4);
 	CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x0);
+	GSPGPU_FlushDataCache(NULL, tempbuf, 256*256*4);
 	GX_SetDisplayTransfer(NULL, tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
 	gspWaitForPPF();
 	linearFree(tempbuf);
@@ -733,7 +733,7 @@ int main()
 	
 	UI_Switch(&UI_ROMMenu);
 
-	svcCreateEvent(&SPCSync, 0);
+	svcCreateEvent(&SPCSync, 0); 
 
 
 	APP_STATUS status;
@@ -749,11 +749,8 @@ int main()
 			if (running && !pause)
 			{
 				// emulate
-				//dbgcolor(0xFF);
 				CPU_Run(); // runs the SNES for one frame. Handles PPU rendering.
-				//dbgcolor(0xFF00);
 				ContinueRendering();
-				//dbgcolor(0xFF0000);
 				
 				// SRAM autosave check
 				// TODO: also save SRAM under certain circumstances (pausing, returning to home menu, etc)
@@ -791,6 +788,7 @@ int main()
 						FinishRendering();
 						u32* tempbuf = (u32*)linearAlloc(256*256*4);
 						CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x0);
+						GSPGPU_FlushDataCache(NULL, tempbuf, 256*256*4);
 						GX_SetDisplayTransfer(NULL, tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
 						gspWaitForPPF();
 						linearFree(tempbuf);

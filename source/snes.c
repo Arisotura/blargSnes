@@ -16,12 +16,12 @@
     with blargSnes. If not, see http://www.gnu.org/licenses/.
 */
 
+#include <3ds.h>
+
+#include "mem.h"
 #include "snes.h"
 #include "cpu.h"
 #include "ppu.h"
-
-#include <3ds/services/hid.h>
-#include <3ds/services/fs.h>
 
 
 u8* ROM_Bank0;

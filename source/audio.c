@@ -68,7 +68,8 @@ void Audio_Init()
 
 void Audio_Pause()
 {
-	memset(Audio_Buffer, 0, MIXBUFSIZE*4*4);
+	memset(Audio_Buffer, 0, MIXBUFSIZE*4*4*sizeof(s16));
+	GSPGPU_FlushDataCache(NULL, Audio_Buffer, MIXBUFSIZE*4*4*sizeof(s16));
 }
 
 void Audio_Mix()
@@ -100,6 +101,8 @@ void myCSND_playsound(u32 channel, u32 looping, u32 encoding, u32 samplerate, u3
 
 void Audio_MixFinish()
 {
+	GSPGPU_FlushDataCache(NULL, Audio_Buffer, MIXBUFSIZE*4*4*sizeof(s16));
+	
 	curpos++;
 	if (curpos >= (MIXBUFSIZE/256))
 	{

@@ -75,6 +75,7 @@ extern u16 SNES_HCheck;
 extern u8 SPC_IOPorts[8];
 
 
+bool ROM_LoadFile(char* name);
 void ROM_MapBank(u32 bank, u8* ptr);
 void ROM_SpeedChanged();
 

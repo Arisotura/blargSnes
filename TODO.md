@@ -3,6 +3,7 @@ TODO
 short term
 
  * rebuild the rendering system to make it more flexible etc
+ * some way to do pagescroll in the ROM list
  
 long term
 

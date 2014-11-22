@@ -244,9 +244,30 @@ inline void PPU_SetColor(u32 num, u16 val)
 	
 	if (PPU.HardwareRenderer)
 	{
-		PPU.Palette[num] = temp | 0x0001;
-		PPU.PaletteUpdateCount[num >> 2]++;
-		PPU.PaletteUpdateCount256++;
+		// check if the write is happening mid-frame
+#if 0
+		if (PPU.VCount < 223 && !PPU.ForcedBlank)
+		{
+			// writes happening during this scanline will be applied to the next one
+			// (we assume they happen during HBlank)
+			u32 line = PPU.VCount + 1;
+			
+			u32 n = PPU.NumPaletteChanges[line];
+			PPU.PaletteChanges[line][n].Address = num;
+			PPU.PaletteChanges[line][n].Color = temp | 0x0001;
+			PPU.NumPaletteChanges[line] = n+1;
+			
+			// tell the hardware renderer to start a new section
+			// TODO: also check if the OBJ palette was updated
+			PPU.ModeDirty = 1;
+		}
+		else
+#endif
+		{
+			PPU.Palette[num] = temp | 0x0001;
+			PPU.PaletteUpdateCount[num >> 2]++;
+			PPU.PaletteUpdateCount256++;
+		}
 	}
 	else
 		PPU.Palette[num] = temp;
