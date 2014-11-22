@@ -134,9 +134,16 @@ bool SNES_LoadROM(char* path)
 void SNES_Reset()
 {
 	u32 i, a, b;
+	
+	// generate random garbage to fill the RAM with
+	u64 t = osGetTime();
+	u32 randblarg = (u32)(t ^ (t >> 32ULL) ^ (t >> 19ULL) ^ (t << 7ULL));
 
 	for (i = 0; i < (128 * 1024); i += 4)
-		*(u32*)&SNES_SysRAM[i] = 0x55555555; // idk about this
+	{
+		*(u32*)&SNES_SysRAM[i] = randblarg;
+		randblarg = (randblarg * 0x17374) ^ (randblarg * 0x327) ^ (randblarg << 2);
+	}
 		
 	// fill it with STP opcodes
 	memset(SNES_ExecTrap, 0xDB, 8192);

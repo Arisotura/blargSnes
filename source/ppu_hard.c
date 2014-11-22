@@ -637,7 +637,9 @@ void PPU_ClearSubScreen()
 		u8 g = (col & 0x07C0) >> 3; g |= (g >> 5);
 		u8 b = (col & 0x003E) << 2; b |= (b >> 5);
 		
-		u8 alpha = (s->Div2) ? 0x80:0xFF;
+		// 'If "Sub Screen BG/OBJ Enable" is off (2130h.Bit1=0), then the "Div2" isn't forcefully ignored'
+		// -> this causes a glitch in Super Puyo Puyo-- it has subscreen disabled but color math enabled on BG1 AND div2 enabled
+		u8 alpha = 0xFF;//(s->Div2) ? 0x80:0xFF;
 		ADDVERTEX(0, ystart, 0x80,      	r, g, b, alpha);
 		ADDVERTEX(256, ystart, 0x80,    	r, g, b, alpha);
 		ADDVERTEX(256, s->EndOffset, 0x80,  r, g, b, alpha);
