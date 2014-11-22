@@ -781,8 +781,6 @@ void PPU_HardRenderBG_8x8(u32 setalpha, PPU_Background* bg, int type, u32 prio, 
 		if (systart < ystart) systart = ystart;
 		if (syend > yend) syend = yend;
 		
-		//bprintf("BG%d section %d->%d (%d->%d)\n", (bg-(&PPU.BG[0])), systart, syend, ystart, yend);
-		
 		yoff = s->YScroll + systart;
 		ntiles = 0;
 		
@@ -865,8 +863,6 @@ void PPU_HardRenderBG_8x8(u32 setalpha, PPU_Background* bg, int type, u32 prio, 
 		{
 			PPU_StartBG();
 			
-			//SET_UNIFORM(0x25, 0.0f, 1.0f, (float)(0x80+(num<<4)), 0.0f);
-			
 			bglScissor(0, systart, 256, syend);
 			
 			// set alpha to 128 if we need to disable color math in this BG section
@@ -894,7 +890,176 @@ void PPU_HardRenderBG_8x8(u32 setalpha, PPU_Background* bg, int type, u32 prio, 
 #undef ADDVERTEX
 }
 
-// TODO HERE: 16x16 tiles
+void PPU_HardRenderBG_16x16(u32 setalpha, PPU_Background* bg, int type, u32 prio, int ystart, int yend)
+{
+	u16* tilemap;
+	int tileaddrshift = ((int[]){4, 5, 6})[type];
+	u32 xoff, yoff;
+	u16 curtile;
+	int x, y;
+	u32 idx;
+	int systart = 0, syend;
+	int ntiles = 0;
+	u16* vptr = (u16*)vertexPtr;
+	
+#define ADDVERTEX(x, y, coord) \
+	*vptr++ = x; \
+	*vptr++ = y; \
+	*vptr++ = coord;
+	
+	PPU_BGSection* s = &bg->Sections[0];
+	for (;;)
+	{
+		syend = s->EndOffset;
+		
+		if (syend <= ystart)
+		{
+			systart = syend;
+			s++;
+			continue;
+		}
+
+		if (systart < ystart) systart = ystart;
+		if (syend > yend) syend = yend;
+		
+		yoff = s->YScroll + systart;
+		ntiles = 0;
+		
+		for (y = systart - (yoff&15); y < syend; y += 16, yoff += 16)
+		{
+			tilemap = PPU.VRAM + s->TilemapOffset + ((yoff & 0x1F0) << 2);
+			if (yoff & 0x200)
+			{
+				if (bg->Size & 0x2)
+					tilemap += (bg->Size & 0x1) ? 2048 : 1024;
+			}
+			
+			xoff = s->XScroll;
+			x = -(xoff & 15);
+		
+			for (; x < 256; x += 16, xoff += 16)
+			{
+				idx = (xoff & 0x1F0) >> 4;
+				if (xoff & 0x200)
+				{
+					if (bg->Size & 0x1)
+						idx += 1024;
+				}
+
+				curtile = tilemap[idx];
+				if ((curtile ^ prio) & 0x2000)
+					continue;
+
+				// render the tile
+				
+				u32 addr = s->TilesetOffset + ((curtile & 0x03FF) << tileaddrshift);
+				u32 palid = (curtile & 0x1C00) >> 10;
+				
+				u32 coord0 = PPU_StoreTileInCache(type, palid, addr+(0x00<<tileaddrshift));
+				u32 coord1 = PPU_StoreTileInCache(type, palid, addr+(0x01<<tileaddrshift));
+				u32 coord2 = PPU_StoreTileInCache(type, palid, addr+(0x10<<tileaddrshift));
+				u32 coord3 = PPU_StoreTileInCache(type, palid, addr+(0x11<<tileaddrshift));
+				
+#define DO_SUBTILE(sx, sy, coord, t0, t1, t2, t3) \
+					{ \
+						ADDVERTEX(x+sx,   y+sy,     coord+t0); \
+						ADDVERTEX(x+sx+8, y+sy,     coord+t1); \
+						ADDVERTEX(x+sx+8, y+sy+8,   coord+t3); \
+						ADDVERTEX(x+sx,   y+sy,     coord+t0); \
+						ADDVERTEX(x+sx+8, y+sy+8,   coord+t3); \
+						ADDVERTEX(x+sx,   y+sy+8,   coord+t2); \
+						ntiles++; \
+					}
+				
+				switch (curtile & 0xC000)
+				{
+					case 0x0000:
+						if ((y - systart) > -8)
+						{
+							if (x > -8)  DO_SUBTILE(0, 0,  coord0, 0x0000, 0x0001, 0x0100, 0x0101);
+							if (x < 248) DO_SUBTILE(8, 0,  coord1, 0x0000, 0x0001, 0x0100, 0x0101);
+						}
+						if (y < (syend - 8))
+						{
+							if (x > -8)  DO_SUBTILE(0, 8,  coord2, 0x0000, 0x0001, 0x0100, 0x0101);
+							if (x < 248) DO_SUBTILE(8, 8,  coord3, 0x0000, 0x0001, 0x0100, 0x0101);
+						}
+						break;
+						
+					case 0x4000: // hflip
+						if ((y - systart) > -8)
+						{
+							if (x > -8)  DO_SUBTILE(0, 0,  coord1, 0x0001, 0x0000, 0x0101, 0x0100);
+							if (x < 248) DO_SUBTILE(8, 0,  coord0, 0x0001, 0x0000, 0x0101, 0x0100);
+						}
+						if (y < (syend - 8))
+						{
+							if (x > -8)  DO_SUBTILE(0, 8,  coord3, 0x0001, 0x0000, 0x0101, 0x0100);
+							if (x < 248) DO_SUBTILE(8, 8,  coord2, 0x0001, 0x0000, 0x0101, 0x0100);
+						}
+						break;
+						
+					case 0x8000: // vflip
+						if ((y - systart) > -8)
+						{
+							if (x > -8)  DO_SUBTILE(0, 0,  coord2, 0x0100, 0x0101, 0x0000, 0x0001);
+							if (x < 248) DO_SUBTILE(8, 0,  coord3, 0x0100, 0x0101, 0x0000, 0x0001);
+						}
+						if (y < (syend - 8))
+						{
+							if (x > -8)  DO_SUBTILE(0, 8,  coord0, 0x0100, 0x0101, 0x0000, 0x0001);
+							if (x < 248) DO_SUBTILE(8, 8,  coord1, 0x0100, 0x0101, 0x0000, 0x0001);
+						}
+						break;
+						
+					case 0xC000: // hflip+vflip
+						if ((y - systart) > -8)
+						{
+							if (x > -8)  DO_SUBTILE(0, 0,  coord3, 0x0101, 0x0100, 0x0001, 0x0000);
+							if (x < 248) DO_SUBTILE(8, 0,  coord2, 0x0101, 0x0100, 0x0001, 0x0000);
+						}
+						if (y < (syend - 8))
+						{
+							if (x > -8)  DO_SUBTILE(0, 8,  coord1, 0x0101, 0x0100, 0x0001, 0x0000);
+							if (x < 248) DO_SUBTILE(8, 8,  coord0, 0x0101, 0x0100, 0x0001, 0x0000);
+						}
+						break;
+				}
+				
+#undef DO_SUBTILE
+			}
+		}
+		
+		if (ntiles)
+		{
+			PPU_StartBG();
+			
+			bglScissor(0, systart, 256, syend);
+			
+			// set alpha to 128 if we need to disable color math in this BG section
+			bglTexEnv(0, 
+				GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
+				GPU_TEVSOURCES(GPU_TEXTURE0, GPU_CONSTANT, 0),
+				GPU_TEVOPERANDS(0,0,0), 
+				GPU_TEVOPERANDS(0,0,0), 
+				GPU_REPLACE, setalpha ? GPU_REPLACE:GPU_MODULATE, 
+				setalpha ? 0xFFFFFFFF:0x80FFFFFF);
+			
+			bglAttribBuffer(vertexPtr);
+			
+			vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
+			vertexPtr = vptr;
+			
+			bglDrawArrays(GPU_TRIANGLES, ntiles*2*3);
+		}
+		
+		if (syend >= yend) break;
+		systart = syend;
+		s++;
+	}
+	
+#undef ADDVERTEX
+}
 
 
 #if 0
@@ -1378,8 +1543,14 @@ void PPU_RenderScanline_Hard(u32 line)
 }
 
 
-// TODO: later adjust for 16x16 layers
-#define RENDERBG(num, type, prio) PPU_HardRenderBG_8x8(colormath&(1<<num), &PPU.BG[num], type, prio?0x2000:0, ystart, yend)
+
+#define RENDERBG(num, type, prio) \
+	{ \
+		if (mode & (0x10<<num)) \
+			PPU_HardRenderBG_16x16(colormath&(1<<num), &PPU.BG[num], type, prio?0x2000:0, ystart, yend); \
+		else \
+			PPU_HardRenderBG_8x8(colormath&(1<<num), &PPU.BG[num], type, prio?0x2000:0, ystart, yend); \
+	}
 
 void PPU_HardRender_Mode0(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
 {
