@@ -191,6 +191,7 @@ inline void PPU_SetXScroll(int nbg, u8 val)
 	{
 		PPU.M7XScroll = (s16)((val << 8) | PPU.M7Old);
 		PPU.M7Old = val;
+		PPU.Mode7Dirty = 1;
 	}
 	
 	PPU_Background* bg = &PPU.BG[nbg];
@@ -205,6 +206,7 @@ inline void PPU_SetYScroll(int nbg, u8 val)
 	{
 		PPU.M7YScroll = (s16)((val << 8) | PPU.M7Old);
 		PPU.M7Old = val;
+		PPU.Mode7Dirty = 1;
 	}
 	
 	PPU_Background* bg = &PPU.BG[nbg];
@@ -550,6 +552,7 @@ void PPU_Write8(u32 addr, u8 val)
 			
 		case 0x1A:
 			PPU.M7Sel = val;
+			PPU.Mode7Dirty = 1;
 			break;
 			
 		case 0x1B: // multiply/mode7 shiz
@@ -560,29 +563,35 @@ void PPU_Write8(u32 addr, u8 val)
 				PPU.M7A = (s16)fval;
 				PPU.M7Old = val;
 			}
+			PPU.Mode7Dirty = 1;
 			break;
 		case 0x1C:
 			PPU.M7B = (s16)((val << 8) | PPU.M7Old);
 			PPU.M7Old = val;
 			PPU.MulB = (s8)val;
 			PPU.MulResult = (s32)PPU.MulA * (s32)PPU.MulB;
+			PPU.Mode7Dirty = 1;
 			break;
 		case 0x1D:
 			PPU.M7C = (s16)((val << 8) | PPU.M7Old);
 			PPU.M7Old = val;
+			PPU.Mode7Dirty = 1;
 			break;
 		case 0x1E:
 			PPU.M7D = (s16)((val << 8) | PPU.M7Old);
 			PPU.M7Old = val;
+			PPU.Mode7Dirty = 1;
 			break;
 			
 		case 0x1F: // mode7 center
 			PPU.M7RefX = (s16)((val << 8) | PPU.M7Old);
 			PPU.M7Old = val;
+			PPU.Mode7Dirty = 1;
 			break;
 		case 0x20:
 			PPU.M7RefY = (s16)((val << 8) | PPU.M7Old);
 			PPU.M7Old = val;
+			PPU.Mode7Dirty = 1;
 			break;
 			
 		case 0x21:

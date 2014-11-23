@@ -137,14 +137,14 @@ void SNES_Reset()
 	
 	// generate random garbage to fill the RAM with
 	u64 t = osGetTime();
-	u32 randblarg = (u32)(t ^ (t >> 32ULL) ^ (t >> 19ULL) ^ (t << 7ULL));
+	u32 randblarg = (u32)(t ^ (t >> 32ULL) ^ (t >> 19ULL) ^ (t << 7ULL) ^ (t >> 53ULL));
 
 	for (i = 0; i < (128 * 1024); i += 4)
 	{
-		*(u32*)&SNES_SysRAM[i] = randblarg;
-		randblarg = (randblarg * 0x17374) ^ (randblarg * 0x327) ^ (randblarg << 2);
+		*(u32*)&SNES_SysRAM[i] = randblarg ^ (randblarg << 15) ^ (randblarg << 26) ^ (randblarg * 0x00700000);
+		randblarg = (randblarg * 0x17374) ^ (randblarg * 0x327) ^ (randblarg << 2) ^ (randblarg << 17);
 	}
-		
+	
 	// fill it with STP opcodes
 	memset(SNES_ExecTrap, 0xDB, 8192);
 		

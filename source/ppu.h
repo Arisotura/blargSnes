@@ -21,6 +21,25 @@
 
 typedef struct
 {
+	u8 EndOffset;
+	
+	u8 Sel;
+	
+	s16 A;
+	s16 B;
+	s16 C;
+	s16 D;
+	
+	s16 RefX;
+	s16 RefY;
+	
+	s16 XScroll;
+	s16 YScroll;
+	
+} PPU_Mode7Section;
+
+typedef struct
+{
 	u16* Dest;
 	u16* SrcPixels;
 	u16 Attrib;
@@ -257,6 +276,10 @@ typedef struct
 	s16 M7RefY;
 	s16 M7XScroll;
 	s16 M7YScroll;
+	
+	PPU_Mode7Section Mode7Sections[240];
+	PPU_Mode7Section* CurMode7Section;
+	u8 Mode7Dirty;
 
 	PPU_Background BG[4];
 
