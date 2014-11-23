@@ -1120,7 +1120,10 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend)
 					// wraparound
 					if ((s->Sel & 0xC0) == 0x80)
 					{
-						// skip pixel (transparent)
+						// transparent
+						*buffer = 0;
+						buffer += xincr[i&7];
+						
 						x += s->A;
 						y += s->C;
 						continue;
