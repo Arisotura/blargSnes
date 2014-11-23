@@ -639,11 +639,14 @@ bool StartROM(char* path)
 
 
 int reported=0;
-void reportshit(u32 pc)
+void reportshit(u32 pc, u32 a, u32 y)
 {
-	if (reported) return;
+	/*if (reported) return;
 	reported = 1;
 	bprintf("-- %06X\n", pc);
+	bprintf("--- %04X %04X\n", *(u16*)&SNES_SysRAM[0x1E5A], *(u16*)&SNES_SysRAM[0x1E5E]);
+	bprintf("--- %04X %04X\n", *(u16*)&SNES_SysRAM[0x6], *(u16*)&SNES_SysRAM[0xA]);
+	dbg_save("/snesram_earthbound.bin", SNES_SysRAM, 128*1024);*/
 }
 
 
@@ -796,6 +799,7 @@ int main()
 					else if (release & KEY_X)
 					{
 						bprintf("PC: %02X|%04X\n", CPU_Regs.PBR, CPU_Regs.PC);
+						dbg_save("/snesram.bin", SNES_SysRAM, 128*1024);
 					}
 					
 					if ((held & (KEY_L|KEY_R)) == (KEY_L|KEY_R))

@@ -758,8 +758,11 @@ irq_end:
 				@ debug code
 				@mov r0, snesPC, lsr #0x10
 				@orr r0, r0, snesPBR, lsl #0x10
-				@ldr r1, =debugpc
-				@str r0, [r1]
+				@mov r1, snesA
+				@mov r2, snesY
+				@stmdb sp!, {r12}
+				@bl reportshit
+				@ldmia sp!, {r12}
 				@ debug code end
 
 				OpcodePrefetch8
@@ -4337,7 +4340,8 @@ OP_m0_TXA:
 	
 OP_m1_TXA:
 	bic snesA, snesA, #0xFF
-	orr snesA, snesA, snesX
+	and r0, snesX, #0xFF
+	orr snesA, snesA, r0
 	bic snesP, snesP, #flagNZ
 	tst snesA, #0xFF
 	orreq snesP, snesP, #flagZ
@@ -4359,7 +4363,8 @@ OP_m0_TYA:
 	
 OP_m1_TYA:
 	bic snesA, snesA, #0xFF
-	orr snesA, snesA, snesY
+	and r0, snesY, #0xFF
+	orr snesA, snesA, r0
 	bic snesP, snesP, #flagNZ
 	tst snesA, #0xFF
 	orreq snesP, snesP, #flagZ
