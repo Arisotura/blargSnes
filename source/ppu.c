@@ -659,14 +659,14 @@ void PPU_Write8(u32 addr, u8 val)
 			if (PPU.MainWindowEnable != val)
 			{
 				PPU.MainWindowEnable = val;
-				PPU.ModeDirty = 1;
+				if (PPU.HardwareRenderer) PPU.WindowDirty = 1;
 			}
 			break;
 		case 0x2F:
 			if (PPU.SubWindowEnable != val)
 			{
 				PPU.SubWindowEnable = val;
-				PPU.ModeDirty = 1;
+				if (PPU.HardwareRenderer) PPU.WindowDirty = 1;
 			}
 			break;
 		
@@ -759,10 +759,8 @@ void PPU_Write16(u32 addr, u16 val)
 #define WINMASK_2   (3|(2<<2))
 #define WINMASK_12  (2|(2<<2))
 
-inline void PPU_ComputeSingleWindow(u16 x1, u16 x2, u8 mask)
+inline void PPU_ComputeSingleWindow(PPU_WindowSegment* s, u32 x1, u32 x2, u32 mask)
 {
-	PPU_WindowSegment* s = &PPU.Window[0];
-	
 	if (x1 < x2)
 	{
 		s->EndOffset = x1;
@@ -778,15 +776,14 @@ inline void PPU_ComputeSingleWindow(u16 x1, u16 x2, u8 mask)
 	s->WindowMask = WINMASK_OUT;
 }
 
-void PPU_ComputeWindows()
+void PPU_ComputeWindows(PPU_WindowSegment* s)
 {
-	PPU_WindowSegment* s;
+	PPU_WindowSegment* first_s = s;
 	
 	// check for cases that would disable windows fully
 	if ((!((PPU.MainScreen|PPU.SubScreen) & 0x1F00)) && 
 		(((PPU.ColorMath1 & 0x30) == 0x00) || ((PPU.ColorMath1 & 0x30) == 0x30)))
 	{
-		s = &PPU.Window[0];
 		s->EndOffset = 256;
 		s->WindowMask = 0x0F;
 		s->ColorMath = 0x10;
@@ -797,18 +794,16 @@ void PPU_ComputeWindows()
 
 	if (PPU.WinX[2] >= PPU.WinX[3])
 	{
-		PPU_ComputeSingleWindow(PPU.WinX[0], PPU.WinX[1], WINMASK_1);
+		PPU_ComputeSingleWindow(s, PPU.WinX[0], PPU.WinX[1], WINMASK_1);
 	}
 	else if (PPU.WinX[0] >= PPU.WinX[1])
 	{
-		PPU_ComputeSingleWindow(PPU.WinX[2], PPU.WinX[3], WINMASK_2);
+		PPU_ComputeSingleWindow(s, PPU.WinX[2], PPU.WinX[3], WINMASK_2);
 	}
 	else
 	{
 		// okay, we have two windows
-		
-		s = &PPU.Window[0];
-				
+
 		if (PPU.WinX[0] < PPU.WinX[2])
 		{
 			// window 1 first
@@ -906,7 +901,7 @@ void PPU_ComputeWindows()
 	}
 	
 	// precompute the final window for color math
-	s = &PPU.Window[0];
+	s = first_s;
 	for (;;)
 	{
 		u16 isinside = PPU.ColorMathWindowCombine & (1 << (s->WindowMask ^ PPU.ColorMathWindowMask));
@@ -916,12 +911,6 @@ void PPU_ComputeWindows()
 		s++;
 	}
 }
-
-
-extern u32* gxCmdBuf;
-extern u32* gpuOut;
-
-extern Handle gspEvents[GSPEVENT_MAX];
 
 
 void PPU_RenderScanline(u32 line)
@@ -959,4 +948,7 @@ void PPU_VBlank()
 	
 	if (!PPU.ForcedBlank)
 		PPU.OBJOverflow = 0;
+		
+	if (SNES_AutoJoypad)
+		SNES_JoyBit = 16;
 }

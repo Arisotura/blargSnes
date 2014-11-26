@@ -1282,7 +1282,7 @@ void PPU_RenderScanline_Soft(u32 line)
 	
 	if (PPU.WindowDirty)
 	{
-		PPU_ComputeWindows();
+		PPU_ComputeWindows(&PPU.Window[0]);
 		PPU.WindowDirty = 0;
 	}
 	

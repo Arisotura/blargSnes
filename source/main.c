@@ -38,6 +38,7 @@
 #include "render_soft_vsh_shbin.h"
 #include "render_hard_vsh_shbin.h"
 #include "plain_quad_vsh_shbin.h"
+#include "window_mask_vsh_shbin.h"
 
 
 u32* gpuOut;
@@ -48,6 +49,7 @@ DVLB_s* finalShader;
 DVLB_s* softRenderShader;
 DVLB_s* hardRenderShader;
 DVLB_s* plainQuadShader;
+DVLB_s* windowMaskShader;
 
 void* vertexBuf;
 void* vertexPtr;
@@ -71,6 +73,9 @@ u8 RenderState = 0;
 int FramesSkipped = 0;
 bool SkipThisFrame = false;
 u64 LastVBlank = 0;
+
+// debug
+u32 ntriangles = 0;
 
 // hax
 extern Handle gspEventThread;
@@ -303,7 +308,6 @@ void RenderTopScreen()
 	bglAttribBuffer(screenVertices);
 	
 	bglDrawArrays(GPU_TRIANGLES, 2*3); // screen
-	
 	
 	if (!RenderState)
 	{
@@ -698,6 +702,7 @@ int main()
 	softRenderShader = SHDR_ParseSHBIN((u32*)render_soft_vsh_shbin, render_soft_vsh_shbin_size);
 	hardRenderShader = SHDR_ParseSHBIN((u32*)render_hard_vsh_shbin, render_hard_vsh_shbin_size);
 	plainQuadShader = SHDR_ParseSHBIN((u32*)plain_quad_vsh_shbin, plain_quad_vsh_shbin_size);
+	windowMaskShader = SHDR_ParseSHBIN((u32*)window_mask_vsh_shbin, window_mask_vsh_shbin_size);
 	
 	GX_SetMemoryFill(NULL, gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
 	gspWaitForPSC0();
