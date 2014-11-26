@@ -21,6 +21,25 @@
 
 typedef struct
 {
+	u8 EndOffset;
+	
+	u8 Sel;
+	
+	s16 A;
+	s16 B;
+	s16 C;
+	s16 D;
+	
+	s16 RefX;
+	s16 RefY;
+	
+	s16 XScroll;
+	s16 YScroll;
+	
+} PPU_Mode7Section;
+
+typedef struct
+{
 	u16* Dest;
 	u16* SrcPixels;
 	u16 Attrib;
@@ -111,12 +130,27 @@ typedef struct
 
 typedef struct
 {
+	u16 Address;
+	u16 Color;		// 3DS-format color
+	
+} PPU_PaletteChange;
+
+typedef struct
+{
 	// no start offset in here; start offset is the end offset of the previous segment
 	u16 EndOffset;	// 256 = final segment
 	u8 WindowMask;	// each 2 bits: 2=inside, 3=outside
 	u8 ColorMath;	// 0x20 = inside color math window, 0x10 = outside
+	u8 FinalMaskMain, FinalMaskSub; // for use by the hardware renderer
 	
 } PPU_WindowSegment;
+
+typedef struct
+{
+	u8 EndOffset;
+	PPU_WindowSegment Window[5];
+	
+} PPU_WindowSection;
 
 typedef struct
 {
@@ -130,8 +164,18 @@ typedef struct
 {
 	u8 EndOffset;
 	u8 Mode;
+	u16 MainScreen, SubScreen;
+	u8 ColorMath1, ColorMath2;
 	
 } PPU_ModeSection;
+
+typedef struct
+{
+	u8 EndOffset;
+	u16 Color;
+	u8 Div2;
+	
+} PPU_SubBackdropSection;
 
 
 typedef struct
@@ -156,7 +200,11 @@ typedef struct
 	u16 CGRAM[256];		// SNES CGRAM, xBGR1555
 	u16 Palette[256];	// our own palette, converted to RGBx5551
 	u8 PaletteUpdateCount[64];
-	u8 PaletteUpdateCount256;
+	u16 PaletteUpdateCount256;
+	
+	// mid-frame palette changes
+	//PPU_PaletteChange PaletteChanges[240][64];
+	//u8 NumPaletteChanges[240];
 
 	u16 VRAMAddr;
 	u16 VRAMPref;
@@ -181,7 +229,7 @@ typedef struct
 
 	u8 Mode;
 	
-	u8 LastMode;
+	u8 ModeDirty;
 	PPU_ModeSection ModeSections[240];
 	PPU_ModeSection* CurModeSection;
 
@@ -207,6 +255,10 @@ typedef struct
 	u8 ColorMath2;
 
 	u16 SubBackdrop;
+	
+	u8 SubBackdropDirty;
+	PPU_SubBackdropSection SubBackdropSections[240];
+	PPU_SubBackdropSection* CurSubBackdrop;
 
 	PPU_ColorEffectSection ColorEffectSections[240];
 	PPU_ColorEffectSection* CurColorEffect;
@@ -232,6 +284,10 @@ typedef struct
 	s16 M7RefY;
 	s16 M7XScroll;
 	s16 M7YScroll;
+	
+	PPU_Mode7Section Mode7Sections[240];
+	PPU_Mode7Section* CurMode7Section;
+	u8 Mode7Dirty;
 
 	PPU_Background BG[4];
 
@@ -245,6 +301,9 @@ typedef struct
 	u16 ColorMathWindowCombine;
 	
 	PPU_WindowSegment Window[5];
+	
+	PPU_WindowSection WindowSections[240];
+	PPU_WindowSection* CurWindowSection;
 
 	u8 WindowDirty;
 
@@ -277,6 +336,9 @@ void PPU_Write16(u32 addr, u16 val);
 void PPU_RenderScanline(u32 line);
 void PPU_VBlank();
 
+
+void PPU_Init_Soft();
+void PPU_DeInit_Soft();
 
 void PPU_RenderScanline_Soft(u32 line);
 void PPU_VBlank_Soft();

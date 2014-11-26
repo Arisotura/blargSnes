@@ -66,6 +66,35 @@ void Audio_Init()
 	// TODO: DSP black magic
 }
 
+void Audio_DeInit()
+{
+	if (Audio_Type == 1)
+	{
+		CSND_setchannel_playbackstate(8, 0);
+		CSND_setchannel_playbackstate(9, 0);
+		CSND_setchannel_playbackstate(10, 0);
+		CSND_setchannel_playbackstate(11, 0);
+				
+		CSND_sharedmemtype0_cmdupdatestate(0);
+		
+		CSND_shutdown();
+	}
+}
+
+void Audio_Pause()
+{
+	// stop
+	CSND_setchannel_playbackstate(8, 0);
+	CSND_setchannel_playbackstate(9, 0);
+	CSND_setchannel_playbackstate(10, 0);
+	CSND_setchannel_playbackstate(11, 0);
+			
+	CSND_sharedmemtype0_cmdupdatestate(0);
+	
+	memset(Audio_Buffer, 0, MIXBUFSIZE*4*4*sizeof(s16));
+	GSPGPU_FlushDataCache(NULL, Audio_Buffer, MIXBUFSIZE*4*4*sizeof(s16));
+}
+
 void Audio_Mix()
 {
 	DspMixSamplesStereo(DSPMIXBUFSIZE, &Audio_Buffer[cursample]);
@@ -95,6 +124,8 @@ void myCSND_playsound(u32 channel, u32 looping, u32 encoding, u32 samplerate, u3
 
 void Audio_MixFinish()
 {
+	GSPGPU_FlushDataCache(NULL, Audio_Buffer, MIXBUFSIZE*4*4*sizeof(s16));
+	
 	curpos++;
 	if (curpos >= (MIXBUFSIZE/256))
 	{

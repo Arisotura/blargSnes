@@ -672,6 +672,21 @@ newline:
 			
 emuloop:
 				mov r3, snesCycles, asr #0x10
+				
+				@tst snesP, #flagRender
+				@bne norender
+				@ldr r0, =(1364-512)
+				@cmp r0, r3
+				@bne norender
+				@orr snesP, snesP, #flagRender
+				
+				@sub r0, snesCycles, r3, lsl #0x10
+				@cmp r0, #0xE0
+				@bge norender
+				@SafeCall_3 PPU_RenderScanline
+				
+norender:
+				
 				ldrh r0, [memoryMap, #-0x6] @ IRQ cond in lower bits, flags in higher bits
 				tst r0, #0x4000				@ check if we gotta handle the HBlank
 				bne hblank_end
@@ -743,8 +758,11 @@ irq_end:
 				@ debug code
 				@mov r0, snesPC, lsr #0x10
 				@orr r0, r0, snesPBR, lsl #0x10
-				@ldr r1, =debugpc
-				@str r0, [r1]
+				@mov r1, snesA
+				@mov r2, snesY
+				@stmdb sp!, {r12}
+				@bl reportshit
+				@ldmia sp!, {r12}
 				@ debug code end
 
 				OpcodePrefetch8
@@ -757,6 +775,7 @@ emulate_hardware:
 			ldrb r2, [memoryMap, #-0x5]
 			bic r2, r2, #0x48				@ clear HBlank and per-scanline IRQ flags
 			strb r2, [memoryMap, #-0x5]
+			@bic snesP, snesP, #flagRender
 			mov r1, snesCycles, lsl #0x10
 			
 			cmp r1, #0xDF0000
@@ -4321,7 +4340,8 @@ OP_m0_TXA:
 	
 OP_m1_TXA:
 	bic snesA, snesA, #0xFF
-	orr snesA, snesA, snesX
+	and r0, snesX, #0xFF
+	orr snesA, snesA, r0
 	bic snesP, snesP, #flagNZ
 	tst snesA, #0xFF
 	orreq snesP, snesP, #flagZ
@@ -4343,7 +4363,8 @@ OP_m0_TYA:
 	
 OP_m1_TYA:
 	bic snesA, snesA, #0xFF
-	orr snesA, snesA, snesY
+	and r0, snesY, #0xFF
+	orr snesA, snesA, r0
 	bic snesP, snesP, #flagNZ
 	tst snesA, #0xFF
 	orreq snesP, snesP, #flagZ

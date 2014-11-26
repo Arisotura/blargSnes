@@ -16,12 +16,12 @@
     with blargSnes. If not, see http://www.gnu.org/licenses/.
 */
 
+#include <3ds.h>
+
+#include "mem.h"
 #include "snes.h"
 #include "cpu.h"
 #include "ppu.h"
-
-#include <3ds/services/hid.h>
-#include <3ds/services/fs.h>
 
 
 u8* ROM_Bank0;
@@ -62,6 +62,11 @@ u8 SNES_HVBJOY = 0x00;
 u16 SNES_VMatch = 0;
 u16 SNES_HMatchRaw = 0, SNES_HMatch = 0;
 u16 SNES_HCheck = 0;
+
+u8 SNES_AutoJoypad = 0;
+u8 SNES_JoyBit = 0;
+u32 SNES_JoyBuffer = 0;
+u8 SNES_Joy16 = 0;
 
 u8 SNES_MulA = 0;
 u16 SNES_MulRes = 0;
@@ -134,10 +139,17 @@ bool SNES_LoadROM(char* path)
 void SNES_Reset()
 {
 	u32 i, a, b;
+	
+	// generate random garbage to fill the RAM with
+	u64 t = osGetTime();
+	u32 randblarg = (u32)(t ^ (t >> 32ULL) ^ (t >> 19ULL) ^ (t << 7ULL) ^ (t >> 53ULL));
 
 	for (i = 0; i < (128 * 1024); i += 4)
-		*(u32*)&SNES_SysRAM[i] = 0x55555555; // idk about this
-		
+	{
+		*(u32*)&SNES_SysRAM[i] = randblarg ^ (randblarg << 15) ^ (randblarg << 26) ^ (randblarg * 0x00700000);
+		randblarg = (randblarg * 0x17374) ^ (randblarg * 0x327) ^ (randblarg << 2) ^ (randblarg << 17);
+	}
+	
 	// fill it with STP opcodes
 	memset(SNES_ExecTrap, 0xDB, 8192);
 		
@@ -233,6 +245,11 @@ void SNES_Reset()
 	SNES_DivA = 0;
 	SNES_DivRes = 0;
 	
+	SNES_AutoJoypad = 0;
+	SNES_JoyBit = 0;
+	SNES_JoyBuffer = 0;
+	SNES_Joy16 = 0;
+	
 	PPU_Reset();
 }
 
@@ -309,10 +326,17 @@ inline u8 IO_ReadKeysHigh()
 	return ret;
 }
 
+void IO_ManualReadKeys()
+{
+	// normal joypad
+	SNES_JoyBuffer = 0xFFFF0000 | IO_ReadKeysLow() | (IO_ReadKeysHigh() << 8);
+}
+
 
 u8 SNES_GIORead8(u32 addr)
 {
-	u8 ret = 0;
+	u8 ret = 0x42;
+	
 	switch (addr)
 	{
 		case 0x10:
@@ -366,7 +390,8 @@ u8 SNES_GIORead8(u32 addr)
 			// unimplemented
 			break;
 			
-		default: bprintf("Open bus 42%02X\n", addr); break;
+		default: // open bus
+			break;
 	}
 
 	return ret;
@@ -406,6 +431,7 @@ void SNES_GIOWrite8(u32 addr, u8 val)
 			// the NMI flag is handled in mem_io.s
 			SNES_Status->IRQCond = (val & 0x30) >> 4;
 			SNES_HCheck = (SNES_Status->IRQCond & 0x1) ? SNES_HMatch : 1364;
+			SNES_AutoJoypad = (val & 0x01);
 			break;
 			
 		case 0x02:
@@ -520,31 +546,49 @@ u8 SNES_JoyRead8(u32 addr)
 {
 	u8 ret = 0;
 
-	// this isn't proper or even nice
-	// games that actually require manual joypad I/O will fuck up
-	// but this seems to convince SMAS that there is a joystick plugged in
-	if (addr == 0x16) ret = 0x01;
-	else if (addr != 0x17) bprintf("Open bus 40%02X\n", addr);
+	if (addr == 0x16)
+	{
+		// TODO: investigate later
+		// this shit breaks SMAS SMB1 (pressing Start returns to menu)
+		/*if (SNES_Joy16 & 0x01)
+		{
+			ret = 0;
+		}
+		else
+		{
+			if (SNES_JoyBit == 0) IO_ManualReadKeys();
+			
+			ret = (SNES_JoyBuffer >> (SNES_JoyBit ^ 15)) & 1;
+			SNES_JoyBit++;
+		}*/
+		ret = 0x01;
+	}
+	else if (addr != 0x17) 
+		bprintf("Open bus 40%02X\n", addr);
 
 	return ret;
 }
 
 u16 SNES_JoyRead16(u32 addr)
 {
-	u16 ret = 0;
-	
-	//bprintf("joy read16 40%02X\n", addr);
-	if (addr != 0x16) bprintf("Open bus (16) 40%02X\n", addr);
-
-	return ret;
+	return SNES_JoyRead8(addr) | (SNES_JoyRead8(addr+1) << 8);
 }
 
 void SNES_JoyWrite8(u32 addr, u8 val)
 {
+	if (addr == 0x16)
+	{
+		if (!(SNES_Joy16 & 0x01) && (val & 0x01))
+			SNES_JoyBit = 0;
+		
+		SNES_Joy16 = val;
+	}
 }
 
 void SNES_JoyWrite16(u32 addr, u16 val)
 {
+	SNES_JoyWrite8(addr, val&0xFF);
+	SNES_JoyWrite8(addr+1, val>>8);
 }
 
 

@@ -44,6 +44,11 @@ typedef struct
 	
 } SNES_StatusData;
 
+extern u8 SNES_AutoJoypad;
+extern u8 SNES_JoyBit;
+extern u32 SNES_JoyBuffer;
+extern u8 SNES_Joy16;
+
 #define SNESSTATUS_SIZE ((sizeof(SNES_StatusData) + 3) & ~3)
 
 #define MEM_PTR(b, a) Mem_PtrTable[((b) << 3) | ((a) >> 13)]
@@ -75,6 +80,7 @@ extern u16 SNES_HCheck;
 extern u8 SPC_IOPorts[8];
 
 
+bool ROM_LoadFile(char* name);
 void ROM_MapBank(u32 bank, u8* ptr);
 void ROM_SpeedChanged();
 

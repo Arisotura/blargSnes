@@ -18,6 +18,7 @@
 
 #include <3ds.h>
 
+#include "blargGL.h"
 #include "mem.h"
 #include "snes.h"
 #include "ppu.h"
@@ -25,23 +26,20 @@
 
 #define SET_UNIFORM(n, v0, v1, v2, v3) \
 	{ \
-		float blarg[4] = {(v3), (v2), (v1), (v0)}; \
-		GPU_SetUniform(n, (u32*)blarg, 1); \
+		float blarg[4] = {(v0), (v1), (v2), (v3)}; \
+		bglUniform(n, blarg); \
 	}
 
 
-extern u32* gxCmdBuf;
 extern void* vertexBuf;
-
-// ugly global but makes shit easier to deal with
 extern void* vertexPtr;
 
 extern DVLB_s* hardRenderShader;
 extern DVLB_s* plainQuadShader;
+extern DVLB_s* windowMaskShader;
 
 extern float snesProjMatrix[16];
 
-extern float* screenVertices;
 extern u32* gpuOut;
 extern u32* gpuDOut;
 extern u32* SNESFrame;
@@ -50,6 +48,15 @@ extern u16* SubScreenTex;
 
 u32* OBJColorBuffer;
 u32* OBJDepthBuffer;
+
+u16* Mode7ColorBuffer;
+
+u32 YOffset256[256];
+
+//u16 TempPalette[256];
+#define TempPalette PPU.Palette
+
+int doingBG = 0;
 
 
 // tile cache:
@@ -74,45 +81,41 @@ u32* OBJDepthBuffer;
 
 // SHIT THAT CAN BE CHANGED MIDFRAME
 
-// * video mode
+// + video mode
+// + layer enable/disable
 
 // * mosaic
 
-// * master brightness
-// * color math add/sub
+// + master brightness
+// + color math add/sub
 
 // + layer scroll
 // + layer tileset/tilemap address
 // * mode7 scroll/matrix/etc
-// * layer enable/disable
+// + color math layer sel
 
 // * OBJ tileset address
 
 // * window registers
 
-// * color math layer sel
-
-// * sub backdrop color
+// + sub backdrop color
 
 
 // STENCIL BUFFER USAGE
 // * bit0: window mask
 // * bit1: 0=clear alpha, 1=keep alpha
 
-// DEPTH BUFFER USAGE
+// DEPTH BUFFER USAGE (probably not right -- TODO update)
 // * 0x00-0x30: OBJ pal 0-3 (prio 0-3 resp.)
 // * 0x40-0x70: OBJ pal 4-7 (prio 0-3 resp.)
-// * 0x80: BG1
-// * 0x90: BG2
-// * 0xA0: BG3
-// * 0xB0: BG4
-// * 0x100: backdrop
+
 // (note that final depth values are transformed to range between 0 and -1 
 //  -- GPU_GREATER in the depth test actually means LESS)
 
 
 #define TILE_2BPP 0
 #define TILE_4BPP 1
+#define TILE_8BPP 2
 
 
 u16* PPU_TileCache;
@@ -129,8 +132,14 @@ void PPU_Init_Hard()
 {
 	int i;
 	
+	// main/sub screen buffers, RGBA8
+	MainScreenTex = (u16*)VRAM_Alloc(256*512*4);
+	SubScreenTex = (u16*)&((u32*)MainScreenTex)[256*256];
+	
 	OBJColorBuffer = (u32*)VRAM_Alloc(256*256*4);
 	OBJDepthBuffer = (u32*)VRAM_Alloc(256*256*4);
+	
+	Mode7ColorBuffer = (u16*)linearAlloc(256*256*2);
 	
 	PPU_TileCache = (u16*)linearAlloc(1024*1024*sizeof(u16));
 	PPU_TileCacheIndex = 0;
@@ -149,6 +158,16 @@ void PPU_Init_Hard()
 		PPU_TileCache[i] = 0xF800;
 	for (i = 0; i < 64; i++)
 		PPU_TileCache[i] = 0x07C0;
+		
+	for (i = 0; i < 256; i++)
+	{
+		u32 y = (i & 0x1) << 1;
+		y    |= (i & 0x2) << 2;
+		y    |= (i & 0x4) << 3;
+		y    |= (i & ~0x7) << 8;
+		
+		YOffset256[i] = y;
+	}
 }
 
 void PPU_DeInit_Hard()
@@ -160,11 +179,12 @@ void PPU_DeInit_Hard()
 // tile decoding
 // note: tiles are directly converted to PICA200 tiles (zcurve)
 
-void PPU_DecodeTile_2bpp(u16* vram, u16* pal, u32* dst)
+u32 PPU_DecodeTile_2bpp(u16* vram, u16* pal, u32* dst)
 {
 	int i;
 	u8 p1, p2, p3, p4;
 	u32 col1, col2;
+	u32 nonzero = 0;
 	
 	u16 oldcolor0 = pal[0];
 	pal[0] = 0;
@@ -193,6 +213,8 @@ void PPU_DecodeTile_2bpp(u16* vram, u16* pal, u32* dst)
 		u16 line3 = vram[i+2];
 		u16 line4 = vram[i+3];
 		
+		nonzero |= line1 | line2 | line3 | line4;
+		
 		DO_MINIBLOCK(line3, line4);
 		DO_MINIBLOCK(line3, line4);
 		DO_MINIBLOCK(line1, line2);
@@ -206,13 +228,15 @@ void PPU_DecodeTile_2bpp(u16* vram, u16* pal, u32* dst)
 	pal[0] = oldcolor0;
 	
 #undef DO_MINIBLOCK
+	return nonzero;
 }
 
-void PPU_DecodeTile_4bpp(u16* vram, u16* pal, u32* dst)
+u32 PPU_DecodeTile_4bpp(u16* vram, u16* pal, u32* dst)
 {
 	int i;
 	u8 p1, p2, p3, p4;
 	u32 col1, col2;
+	u32 nonzero = 0;
 	
 	u16 oldcolor0 = pal[0];
 	pal[0] = 0;
@@ -249,6 +273,8 @@ void PPU_DecodeTile_4bpp(u16* vram, u16* pal, u32* dst)
 		u32 line3 = vram[i+2] | (vram[i+10] << 16);
 		u32 line4 = vram[i+3] | (vram[i+11] << 16);
 		
+		nonzero |= line1 | line2 | line3 | line4;
+		
 		DO_MINIBLOCK(line3, line4);
 		DO_MINIBLOCK(line3, line4);
 		DO_MINIBLOCK(line1, line2);
@@ -262,6 +288,88 @@ void PPU_DecodeTile_4bpp(u16* vram, u16* pal, u32* dst)
 	pal[0] = oldcolor0;
 	
 #undef DO_MINIBLOCK
+	return nonzero;
+}
+
+u32 PPU_DecodeTile_8bpp(u16* vram, u16* pal, u32* dst)
+{
+	int i;
+	u8 p1, p2, p3, p4;
+	u32 col1, col2;
+	u32 nonzero = 0;
+	
+	u16 oldcolor0 = pal[0];
+	pal[0] = 0;
+	
+#define DO_MINIBLOCK(l11, l12, l21, l22) \
+	p1 = 0; p2 = 0; p3 = 0; p4 = 0; \
+	if (l21 & 0x00000080) p1 |= 0x01; \
+	if (l21 & 0x00008000) p1 |= 0x02; \
+	if (l21 & 0x00800000) p1 |= 0x04; \
+	if (l21 & 0x80000000) p1 |= 0x08; \
+	if (l22 & 0x00000080) p1 |= 0x10; \
+	if (l22 & 0x00008000) p1 |= 0x20; \
+	if (l22 & 0x00800000) p1 |= 0x40; \
+	if (l22 & 0x80000000) p1 |= 0x80; \
+	if (l21 & 0x00000040) p2 |= 0x01; \
+	if (l21 & 0x00004000) p2 |= 0x02; \
+	if (l21 & 0x00400000) p2 |= 0x04; \
+	if (l21 & 0x40000000) p2 |= 0x08; \
+	if (l22 & 0x00000040) p2 |= 0x10; \
+	if (l22 & 0x00004000) p2 |= 0x20; \
+	if (l22 & 0x00400000) p2 |= 0x40; \
+	if (l22 & 0x40000000) p2 |= 0x80; \
+	l21 <<= 2; l22 <<= 2; \
+	col1 = pal[p1] | (pal[p2] << 16); \
+	if (l11 & 0x00000080) p3 |= 0x01; \
+	if (l11 & 0x00008000) p3 |= 0x02; \
+	if (l11 & 0x00800000) p3 |= 0x04; \
+	if (l11 & 0x80000000) p3 |= 0x08; \
+	if (l12 & 0x00000080) p3 |= 0x10; \
+	if (l12 & 0x00008000) p3 |= 0x20; \
+	if (l12 & 0x00800000) p3 |= 0x40; \
+	if (l12 & 0x80000000) p3 |= 0x80; \
+	if (l11 & 0x00000040) p4 |= 0x01; \
+	if (l11 & 0x00004000) p4 |= 0x02; \
+	if (l11 & 0x00400000) p4 |= 0x04; \
+	if (l11 & 0x40000000) p4 |= 0x08; \
+	if (l12 & 0x00000040) p4 |= 0x10; \
+	if (l12 & 0x00004000) p4 |= 0x20; \
+	if (l12 & 0x00400000) p4 |= 0x40; \
+	if (l12 & 0x40000000) p4 |= 0x80; \
+	l11 <<= 2; l12 <<= 2; \
+	col2 = pal[p3] | (pal[p4] << 16); \
+	*dst++ = col1; \
+	*dst++ = col2; 
+	
+	for (i = 4; i >= 0; i -= 4)
+	{
+		u32 line11 = vram[i+0 ] | (vram[i+8 ] << 16);
+		u32 line12 = vram[i+16] | (vram[i+24] << 16);
+		u32 line21 = vram[i+1 ] | (vram[i+9 ] << 16);
+		u32 line22 = vram[i+17] | (vram[i+25] << 16);
+		u32 line31 = vram[i+2 ] | (vram[i+10] << 16);
+		u32 line32 = vram[i+18] | (vram[i+26] << 16);
+		u32 line41 = vram[i+3 ] | (vram[i+11] << 16);
+		u32 line42 = vram[i+19] | (vram[i+27] << 16);
+		
+		nonzero |= line11 | line21 | line31 | line41;
+		nonzero |= line12 | line22 | line32 | line42;
+		
+		DO_MINIBLOCK(line31, line32, line41, line42);
+		DO_MINIBLOCK(line31, line32, line41, line42);
+		DO_MINIBLOCK(line11, line12, line21, line22);
+		DO_MINIBLOCK(line11, line12, line21, line22);
+		DO_MINIBLOCK(line31, line32, line41, line42);
+		DO_MINIBLOCK(line31, line32, line41, line42);
+		DO_MINIBLOCK(line11, line12, line21, line22);
+		DO_MINIBLOCK(line11, line12, line21, line22);
+	}
+	
+	pal[0] = oldcolor0;
+	
+#undef DO_MINIBLOCK
+	return nonzero;
 }
 
 
@@ -269,9 +377,11 @@ void PPU_DecodeTile_4bpp(u16* vram, u16* pal, u32* dst)
 u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 {
 	u32 key;
-	u32* dst;
 	u32 paldirty = 0;
 	u32 vramdirty = 0;
+	u32 nonzero = 0;
+	u32 isnew = 0;
+	u32 tempbuf[32];
 	
 	switch (type)
 	{
@@ -283,6 +393,11 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 		case TILE_4BPP: 
 			paldirty = *(u32*)&PPU.PaletteUpdateCount[palid << 2];
 			vramdirty = *(u16*)&PPU.VRAMUpdateCount[addr >> 4];
+			break;
+			
+		case TILE_8BPP: 
+			paldirty = PPU.PaletteUpdateCount256;
+			vramdirty = *(u32*)&PPU.VRAMUpdateCount[addr >> 4];
 			break;
 		
 		default:
@@ -301,90 +416,130 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 		if (vramdirty == PPU_TileVRAMUpdate[key] && paldirty == PPU_TilePalUpdate[key])
 			return coord;
 		
-		tileidx = (coord & 0x7F) | ((0x7F00 - (coord & 0x7F00)) >> 1);
+		if (coord == 0xC000)
+		{
+			tileidx = PPU_TileCacheIndex;
+			coord = (tileidx & 0x7F) | (0x7F00 - ((tileidx & 0x3F80) << 1));
+			isnew = 1;
+		}
+		else
+			tileidx = (coord & 0x7F) | ((0x7F00 - (coord & 0x7F00)) >> 1);
 	}
 	else
 	{
 		tileidx = PPU_TileCacheIndex;
-		PPU_TileCacheIndex++;
-		PPU_TileCacheIndex &= ~0x3FC000; // prevent overflow
 		
 		coord = (tileidx & 0x7F) | (0x7F00 - ((tileidx & 0x3F80) << 1));
-		PPU_TileCacheList[key] = coord;
+		isnew = 1;
 	}
-	
-	dst = (u32*)&PPU_TileCache[tileidx * 64];
 	
 	switch (type)
 	{
-		case TILE_2BPP: PPU_DecodeTile_2bpp(&PPU.VRAM[addr], &PPU.Palette[palid << 2], dst); break;
-		case TILE_4BPP: PPU_DecodeTile_4bpp(&PPU.VRAM[addr], &PPU.Palette[palid << 4], dst); break;
+		case TILE_2BPP: nonzero = PPU_DecodeTile_2bpp(&PPU.VRAM[addr], &TempPalette[palid << 2], tempbuf); break;
+		case TILE_4BPP: nonzero = PPU_DecodeTile_4bpp(&PPU.VRAM[addr], &TempPalette[palid << 4], tempbuf); break;
+		
+		case TILE_8BPP: 
+			// TODO: direct color!
+			nonzero = PPU_DecodeTile_8bpp(&PPU.VRAM[addr], &TempPalette[0], tempbuf); 
+			break;
 	}
 	
 	PPU_TileVRAMUpdate[key] = vramdirty;
 	PPU_TilePalUpdate[key] = paldirty;
 	
-	// invalidate previous tile if need be
-	u32 oldkey = PPU_TileCacheReverseList[tileidx];
-	PPU_TileCacheReverseList[tileidx] = key;
-	if (oldkey != key && oldkey != 0x80000000)
-		PPU_TileCacheList[oldkey] = 0x8000;
+	if (!nonzero) // tile is empty - mark it as such
+	{
+		coord = 0xC000;
+		PPU_TileCacheList[key] = coord;
+		
+		if (!isnew)
+		{
+			// free previous tile if need be
+			u32 oldkey = PPU_TileCacheReverseList[tileidx];
+			PPU_TileCacheReverseList[tileidx] = 0x80000000;
+			if (oldkey != 0x80000000)
+				PPU_TileCacheList[oldkey] = 0x8000;
+		}
+	}
+	else
+	{
+		if (isnew)
+		{
+			PPU_TileCacheIndex++;
+			PPU_TileCacheIndex &= ~0x3FC000; // prevent overflow
+			
+			PPU_TileCacheList[key] = coord;
+		}
+		
+		memcpy(&PPU_TileCache[tileidx * 64], tempbuf, 64*2);
+		
+		// invalidate previous tile if need be
+		u32 oldkey = PPU_TileCacheReverseList[tileidx];
+		PPU_TileCacheReverseList[tileidx] = key;
+		if (oldkey != key && oldkey != 0x80000000)
+			PPU_TileCacheList[oldkey] = 0x8000;
+	}
 	
 	return coord;
 }
 
 
-int doingBG = 0;
+void PPU_ApplyPaletteChanges(u32 num, PPU_PaletteChange* changes)
+{
+	u32 i;
+	
+	for (i = 0; i < num; i++)
+	{
+		TempPalette[changes[i].Address] = changes[i].Color;
+	}
+}
+
 
 void PPU_StartBG()
 {
-	if (doingBG) 
-	{
-		GPU_FinishDrawing();
-		return;
-	}
+	if (doingBG) return;
 	doingBG = 1;
 	
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
-	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+	//bglEnableStencilTest(true);
+	//bglStencilFunc(GPU_ALWAYS, 0x00, 0xFF, 0x02);
+	bglEnableStencilTest(false);
+	bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
 	
-	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+	bglEnableDepthTest(false);
+	bglEnableAlphaTest(true);
+	bglAlphaFunc(GPU_GREATER, 0);
 	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(true, GPU_GREATER, 0);
+	bglBlendEquation(GPU_BLEND_ADD, GPU_BLEND_ADD);
+	bglBlendFunc(GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+	
+	bglScissorMode(GPU_SCISSOR_NORMAL);
+	
+	bglColorDepthMask(GPU_WRITE_COLOR);
 	
 	SET_UNIFORM(0x24, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
 	
-	GPU_SetTextureEnable(GPU_TEXUNIT0);
+	bglEnableTextures(GPU_TEXUNIT0);
 	
-	GPU_SetTexEnv(0, 
-		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
-		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_REPLACE, GPU_REPLACE, 
-		0xFFFFFFFF);
-	GPU_SetDummyTexEnv(1);
-	GPU_SetDummyTexEnv(2);
-	GPU_SetDummyTexEnv(3);
-	GPU_SetDummyTexEnv(4);
-	GPU_SetDummyTexEnv(5);
+	bglDummyTexEnv(1);
+	bglDummyTexEnv(2);
+	bglDummyTexEnv(3);
+	bglDummyTexEnv(4);
+	bglDummyTexEnv(5);
 		
-	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)PPU_TileCache),1024,1024,0,GPU_RGBA5551);
+	bglTexImage(GPU_TEXUNIT0, PPU_TileCache,1024,1024,0,GPU_RGBA5551);
+	
+	bglNumAttribs(2);
+	bglAttribType(0, GPU_SHORT, 2);	// vertex
+	bglAttribType(1, GPU_UNSIGNED_BYTE, 2);	// texcoord
 }
 
 
 
-void PPU_ClearScreens()
+void PPU_ClearMainScreen()
 {
 	u8* vptr = (u8*)vertexPtr;
 	
-	u16 col = PPU.Palette[0];
+	u16 col = TempPalette[0];
 	u8 r = (col & 0xF800) >> 8; r |= (r >> 5);
 	u8 g = (col & 0x07C0) >> 3; g |= (g >> 5);
 	u8 b = (col & 0x003E) << 2; b |= (b >> 5);
@@ -398,161 +553,88 @@ void PPU_ClearScreens()
 	*vptr++ = b; \
 	*vptr++ = a;
 	
-	myGPU_SetShaderAndViewport(plainQuadShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)MainScreenTex),0,0,256,256);
-		
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0xFF);
-	GPU_SetStencilOp(GPU_AND_NOT, GPU_AND_NOT, GPU_AND_NOT);	// clear the stencil buffer to 00
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_ALL); // clear the depth buffer
+	bglUseShader(plainQuadShader);
 	
-	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+	bglOutputBuffers(MainScreenTex, OBJDepthBuffer);
 	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(false, GPU_ALWAYS, 0);
+	bglEnableStencilTest(false);
+	bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
 	
-	setUniformMatrix(0x20, snesProjMatrix);
+	bglEnableDepthTest(false);
+	bglEnableAlphaTest(false);
+	bglBlendEquation(GPU_BLEND_ADD, GPU_BLEND_ADD);
+	bglBlendFunc(GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
 	
-	GPU_SetTextureEnable(0);
+	bglColorDepthMask(GPU_WRITE_ALL);
 	
-	GPU_SetTexEnv(0, 
+	bglUniformMatrix(0x20, snesProjMatrix);
+	
+	bglEnableTextures(0);
+	
+	bglTexEnv(0, 
 		GPU_TEVSOURCES(GPU_PRIMARY_COLOR, 0, 0), 
 		GPU_TEVSOURCES(GPU_PRIMARY_COLOR, 0, 0),
 		GPU_TEVOPERANDS(0,0,0), 
 		GPU_TEVOPERANDS(0,0,0), 
 		GPU_REPLACE, GPU_REPLACE, 
 		0xFFFFFFFF);
-	GPU_SetDummyTexEnv(1);
-	GPU_SetDummyTexEnv(2);
-	GPU_SetDummyTexEnv(3);
-	GPU_SetDummyTexEnv(4);
-	GPU_SetDummyTexEnv(5);
+	bglDummyTexEnv(1);
+	bglDummyTexEnv(2);
+	bglDummyTexEnv(3);
+	bglDummyTexEnv(4);
+	bglDummyTexEnv(5);
 	
-	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
-		GPU_ATTRIBFMT(0, 3, GPU_SHORT)|GPU_ATTRIBFMT(1, 4, GPU_UNSIGNED_BYTE),
-		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
+	bglNumAttribs(2);
+	bglAttribType(0, GPU_SHORT, 3);	// vertex
+	bglAttribType(1, GPU_UNSIGNED_BYTE, 4);	// color
+	bglAttribBuffer(vptr);
+	
+	int nvtx = 0;
+	int ystart = 0;
+	PPU_ModeSection* s = &PPU.ModeSections[0];
+	for (;;)
+	{
+		u8 alpha = (s->ColorMath2 & 0x20) ? 0xFF:0x80;
+		ADDVERTEX(0, ystart, 0x80,      	r, g, b, alpha);
+		ADDVERTEX(256, ystart, 0x80,    	r, g, b, alpha);
+		ADDVERTEX(256, s->EndOffset, 0x80,  r, g, b, alpha);
+		ADDVERTEX(0, ystart, 0x80,      	r, g, b, alpha);
+		ADDVERTEX(256, s->EndOffset, 0x80,  r, g, b, alpha);
+		ADDVERTEX(0, s->EndOffset, 0x80,    r, g, b, alpha);
+		nvtx += 6;
 		
-	u8 alpha = (PPU.ColorMath2 & 0x20) ? 0xFF:0x00;
-	ADDVERTEX(0, 0, 0x80,      r, g, b, alpha);
-	ADDVERTEX(256, 0, 0x80,    r, g, b, alpha);
-	ADDVERTEX(256, 256, 0x80,  r, g, b, alpha);
-	ADDVERTEX(0, 0, 0x80,      r, g, b, alpha);
-	ADDVERTEX(256, 256, 0x80,  r, g, b, alpha);
-	ADDVERTEX(0, 256, 0x80,    r, g, b, alpha);
-	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
+		if (s->EndOffset >= 240) break;
+		ystart = s->EndOffset;
+		s++;
+	}
 	
-	myGPU_DrawArray(GPU_TRIANGLES, 2*3);
+	bglDrawArrays(GPU_TRIANGLES, nvtx);
 	
 	// clear the OBJ buffer
-	myGPU_SetShaderAndViewport(plainQuadShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)OBJColorBuffer),0,0,256,256);
-		
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0xFF);
-	GPU_SetStencilOp(GPU_XOR, GPU_XOR, GPU_XOR); // invert stencil values 
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+
+	bglOutputBuffers(OBJColorBuffer, OBJDepthBuffer);
 	
-	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+	bglColorDepthMask(GPU_WRITE_COLOR);
 	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(false, GPU_ALWAYS, 0);
-	
-	setUniformMatrix(0x20, snesProjMatrix);
-	
-	GPU_SetTextureEnable(0);
-	
-	GPU_SetTexEnv(0, 
-		GPU_TEVSOURCES(GPU_PRIMARY_COLOR, 0, 0), 
-		GPU_TEVSOURCES(GPU_PRIMARY_COLOR, 0, 0),
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_REPLACE, GPU_REPLACE, 
-		0xFFFFFFFF);
-	GPU_SetDummyTexEnv(1);
-	GPU_SetDummyTexEnv(2);
-	GPU_SetDummyTexEnv(3);
-	GPU_SetDummyTexEnv(4);
-	GPU_SetDummyTexEnv(5);
-	
-	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
-		GPU_ATTRIBFMT(0, 3, GPU_SHORT)|GPU_ATTRIBFMT(1, 4, GPU_UNSIGNED_BYTE),
-		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
+	bglAttribBuffer(vptr);
 		
 	// Z here doesn't matter
-	ADDVERTEX(0, 0, 0,      0, 0, 0, 0);
-	ADDVERTEX(256, 0, 0,    0, 0, 0, 0);
-	ADDVERTEX(256, 256, 0,  0, 0, 0, 0);
-	ADDVERTEX(0, 0, 0,      0, 0, 0, 0);
-	ADDVERTEX(256, 256, 0,  0, 0, 0, 0);
-	ADDVERTEX(0, 256, 0,    0, 0, 0, 0);
+	ADDVERTEX(0, 0, 0,      255, 0, 255, 0);
+	ADDVERTEX(256, 0, 0,    255, 0, 255, 0);
+	ADDVERTEX(256, 256, 0,  255, 0, 255, 0);
+	ADDVERTEX(0, 0, 0,      255, 0, 255, 0);
+	ADDVERTEX(256, 256, 0,  255, 0, 255, 0);
+	ADDVERTEX(0, 256, 0,    255, 0, 255, 0);
 	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
 	
-	myGPU_DrawArray(GPU_TRIANGLES, 2*3);
-	
-	
-	// TEMP HACK
-	myGPU_SetShaderAndViewport(plainQuadShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)SubScreenTex),0,0,256,256);
-		
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0xFF);
-	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_COLOR);
-	
-	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
-	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(false, GPU_ALWAYS, 0);
-	
-	setUniformMatrix(0x20, snesProjMatrix);
-	
-	GPU_SetTextureEnable(0);
-	
-	GPU_SetTexEnv(0, 
-		GPU_TEVSOURCES(GPU_PRIMARY_COLOR, 0, 0), 
-		GPU_TEVSOURCES(GPU_PRIMARY_COLOR, 0, 0),
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_REPLACE, GPU_REPLACE, 
-		0xFFFFFFFF);
-	GPU_SetDummyTexEnv(1);
-	GPU_SetDummyTexEnv(2);
-	GPU_SetDummyTexEnv(3);
-	GPU_SetDummyTexEnv(4);
-	GPU_SetDummyTexEnv(5);
-	
-	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
-		GPU_ATTRIBFMT(0, 3, GPU_SHORT)|GPU_ATTRIBFMT(1, 4, GPU_UNSIGNED_BYTE),
-		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
-		
-	col = PPU.SubBackdrop;
-	r = (col & 0xF800) >> 8; r |= (r >> 5);
-	g = (col & 0x07C0) >> 3; g |= (g >> 5);
-	b = (col & 0x003E) << 2; b |= (b >> 5);
-	alpha = 255;//(PPU.ColorMath2 & 0x20) ? 0xFF:0x00;
-	ADDVERTEX(0, 0, 0x80,      r, g, b, alpha);
-	ADDVERTEX(256, 0, 0x80,    r, g, b, alpha);
-	ADDVERTEX(256, 256, 0x80,  r, g, b, alpha);
-	ADDVERTEX(0, 0, 0x80,      r, g, b, alpha);
-	ADDVERTEX(256, 256, 0x80,  r, g, b, alpha);
-	ADDVERTEX(0, 256, 0x80,    r, g, b, alpha);
-	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
-	
-	myGPU_DrawArray(GPU_TRIANGLES, 2*3);
+	bglDrawArrays(GPU_TRIANGLES, 2*3);
 	
 	vertexPtr = vptr;
 	
 #undef ADDVERTEX
 }
 
-
-void PPU_ClearAlpha()
+void PPU_ClearSubScreen()
 {
 	u8* vptr = (u8*)vertexPtr;
 	
@@ -565,98 +647,229 @@ void PPU_ClearAlpha()
 	*vptr++ = b; \
 	*vptr++ = a;
 	
-	myGPU_SetShaderAndViewport(plainQuadShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)MainScreenTex),0,0,256,256);
-		
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(true, GPU_EQUAL, 0x00, 0x02, 0xFF);
-	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(true, GPU_GEQUAL, GPU_WRITE_ALPHA);
+	bglUseShader(plainQuadShader);
 	
-	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+	bglOutputBuffers(SubScreenTex, OBJDepthBuffer);
 	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(false, GPU_ALWAYS, 0);
+	bglEnableStencilTest(false);
+	bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
 	
-	setUniformMatrix(0x20, snesProjMatrix);
+	bglEnableDepthTest(false);
+	bglEnableAlphaTest(false);
+	bglBlendEquation(GPU_BLEND_ADD, GPU_BLEND_ADD);
+	bglBlendFunc(GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
 	
-	GPU_SetTextureEnable(0);
+	bglColorDepthMask(GPU_WRITE_COLOR);
 	
-	GPU_SetTexEnv(0, 
+	bglUniformMatrix(0x20, snesProjMatrix);
+	
+	bglEnableTextures(0);
+	
+	bglTexEnv(0, 
 		GPU_TEVSOURCES(GPU_PRIMARY_COLOR, 0, 0), 
 		GPU_TEVSOURCES(GPU_PRIMARY_COLOR, 0, 0),
 		GPU_TEVOPERANDS(0,0,0), 
 		GPU_TEVOPERANDS(0,0,0), 
 		GPU_REPLACE, GPU_REPLACE, 
 		0xFFFFFFFF);
-	GPU_SetDummyTexEnv(1);
-	GPU_SetDummyTexEnv(2);
-	GPU_SetDummyTexEnv(3);
-	GPU_SetDummyTexEnv(4);
-	GPU_SetDummyTexEnv(5);
+	bglDummyTexEnv(1);
+	bglDummyTexEnv(2);
+	bglDummyTexEnv(3);
+	bglDummyTexEnv(4);
+	bglDummyTexEnv(5);
 	
-	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
-		GPU_ATTRIBFMT(0, 3, GPU_SHORT)|GPU_ATTRIBFMT(1, 4, GPU_UNSIGNED_BYTE),
-		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
+	bglNumAttribs(2);
+	bglAttribType(0, GPU_SHORT, 3);	// vertex
+	bglAttribType(1, GPU_UNSIGNED_BYTE, 4);	// color
+	bglAttribBuffer(vptr);
 		
-	u32 z = (PPU.ColorMath2 & 0x10) ? 0x40:0x00;
-	ADDVERTEX(0, 0, z,      255, 0, 255, 0);
-	ADDVERTEX(256, 0, z,    255, 0, 255, 0);
-	ADDVERTEX(256, 256, z,  255, 0, 255, 0);
-	ADDVERTEX(0, 0, z,      255, 0, 255, 0);
-	ADDVERTEX(256, 256, z,  255, 0, 255, 0);
-	ADDVERTEX(0, 256, z,    255, 0, 255, 0);
+	int nvtx = 0;
+	int ystart = 0;
+	PPU_SubBackdropSection* s = &PPU.SubBackdropSections[0];
+	for (;;)
+	{
+		u16 col = s->Color;
+		u8 r = (col & 0xF800) >> 8; r |= (r >> 5);
+		u8 g = (col & 0x07C0) >> 3; g |= (g >> 5);
+		u8 b = (col & 0x003E) << 2; b |= (b >> 5);
+		
+		// 'If "Sub Screen BG/OBJ Enable" is off (2130h.Bit1=0), then the "Div2" isn't forcefully ignored'
+		// -> this causes a glitch in Super Puyo Puyo-- it has subscreen disabled but color math enabled on BG1 AND div2 enabled
+		u8 alpha = 0xFF;//(s->Div2) ? 0x80:0xFF;
+		ADDVERTEX(0, ystart, 0x80,      	r, g, b, alpha);
+		ADDVERTEX(256, ystart, 0x80,    	r, g, b, alpha);
+		ADDVERTEX(256, s->EndOffset, 0x80,  r, g, b, alpha);
+		ADDVERTEX(0, ystart, 0x80,      	r, g, b, alpha);
+		ADDVERTEX(256, s->EndOffset, 0x80,  r, g, b, alpha);
+		ADDVERTEX(0, s->EndOffset, 0x80,    r, g, b, alpha);
+		nvtx += 6;
+		
+		if (s->EndOffset >= 240) break;
+		ystart = s->EndOffset;
+		s++;
+	}
+	
 	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
 	
-	myGPU_DrawArray(GPU_TRIANGLES, 2*3);
-	/*GPU_FinishDrawing();
+	bglDrawArrays(GPU_TRIANGLES, nvtx);
 	
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0xFF);
-	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(true, GPU_GREATER, GPU_WRITE_ALPHA);
+	vertexPtr = vptr;
 	
-	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+#undef ADDVERTEX
+}
+
+
+void PPU_DrawWindowMask(u32 snum)
+{
+	// a bit of trickery is used here to easily fill the stencil buffer
+	//
+	// color buffer:  RRGGBBAA  (8-bit RGBA)
+	// depth buffer:  SSDDDDDD  (8-bit stencil, 24-bit depth)
+	//
+	// thus we can use the depth buffer as a color buffer and write red
 	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(false, GPU_ALWAYS, 0);
+	u8* vptr = (u8*)vertexPtr;
 	
-	setUniformMatrix(0x20, snesProjMatrix);
+#define ADDVERTEX(x, y, a) \
+	*(u16*)vptr = x; vptr += 2; \
+	*(u16*)vptr = y; vptr += 2; \
+	*vptr++ = a; vptr++;
 	
-	GPU_SetTextureEnable(0);
+	bglUseShader(windowMaskShader);
 	
-	GPU_SetTexEnv(0, 
+	bglOutputBuffers(OBJDepthBuffer, OBJDepthBuffer);
+	
+	bglEnableStencilTest(false);
+	bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	
+	bglEnableDepthTest(false);
+	bglEnableAlphaTest(false);
+	bglBlendEquation(GPU_BLEND_ADD, GPU_BLEND_ADD);
+	bglBlendFunc(GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+	
+	bglColorDepthMask(GPU_WRITE_RED);
+	
+	bglUniformMatrix(0x20, snesProjMatrix);
+	
+	bglNumAttribs(2);
+	bglAttribType(0, GPU_SHORT, 2);	// vertex
+	bglAttribType(1, GPU_UNSIGNED_BYTE, 2);	// color
+	bglAttribBuffer(vptr);
+		
+	int nvtx = 0;
+	int ystart = 0;
+	PPU_WindowSection* s = &PPU.WindowSections[0];
+	for (;;)
+	{
+		int xstart = 0;
+		PPU_WindowSegment* ws = &s->Window[0];
+		for (;;)
+		{
+			if (xstart < ws->EndOffset)
+			{
+				u8 alpha = snum ? ws->FinalMaskSub : ws->FinalMaskMain;
+				ADDVERTEX(xstart, ystart,       	    alpha);
+				ADDVERTEX(ws->EndOffset, ystart,     	alpha);
+				ADDVERTEX(ws->EndOffset, s->EndOffset,  alpha);
+				ADDVERTEX(xstart, ystart,       	    alpha);
+				ADDVERTEX(ws->EndOffset, s->EndOffset,  alpha);
+				ADDVERTEX(xstart, s->EndOffset,         alpha);
+				nvtx += 6;
+			}
+			
+			if (ws->EndOffset >= 256) break;
+			xstart = ws->EndOffset;
+			ws++;
+		}
+		
+		if (s->EndOffset >= 240) break;
+		ystart = s->EndOffset;
+		s++;
+	}
+	
+	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
+	
+	bglDrawArrays(GPU_TRIANGLES, nvtx);
+	
+	vertexPtr = vptr;
+	
+#undef ADDVERTEX
+}
+
+
+void PPU_ClearAlpha(u32 snum)
+{
+	u8* vptr = (u8*)vertexPtr;
+	
+#define ADDVERTEX(x, y, z, r, g, b, a) \
+	*(u16*)vptr = x; vptr += 2; \
+	*(u16*)vptr = y; vptr += 2; \
+	*(u16*)vptr = z; vptr += 2; \
+	*vptr++ = r; \
+	*vptr++ = g; \
+	*vptr++ = b; \
+	*vptr++ = a;
+	
+	bglUseShader(plainQuadShader);
+	
+	bglEnableStencilTest(false);
+	bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	
+	bglEnableDepthTest(false);
+	bglEnableAlphaTest(false);
+	
+	// transform alpha=128 into 0 and alpha=255 into 255
+	// color blending mode doesn't matter since we only write alpha anyway
+	bglBlendEquation(GPU_BLEND_ADD, GPU_BLEND_REVERSE_SUBTRACT);
+	bglBlendFunc(GPU_ONE, GPU_ZERO, GPU_ONE_MINUS_DST_ALPHA, GPU_ONE);
+	
+	bglScissorMode(GPU_SCISSOR_DISABLE);
+	
+	bglColorDepthMask(GPU_WRITE_ALPHA);
+	
+	bglUniformMatrix(0x20, snesProjMatrix);
+	
+	bglEnableTextures(0);
+	
+	bglTexEnv(0, 
 		GPU_TEVSOURCES(GPU_PRIMARY_COLOR, 0, 0), 
 		GPU_TEVSOURCES(GPU_PRIMARY_COLOR, 0, 0),
 		GPU_TEVOPERANDS(0,0,0), 
 		GPU_TEVOPERANDS(0,0,0), 
 		GPU_REPLACE, GPU_REPLACE, 
 		0xFFFFFFFF);
-	GPU_SetDummyTexEnv(1);
-	GPU_SetDummyTexEnv(2);
-	GPU_SetDummyTexEnv(3);
-	GPU_SetDummyTexEnv(4);
-	GPU_SetDummyTexEnv(5);
+	bglDummyTexEnv(1);
+	bglDummyTexEnv(2);
+	bglDummyTexEnv(3);
+	bglDummyTexEnv(4);
+	bglDummyTexEnv(5);
 	
-	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
-		GPU_ATTRIBFMT(0, 3, GPU_SHORT)|GPU_ATTRIBFMT(1, 4, GPU_UNSIGNED_BYTE),
-		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
-		
-	u32 z = (PPU.ColorMath2 & 0x10) ? 0x40:0x80;
-	ADDVERTEX(0, 0, z,      255, 0, 255, 0);
-	ADDVERTEX(256, 0, z,    255, 0, 255, 0);
-	ADDVERTEX(256, 256, z,  255, 0, 255, 0);
-	ADDVERTEX(0, 0, z,      255, 0, 255, 0);
-	ADDVERTEX(256, 256, z,  255, 0, 255, 0);
-	ADDVERTEX(0, 256, z,    255, 0, 255, 0);
+	bglNumAttribs(2);
+	bglAttribType(0, GPU_SHORT, 3);	// vertex
+	bglAttribType(1, GPU_UNSIGNED_BYTE, 4);	// color
+	bglAttribBuffer(vptr);
+	
+	ADDVERTEX(0, 0, 0,      255, 0, 255, 255);
+	ADDVERTEX(256, 0, 0,    255, 0, 255, 255);
+	ADDVERTEX(256, 256, 0,  255, 0, 255, 255);
+	ADDVERTEX(0, 0, 0,      255, 0, 255, 255);
+	ADDVERTEX(256, 256, 0,  255, 0, 255, 255);
+	ADDVERTEX(0, 256, 0,    255, 0, 255, 255);
 	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
 	
-	myGPU_DrawArray(GPU_TRIANGLES, 2*3);*/
+	bglDrawArrays(GPU_TRIANGLES, 2*3);
+	
+	// clear alpha wherever the color math window applies
+	if (!snum)
+	{
+		bglEnableStencilTest(true);
+		bglStencilFunc(GPU_EQUAL, 0x20, 0x20, 0xFF);
+		
+		bglBlendEquation(GPU_BLEND_ADD, GPU_BLEND_ADD);
+		bglBlendFunc(GPU_ONE, GPU_ZERO, GPU_ZERO, GPU_ZERO);
+		
+		bglDrawArrays(GPU_TRIANGLES, 2*3);
+	}
 
 	vertexPtr = vptr;
 	
@@ -664,10 +877,11 @@ void PPU_ClearAlpha()
 }
 
 
-void PPU_HardRenderBG_8x8(u32 setalpha, PPU_Background* bg, int type, u32 prio, int ystart, int yend)
+void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart, int yend)
 {
+	PPU_Background* bg = &PPU.BG[num];
 	u16* tilemap;
-	int tileaddrshift = ((int[]){4, 5})[type];
+	int tileaddrshift = ((int[]){4, 5, 6})[type];
 	u32 xoff, yoff;
 	u16 curtile;
 	int x, y;
@@ -722,10 +936,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, PPU_Background* bg, int type, u32 prio, 
 
 				curtile = tilemap[idx];
 				if ((curtile ^ prio) & 0x2000)
-				{
-					idx++;
 					continue;
-				}
 
 				// render the tile
 				
@@ -733,6 +944,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, PPU_Background* bg, int type, u32 prio, 
 				u32 palid = (curtile & 0x1C00) >> 10;
 				
 				u32 coord = PPU_StoreTileInCache(type, palid, addr);
+				if (coord == 0xC000) continue;
 				
 				switch (curtile & 0xC000)
 				{
@@ -781,24 +993,26 @@ void PPU_HardRenderBG_8x8(u32 setalpha, PPU_Background* bg, int type, u32 prio, 
 		{
 			PPU_StartBG();
 			
-			GPU_SetScissorTest(GPU_SCISSOR_NORMAL, 0, systart, 256, syend);
+			bglScissor(0, systart, 256, syend);
 			
-			//SET_UNIFORM(0x25, 0.0f, 1.0f, (float)(0x80+(num<<4)), 0.0f);
+			bglEnableStencilTest(true);
+			bglStencilFunc(GPU_EQUAL, 0x00, 1<<num, 0xFF);
 			
-			// if needed, set stencil bits indicating where we'll need to clear alpha
-			GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x02);
-			if (setalpha) GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-			else          GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_AND_NOT);
-			GPU_SetBlendingColor(0,0,0,0);
+			// set alpha to 128 if we need to disable color math in this BG section
+			bglTexEnv(0, 
+				GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
+				GPU_TEVSOURCES(GPU_TEXTURE0, GPU_CONSTANT, 0),
+				GPU_TEVOPERANDS(0,0,0), 
+				GPU_TEVOPERANDS(0,0,0), 
+				GPU_REPLACE, setalpha ? GPU_REPLACE:GPU_MODULATE, 
+				setalpha ? 0xFFFFFFFF:0x80FFFFFF);
 			
-			GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vertexPtr),
-				GPU_ATTRIBFMT(0, 2, GPU_SHORT)|GPU_ATTRIBFMT(1, 2, GPU_UNSIGNED_BYTE),
-				0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
+			bglAttribBuffer(vertexPtr);
 			
 			vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
 			vertexPtr = vptr;
 			
-			myGPU_DrawArray(GPU_TRIANGLES, ntiles*2*3);
+			bglDrawArrays(GPU_TRIANGLES, ntiles*2*3);
 		}
 		
 		if (syend >= yend) break;
@@ -808,6 +1022,333 @@ void PPU_HardRenderBG_8x8(u32 setalpha, PPU_Background* bg, int type, u32 prio, 
 	
 #undef ADDVERTEX
 }
+
+void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystart, int yend)
+{
+	PPU_Background* bg = &PPU.BG[num];
+	u16* tilemap;
+	int tileaddrshift = ((int[]){4, 5, 6})[type];
+	u32 xoff, yoff;
+	u16 curtile;
+	int x, y;
+	u32 idx;
+	int systart = 0, syend;
+	int ntiles = 0;
+	u16* vptr = (u16*)vertexPtr;
+	
+#define ADDVERTEX(x, y, coord) \
+	*vptr++ = x; \
+	*vptr++ = y; \
+	*vptr++ = coord;
+	
+	PPU_BGSection* s = &bg->Sections[0];
+	for (;;)
+	{
+		syend = s->EndOffset;
+		
+		if (syend <= ystart)
+		{
+			systart = syend;
+			s++;
+			continue;
+		}
+
+		if (systart < ystart) systart = ystart;
+		if (syend > yend) syend = yend;
+		
+		yoff = s->YScroll + systart;
+		ntiles = 0;
+		
+		for (y = systart - (yoff&15); y < syend; y += 16, yoff += 16)
+		{
+			tilemap = PPU.VRAM + s->TilemapOffset + ((yoff & 0x1F0) << 2);
+			if (yoff & 0x200)
+			{
+				if (bg->Size & 0x2)
+					tilemap += (bg->Size & 0x1) ? 2048 : 1024;
+			}
+			
+			xoff = s->XScroll;
+			x = -(xoff & 15);
+		
+			for (; x < 256; x += 16, xoff += 16)
+			{
+				idx = (xoff & 0x1F0) >> 4;
+				if (xoff & 0x200)
+				{
+					if (bg->Size & 0x1)
+						idx += 1024;
+				}
+
+				curtile = tilemap[idx];
+				if ((curtile ^ prio) & 0x2000)
+					continue;
+
+				// render the tile
+				
+				u32 addr = s->TilesetOffset + ((curtile & 0x03FF) << tileaddrshift);
+				u32 palid = (curtile & 0x1C00) >> 10;
+				
+				u32 coord0 = PPU_StoreTileInCache(type, palid, addr+(0x00<<tileaddrshift));
+				u32 coord1 = PPU_StoreTileInCache(type, palid, addr+(0x01<<tileaddrshift));
+				u32 coord2 = PPU_StoreTileInCache(type, palid, addr+(0x10<<tileaddrshift));
+				u32 coord3 = PPU_StoreTileInCache(type, palid, addr+(0x11<<tileaddrshift));
+				
+#define DO_SUBTILE(sx, sy, coord, t0, t1, t2, t3) \
+					if (coord != 0xC000) \
+					{ \
+						ADDVERTEX(x+sx,   y+sy,     coord+t0); \
+						ADDVERTEX(x+sx+8, y+sy,     coord+t1); \
+						ADDVERTEX(x+sx+8, y+sy+8,   coord+t3); \
+						ADDVERTEX(x+sx,   y+sy,     coord+t0); \
+						ADDVERTEX(x+sx+8, y+sy+8,   coord+t3); \
+						ADDVERTEX(x+sx,   y+sy+8,   coord+t2); \
+						ntiles++; \
+					}
+				
+				switch (curtile & 0xC000)
+				{
+					case 0x0000:
+						if ((y - systart) > -8)
+						{
+							if (x > -8)  DO_SUBTILE(0, 0,  coord0, 0x0000, 0x0001, 0x0100, 0x0101);
+							if (x < 248) DO_SUBTILE(8, 0,  coord1, 0x0000, 0x0001, 0x0100, 0x0101);
+						}
+						if (y < (syend - 8))
+						{
+							if (x > -8)  DO_SUBTILE(0, 8,  coord2, 0x0000, 0x0001, 0x0100, 0x0101);
+							if (x < 248) DO_SUBTILE(8, 8,  coord3, 0x0000, 0x0001, 0x0100, 0x0101);
+						}
+						break;
+						
+					case 0x4000: // hflip
+						if ((y - systart) > -8)
+						{
+							if (x > -8)  DO_SUBTILE(0, 0,  coord1, 0x0001, 0x0000, 0x0101, 0x0100);
+							if (x < 248) DO_SUBTILE(8, 0,  coord0, 0x0001, 0x0000, 0x0101, 0x0100);
+						}
+						if (y < (syend - 8))
+						{
+							if (x > -8)  DO_SUBTILE(0, 8,  coord3, 0x0001, 0x0000, 0x0101, 0x0100);
+							if (x < 248) DO_SUBTILE(8, 8,  coord2, 0x0001, 0x0000, 0x0101, 0x0100);
+						}
+						break;
+						
+					case 0x8000: // vflip
+						if ((y - systart) > -8)
+						{
+							if (x > -8)  DO_SUBTILE(0, 0,  coord2, 0x0100, 0x0101, 0x0000, 0x0001);
+							if (x < 248) DO_SUBTILE(8, 0,  coord3, 0x0100, 0x0101, 0x0000, 0x0001);
+						}
+						if (y < (syend - 8))
+						{
+							if (x > -8)  DO_SUBTILE(0, 8,  coord0, 0x0100, 0x0101, 0x0000, 0x0001);
+							if (x < 248) DO_SUBTILE(8, 8,  coord1, 0x0100, 0x0101, 0x0000, 0x0001);
+						}
+						break;
+						
+					case 0xC000: // hflip+vflip
+						if ((y - systart) > -8)
+						{
+							if (x > -8)  DO_SUBTILE(0, 0,  coord3, 0x0101, 0x0100, 0x0001, 0x0000);
+							if (x < 248) DO_SUBTILE(8, 0,  coord2, 0x0101, 0x0100, 0x0001, 0x0000);
+						}
+						if (y < (syend - 8))
+						{
+							if (x > -8)  DO_SUBTILE(0, 8,  coord1, 0x0101, 0x0100, 0x0001, 0x0000);
+							if (x < 248) DO_SUBTILE(8, 8,  coord0, 0x0101, 0x0100, 0x0001, 0x0000);
+						}
+						break;
+				}
+				
+#undef DO_SUBTILE
+			}
+		}
+		
+		if (ntiles)
+		{
+			PPU_StartBG();
+			
+			bglScissor(0, systart, 256, syend);
+			
+			bglEnableStencilTest(true);
+			bglStencilFunc(GPU_EQUAL, 0x00, 1<<num, 0xFF);
+			
+			// set alpha to 128 if we need to disable color math in this BG section
+			bglTexEnv(0, 
+				GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
+				GPU_TEVSOURCES(GPU_TEXTURE0, GPU_CONSTANT, 0),
+				GPU_TEVOPERANDS(0,0,0), 
+				GPU_TEVOPERANDS(0,0,0), 
+				GPU_REPLACE, setalpha ? GPU_REPLACE:GPU_MODULATE, 
+				setalpha ? 0xFFFFFFFF:0x80FFFFFF);
+			
+			bglAttribBuffer(vertexPtr);
+			
+			vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
+			vertexPtr = vptr;
+			
+			bglDrawArrays(GPU_TRIANGLES, ntiles*2*3);
+		}
+		
+		if (syend >= yend) break;
+		systart = syend;
+		s++;
+	}
+	
+#undef ADDVERTEX
+}
+
+void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend)
+{
+	int systart = 0, syend;
+	s32 x, y;
+	int i, j;
+	u32 tileidx;
+	u8 colorval;
+	u16* buffer;
+	const u32 xincr[8] = {1, 3, 1, 11, 1, 3, 1, 43};
+	u16* vptr = (u16*)vertexPtr;
+	
+	u16 oldcolor0 = TempPalette[0];
+	TempPalette[0] = 0;
+	
+	PPU_Mode7Section* s = &PPU.Mode7Sections[0];
+	for (;;)
+	{
+		syend = s->EndOffset;
+		
+		if (syend <= ystart)
+		{
+			systart = syend;
+			s++;
+			continue;
+		}
+
+		if (systart < ystart) systart = ystart;
+		if (syend > yend) syend = yend;
+		
+		for (j = systart; j < syend; j++)
+		{
+			x = (s->A * (s->XScroll-s->RefX)) + (s->B * (j+s->YScroll-s->RefY)) + (s->RefX << 8);
+			y = (s->C * (s->XScroll-s->RefX)) + (s->D * (j+s->YScroll-s->RefY)) + (s->RefY << 8);
+			buffer = &Mode7ColorBuffer[YOffset256[j]];
+			
+			for (i = 0; i < 256; i++)
+			{
+				// TODO screen h/v flip
+				
+				if ((x|y) & 0xFFFC0000)
+				{
+					// wraparound
+					if ((s->Sel & 0xC0) == 0x80)
+					{
+						// transparent
+						*buffer = 0;
+						buffer += xincr[i&7];
+						
+						x += s->A;
+						y += s->C;
+						continue;
+					}
+					else if ((s->Sel & 0xC0) == 0xC0)
+					{
+						// use tile 0
+						tileidx = 0;
+					}
+					else
+					{
+						// ignore wraparound
+						tileidx = ((x & 0x3F800) >> 10) + ((y & 0x3F800) >> 3);
+						tileidx = PPU.VRAM[tileidx] << 7;
+					}
+				}
+				else
+				{
+					tileidx = ((x & 0x3F800) >> 10) + ((y & 0x3F800) >> 3);
+					tileidx = PPU.VRAM[tileidx] << 7;
+				}
+				
+				tileidx += ((x & 0x700) >> 7) + ((y & 0x700) >> 4) + 1;
+				colorval = PPU.VRAM[tileidx];
+				
+				*buffer = TempPalette[colorval];
+				buffer += xincr[i&7];
+				
+				x += s->A;
+				y += s->C;
+			}
+		}
+		
+		if (syend >= yend) break;
+		systart = syend;
+		s++;
+	}
+	
+	TempPalette[0] = oldcolor0;
+	
+#define ADDVERTEX(x, y, s, t) \
+	*vptr++ = x; \
+	*vptr++ = y; \
+	*vptr++ = s; \
+	*vptr++ = t;
+	
+	doingBG = 0;
+	
+	bglEnableStencilTest(true);
+	bglStencilFunc(GPU_EQUAL, 0x00, 0x01, 0xFF);
+	bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	
+	bglEnableDepthTest(false);
+	bglEnableAlphaTest(true);
+	bglAlphaFunc(GPU_GREATER, 0);
+	
+	bglBlendEquation(GPU_BLEND_ADD, GPU_BLEND_ADD);
+	bglBlendFunc(GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+	
+	bglScissorMode(GPU_SCISSOR_DISABLE);
+	
+	bglColorDepthMask(GPU_WRITE_COLOR);
+	
+	SET_UNIFORM(0x24, 1.0f/256.0f, 1.0f/256.0f, 1.0f, 1.0f);
+	
+	bglEnableTextures(GPU_TEXUNIT0);
+	
+	// set alpha to 128 if we need to disable color math in this section
+	bglTexEnv(0, 
+		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
+		GPU_TEVSOURCES(GPU_TEXTURE0, GPU_CONSTANT, 0),
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_REPLACE, setalpha ? GPU_REPLACE:GPU_MODULATE, 
+		setalpha ? 0xFFFFFFFF:0x80FFFFFF);
+	bglDummyTexEnv(1);
+	bglDummyTexEnv(2);
+	bglDummyTexEnv(3);
+	bglDummyTexEnv(4);
+	bglDummyTexEnv(5);
+		
+	bglTexImage(GPU_TEXUNIT0, Mode7ColorBuffer,256,256,0,GPU_RGBA5551);
+	
+	bglNumAttribs(2);
+	bglAttribType(0, GPU_SHORT, 2);	// vertex
+	bglAttribType(1, GPU_SHORT, 2);	// texcoord
+	bglAttribBuffer(vptr);
+		
+	ADDVERTEX(0, ystart,     0, 256-ystart);
+	ADDVERTEX(256, ystart,   256, 256-ystart);
+	ADDVERTEX(256, yend,     256, 256-yend);
+	ADDVERTEX(0, ystart,     0, 256-ystart);
+	ADDVERTEX(256, yend,     256, 256-yend);
+	ADDVERTEX(0, yend,       0, 256-yend);
+	vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
+	vertexPtr = vptr;
+	
+	bglDrawArrays(GPU_TRIANGLES, 2*3);
+	
+#undef ADDVERTEX
+}
+
 
 
 int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int yend)
@@ -879,6 +1420,14 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 			
 			u32 addr = PPU.OBJTilesetAddr + idx;
 			u32 coord = PPU_StoreTileInCache(TILE_4BPP, palid, addr);
+			if (coord == 0xC000)
+			{
+				idx += (attrib & 0x4000) ? -32:32;
+				continue;
+			}
+			
+			//if (x <= -8 || x > 255 || y <= -8 || y > 223)
+			//	bprintf("OBJ tile %d/%d %04X\n", x, y, coord);
 			
 			switch (attrib & 0xC000)
 			{
@@ -970,54 +1519,57 @@ void PPU_HardRenderOBJs()
 	while (i != last);
 	if (!ntiles) return;
 	
-	myGPU_SetShaderAndViewport(hardRenderShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)OBJColorBuffer),0,0,256,256);
+	
+	bglOutputBuffers(OBJColorBuffer, OBJDepthBuffer);
+	
+	bglScissorMode(GPU_SCISSOR_NORMAL);
 		
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
-	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_ALL);
+	bglEnableStencilTest(false);
+	bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
 	
-	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+	bglEnableDepthTest(false);
+	bglEnableAlphaTest(true);
+	bglAlphaFunc(GPU_GREATER, 0);
 	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(true, GPU_GREATER, 0);
+	bglBlendEquation(GPU_BLEND_ADD, GPU_BLEND_ADD);
+	bglBlendFunc(GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
 	
-	setUniformMatrix(0x20, snesProjMatrix);
+	bglColorDepthMask(GPU_WRITE_ALL);
+	
+	bglUniformMatrix(0x20, snesProjMatrix);
 	SET_UNIFORM(0x24, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
 	SET_UNIFORM(0x25, 1.0f, 0.0f, 0.0f, 0.0f);
 	
-	GPU_SetTextureEnable(GPU_TEXUNIT0);
+	bglEnableTextures(GPU_TEXUNIT0);
 	
-	GPU_SetTexEnv(0, 
+	bglTexEnv(0, 
 		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
 		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
 		GPU_TEVOPERANDS(0,0,0), 
 		GPU_TEVOPERANDS(0,0,0), 
 		GPU_REPLACE, GPU_REPLACE, 
 		0xFFFFFFFF);
-	GPU_SetDummyTexEnv(1);
-	GPU_SetDummyTexEnv(2);
-	GPU_SetDummyTexEnv(3);
-	GPU_SetDummyTexEnv(4);
-	GPU_SetDummyTexEnv(5);
+	bglDummyTexEnv(1);
+	bglDummyTexEnv(2);
+	bglDummyTexEnv(3);
+	bglDummyTexEnv(4);
+	bglDummyTexEnv(5);
 		
-	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)PPU_TileCache),1024,1024,0,GPU_RGBA5551);
+	bglTexImage(GPU_TEXUNIT0, PPU_TileCache,1024,1024,0,GPU_RGBA5551);
 	
 	vertexPtr = (u16*)((((u32)vertexPtr) + 0xF) & ~0xF);
 	
-	GPU_SetScissorTest(GPU_SCISSOR_NORMAL, 0, ystart, 256, yend);
+	bglScissor(0, ystart, 256, yend);
+
+	bglNumAttribs(2);
+	bglAttribType(0, GPU_SHORT, 3);	// vertex
+	bglAttribType(1, GPU_UNSIGNED_BYTE, 2);	// texcoord
+	bglAttribBuffer(vstart);
 	
-	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vstart),
-		GPU_ATTRIBFMT(0, 3, GPU_SHORT)|GPU_ATTRIBFMT(1, 2, GPU_UNSIGNED_BYTE),
-		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
-	
-	myGPU_DrawArray(GPU_TRIANGLES, ntiles*2*3);
+	bglDrawArrays(GPU_TRIANGLES, ntiles*2*3);
 }
 
-void PPU_HardRenderOBJLayer(u32 prio, int ystart, int yend)
+void PPU_HardRenderOBJLayer(u32 setalpha, u32 prio, int ystart, int yend)
 {
 	u16* vptr = (u16*)vertexPtr;
 	
@@ -1029,44 +1581,48 @@ void PPU_HardRenderOBJLayer(u32 prio, int ystart, int yend)
 	*vptr++ = t;
 	
 	doingBG = 0;
-	GPU_FinishDrawing();
 	
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x02);
-	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_AND_NOT);
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(true, GPU_EQUAL, GPU_WRITE_COLOR);
+	bglEnableStencilTest(true);
+	bglStencilFunc(GPU_EQUAL, 0x00, 0x10, 0xFF);
+	bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
 	
-	GPUCMD_AddSingleParam(0x00010062, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F0118, 0x00000000);
+	bglEnableDepthTest(true);
+	bglDepthFunc(GPU_EQUAL);
+	bglEnableAlphaTest(true);
+	bglAlphaFunc(GPU_GREATER, 0);
 	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(true, GPU_GREATER, 0);
+	bglBlendEquation(GPU_BLEND_ADD, GPU_BLEND_ADD);
+	bglBlendFunc(GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+	
+	bglScissorMode(GPU_SCISSOR_DISABLE);
+	
+	bglColorDepthMask(GPU_WRITE_COLOR);
 	
 	SET_UNIFORM(0x24, 1.0f/256.0f, 1.0f/256.0f, 1.0f, 1.0f);
 	SET_UNIFORM(0x25, 1.0f, 0.0f, 0.0f, 0.0f);
 	
-	GPU_SetTextureEnable(GPU_TEXUNIT0);
+	bglEnableTextures(GPU_TEXUNIT0);
 	
-	GPU_SetTexEnv(0, 
+	// set alpha to 128 if we need to disable color math in this section
+	bglTexEnv(0, 
 		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
-		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
+		GPU_TEVSOURCES(GPU_TEXTURE0, GPU_CONSTANT, 0),
 		GPU_TEVOPERANDS(0,0,0), 
 		GPU_TEVOPERANDS(0,0,0), 
-		GPU_REPLACE, GPU_REPLACE, 
-		0xFFFFFFFF);
-	GPU_SetDummyTexEnv(1);
-	GPU_SetDummyTexEnv(2);
-	GPU_SetDummyTexEnv(3);
-	GPU_SetDummyTexEnv(4);
-	GPU_SetDummyTexEnv(5);
+		GPU_REPLACE, (setalpha&0x10) ? GPU_REPLACE:GPU_MODULATE, 
+		(setalpha&0x10) ? 0xFFFFFFFF:0x80FFFFFF);
+	bglDummyTexEnv(1);
+	bglDummyTexEnv(2);
+	bglDummyTexEnv(3);
+	bglDummyTexEnv(4);
+	bglDummyTexEnv(5);
 		
-	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)OBJColorBuffer),256,256,0,GPU_RGBA8);
+	bglTexImage(GPU_TEXUNIT0, OBJColorBuffer,256,256,0,GPU_RGBA8);
 	
-	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)vptr),
-		GPU_ATTRIBFMT(0, 3, GPU_SHORT)|GPU_ATTRIBFMT(1, 2, GPU_SHORT),
-		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
+	bglNumAttribs(2);
+	bglAttribType(0, GPU_SHORT, 3);	// vertex
+	bglAttribType(1, GPU_SHORT, 2);	// texcoord
+	bglAttribBuffer(vptr);
 		
 	ADDVERTEX(0, ystart,   prio,  0, ystart);
 	ADDVERTEX(256, ystart, prio,  256, ystart);
@@ -1074,6 +1630,21 @@ void PPU_HardRenderOBJLayer(u32 prio, int ystart, int yend)
 	ADDVERTEX(0, ystart,   prio,  0, ystart);
 	ADDVERTEX(256, yend,   prio,  256, yend);
 	ADDVERTEX(0, yend,     prio,  0, yend);
+	vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
+	
+	bglDrawArrays(GPU_TRIANGLES, 2*3);
+	
+	// sprites with no color math
+	
+	bglTexEnv(0, 
+		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
+		GPU_TEVSOURCES(GPU_TEXTURE0, GPU_CONSTANT, 0),
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_TEVOPERANDS(0,0,0), 
+		GPU_REPLACE, (setalpha&0x80) ? GPU_REPLACE:GPU_MODULATE, 
+		(setalpha&0x80) ? 0xFFFFFFFF:0x80FFFFFF);
+	bglAttribBuffer(vptr);
+	
 	prio += 0x40;
 	ADDVERTEX(0, ystart,   prio,  0, ystart);
 	ADDVERTEX(256, ystart, prio,  256, ystart);
@@ -1081,16 +1652,50 @@ void PPU_HardRenderOBJLayer(u32 prio, int ystart, int yend)
 	ADDVERTEX(0, ystart,   prio,  0, ystart);
 	ADDVERTEX(256, yend,   prio,  256, yend);
 	ADDVERTEX(0, yend,     prio,  0, yend);
-	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
+	vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
 	vertexPtr = vptr;
 	
-	myGPU_DrawArray(GPU_TRIANGLES, 2*2*3);
+	bglDrawArrays(GPU_TRIANGLES, 2*3);
 	
 #undef ADDVERTEX
 }
 
 
 
+
+void PPU_ComputeWindows_Hard(PPU_WindowSegment* s)
+{
+	PPU_ComputeWindows(s);
+	
+	// compute final window masks
+	for (;;)
+	{
+		u16 allenable = PPU.MainScreen|PPU.SubScreen;
+		allenable &= (allenable >> 8);
+		u8 finalmask = 0;
+		
+		if (allenable & 0x01)
+			finalmask |= ((PPU.BG[0].WindowCombine & (1 << (s->WindowMask ^ PPU.BG[0].WindowMask))) ? 0x01 : 0);
+		if (allenable & 0x02)
+			finalmask |= ((PPU.BG[1].WindowCombine & (1 << (s->WindowMask ^ PPU.BG[1].WindowMask))) ? 0x02 : 0);
+		if (allenable & 0x04)
+			finalmask |= ((PPU.BG[2].WindowCombine & (1 << (s->WindowMask ^ PPU.BG[2].WindowMask))) ? 0x04 : 0);
+		if (allenable & 0x08)
+			finalmask |= ((PPU.BG[3].WindowCombine & (1 << (s->WindowMask ^ PPU.BG[3].WindowMask))) ? 0x08 : 0);
+		
+		if (allenable & 0x10)
+			finalmask |= ((PPU.OBJWindowCombine & (1 << (s->WindowMask ^ PPU.OBJWindowMask))) ? 0x10 : 0);
+		
+		if (s->ColorMath & PPU.ColorMath1)
+			finalmask |= 0x20;
+			
+		s->FinalMaskMain = finalmask & (PPU.MainWindowEnable|0x20);
+		s->FinalMaskSub = finalmask & (PPU.SubWindowEnable|0x20);
+		
+		if (s->EndOffset >= 256) break;
+		s++;
+	}
+}
 
 void PPU_RenderScanline_Hard(u32 line)
 {
@@ -1100,9 +1705,15 @@ void PPU_RenderScanline_Hard(u32 line)
 	{
 		// initialize stuff upon line 0
 		
+		//memset(PPU.NumPaletteChanges, 0, 240);
+		
 		PPU.CurModeSection = &PPU.ModeSections[0];
 		PPU.CurModeSection->Mode = PPU.Mode;
-		PPU.LastMode = PPU.Mode;
+		PPU.CurModeSection->MainScreen = PPU.MainScreen;
+		PPU.CurModeSection->SubScreen = PPU.SubScreen;
+		PPU.CurModeSection->ColorMath1 = PPU.ColorMath1;
+		PPU.CurModeSection->ColorMath2 = PPU.ColorMath2;
+		PPU.ModeDirty = 0;
 		
 		for (i = 0; i < 4; i++)
 		{
@@ -1116,20 +1727,45 @@ void PPU_RenderScanline_Hard(u32 line)
 			bg->LastGraphicsParams = bg->GraphicsParams;
 		}
 		
+		PPU.CurMode7Section = &PPU.Mode7Sections[0];
+		PPU.CurMode7Section->Sel = PPU.M7Sel;
+		PPU.CurMode7Section->A = PPU.M7A;
+		PPU.CurMode7Section->B = PPU.M7B;
+		PPU.CurMode7Section->C = PPU.M7C;
+		PPU.CurMode7Section->D = PPU.M7D;
+		PPU.CurMode7Section->RefX = PPU.M7RefX;
+		PPU.CurMode7Section->RefY = PPU.M7RefY;
+		PPU.CurMode7Section->XScroll = PPU.M7XScroll;
+		PPU.CurMode7Section->YScroll = PPU.M7YScroll;
+		PPU.Mode7Dirty = 0;
+		
+		PPU.CurWindowSection = &PPU.WindowSections[0];
+		PPU_ComputeWindows_Hard(&PPU.CurWindowSection->Window);
+		PPU.WindowDirty = 0;
+		
 		PPU.CurColorEffect = &PPU.ColorEffectSections[0];
 		PPU.CurColorEffect->ColorMath = (PPU.ColorMath2 & 0x80);
 		PPU.CurColorEffect->Brightness = PPU.CurBrightness;
 		PPU.ColorEffectDirty = 0;
+		
+		PPU.CurSubBackdrop = &PPU.SubBackdropSections[0];
+		PPU.CurSubBackdrop->Color = PPU.SubBackdrop;
+		PPU.CurSubBackdrop->Div2 = (!(PPU.ColorMath1 & 0x02)) && (PPU.ColorMath2 & 0x40);
+		PPU.SubBackdropDirty = 0;
 	}
 	else
 	{
-		if (PPU.Mode != PPU.LastMode)
+		if (PPU.ModeDirty)
 		{
 			PPU.CurModeSection->EndOffset = line;
 			PPU.CurModeSection++;
 			
 			PPU.CurModeSection->Mode = PPU.Mode;
-			PPU.LastMode = PPU.Mode;
+			PPU.CurModeSection->MainScreen = PPU.MainScreen;
+			PPU.CurModeSection->SubScreen = PPU.SubScreen;
+			PPU.CurModeSection->ColorMath1 = PPU.ColorMath1;
+			PPU.CurModeSection->ColorMath2 = PPU.ColorMath2;
+			PPU.ModeDirty = 0;
 		}
 		
 		for (i = 0; i < 4; i++)
@@ -1149,6 +1785,33 @@ void PPU_RenderScanline_Hard(u32 line)
 			bg->LastGraphicsParams = bg->GraphicsParams;
 		}
 		
+		if (PPU.Mode7Dirty && (PPU.Mode & 0x07) == 7)
+		{
+			PPU.CurMode7Section->EndOffset = line;
+			PPU.CurMode7Section++;
+			
+			PPU.CurMode7Section->Sel = PPU.M7Sel;
+			PPU.CurMode7Section->A = PPU.M7A;
+			PPU.CurMode7Section->B = PPU.M7B;
+			PPU.CurMode7Section->C = PPU.M7C;
+			PPU.CurMode7Section->D = PPU.M7D;
+			PPU.CurMode7Section->RefX = PPU.M7RefX;
+			PPU.CurMode7Section->RefY = PPU.M7RefY;
+			PPU.CurMode7Section->XScroll = PPU.M7XScroll;
+			PPU.CurMode7Section->YScroll = PPU.M7YScroll;
+			
+			PPU.Mode7Dirty = 0;
+		}
+		
+		if (PPU.WindowDirty)
+		{
+			PPU.CurWindowSection->EndOffset = line;
+			PPU.CurWindowSection++;
+			
+			PPU_ComputeWindows_Hard(&PPU.CurWindowSection->Window);
+			PPU.WindowDirty = 0;
+		}
+		
 		if (PPU.ColorEffectDirty)
 		{
 			PPU.CurColorEffect->EndOffset = line;
@@ -1158,18 +1821,57 @@ void PPU_RenderScanline_Hard(u32 line)
 			PPU.CurColorEffect->Brightness = PPU.CurBrightness;
 			PPU.ColorEffectDirty = 0;
 		}
+		
+		if (PPU.SubBackdropDirty)
+		{
+			PPU.CurSubBackdrop->EndOffset = line;
+			PPU.CurSubBackdrop++;
+			
+			PPU.CurSubBackdrop->Color = PPU.SubBackdrop;
+			PPU.CurSubBackdrop->Div2 = (!(PPU.ColorMath1 & 0x02)) && (PPU.ColorMath2 & 0x40);
+			PPU.SubBackdropDirty = 0;
+		}
 	}
 }
 
 
-// TODO: later adjust for 16x16 layers
-#define RENDERBG(num, type, prio) PPU_HardRenderBG_8x8(colormath&(1<<num), &PPU.BG[num], type, prio?0x2000:0, ystart, yend)
+
+#define RENDERBG(num, type, prio) \
+	{ \
+		if (mode & (0x10<<num)) \
+			PPU_HardRenderBG_16x16(colormath&(1<<num), num, type, prio?0x2000:0, ystart, yend); \
+		else \
+			PPU_HardRenderBG_8x8(colormath&(1<<num), num, type, prio?0x2000:0, ystart, yend); \
+	}
+
+void PPU_HardRender_Mode0(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
+{
+	if (screen & 0x08) RENDERBG(3, TILE_2BPP, 0);
+	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 0);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
+	
+	if (screen & 0x08) RENDERBG(3, TILE_2BPP, 1);
+	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 1);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
+	
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_2BPP, 0);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
+	
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 1);
+	if (screen & 0x01) RENDERBG(0, TILE_2BPP, 1);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
+}
 
 void PPU_HardRender_Mode1(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
 {
 	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 0);
 	
-	if (screen & 0x10) PPU_HardRenderOBJLayer(0x00, ystart, yend);
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
 	
 	if (screen & 0x04) 
 	{
@@ -1177,17 +1879,17 @@ void PPU_HardRender_Mode1(int ystart, int yend, u32 screen, u32 mode, u32 colorm
 			RENDERBG(2, TILE_2BPP, 1);
 	}
 	
-	if (screen & 0x10) PPU_HardRenderOBJLayer(0x10, ystart, yend);
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
 	
 	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0);
 	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0);
 	
-	if (screen & 0x10) PPU_HardRenderOBJLayer(0x20, ystart, yend);
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
 	
 	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 1);
 	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 1);
 	
-	if (screen & 0x10) PPU_HardRenderOBJLayer(0x30, ystart, yend);
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
 	
 	if (screen & 0x04) 
 	{
@@ -1196,17 +1898,136 @@ void PPU_HardRender_Mode1(int ystart, int yend, u32 screen, u32 mode, u32 colorm
 	}
 }
 
-void PPU_HardRender(u32 screen, u32 colormath)
+void PPU_HardRender_Mode2(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
+{
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
+	
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
+	
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 1);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
+	
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 1);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
+}
+
+void PPU_HardRender_Mode3(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
+{
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
+	
+	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 0);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
+	
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 1);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
+	
+	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 1);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
+}
+
+void PPU_HardRender_Mode4(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
+{
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 0);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
+	
+	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 0);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
+	
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 1);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
+	
+	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 1);
+	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
+}
+
+void PPU_HardRender_Mode7(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
+{
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
+	
+	if (screen & 0x01) PPU_HardRenderBG_Mode7(colormath&0x01, ystart, yend);
+	
+	if (screen & 0x10)
+	{
+		PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
+		PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
+		PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
+	}
+}
+
+void PPU_HardRender(u32 snum)
 {
 	PPU_ModeSection* s = &PPU.ModeSections[0];
 	int ystart = 0;
 	
 	for (;;)
 	{
+		u32 screen, colormath;
+		if (!snum)
+		{
+			screen = s->MainScreen;
+			colormath = s->ColorMath2 & 0x1F;
+		}
+		else
+		{
+			if (!(s->ColorMath1 & 0x02))
+			{
+				if (s->EndOffset >= 240) break;
+				ystart = s->EndOffset;
+				s++;
+				continue;
+			}
+			
+			screen = s->SubScreen;
+			colormath = (s->ColorMath2 & 0x40) ? 0x00:0xFF;
+		}
+		
+		/*if (PPU.NumPaletteChanges[ystart])
+		{
+			bprintf("[%03d] %d changes\n", ystart, PPU.NumPaletteChanges[ystart]);
+			PPU_ApplyPaletteChanges(PPU.NumPaletteChanges[ystart], PPU.PaletteChanges[ystart]);
+		}*/
+		
 		switch (s->Mode & 0x07)
 		{
+			case 0:
+				PPU_HardRender_Mode0(ystart, s->EndOffset, screen, s->Mode, colormath);
+				break;
+				
 			case 1:
 				PPU_HardRender_Mode1(ystart, s->EndOffset, screen, s->Mode, colormath);
+				break;
+				
+			case 2:
+				PPU_HardRender_Mode2(ystart, s->EndOffset, screen, s->Mode, colormath);
+				break;
+				
+			case 3:
+				PPU_HardRender_Mode3(ystart, s->EndOffset, screen, s->Mode, colormath);
+				break;
+				
+			case 4:
+				PPU_HardRender_Mode4(ystart, s->EndOffset, screen, s->Mode, colormath);
+				break;
+				
+			// TODO: modes 5/6
+			
+			case 7:
+				PPU_HardRender_Mode7(ystart, s->EndOffset, screen, s->Mode, colormath);
 				break;
 		}
 		
@@ -1221,12 +2042,6 @@ void PPU_VBlank_Hard()
 {
 	int i;
 	
-	if (RenderState) 
-	{
-		gspWaitForP3D();
-		RenderState = 0;
-	}
-	
 	PPU.CurModeSection->EndOffset = 240;
 	
 	for (i = 0; i < 4; i++)
@@ -1235,37 +2050,59 @@ void PPU_VBlank_Hard()
 		bg->CurSection->EndOffset = 240;
 	}
 	
+	PPU.CurMode7Section->EndOffset = 240;
+	
+	PPU.CurWindowSection->EndOffset = 240;
+	
 	PPU.CurColorEffect->EndOffset = 240;
+	PPU.CurSubBackdrop->EndOffset = 240;
 	
 	
 	vertexPtr = vertexBuf;
 	
-	PPU_ClearScreens();
+	bglViewport(0, 0, 256, 256);
+	
+	//memcpy(TempPalette, PPU.Palette, 512);
+	PPU_ClearMainScreen();
+	PPU_DrawWindowMask(0);
+	
+	bglUseShader(hardRenderShader);
+	
+	// OBJ LAYER
 	
 	PPU_HardRenderOBJs();
 	
 	// MAIN SCREEN
-	myGPU_SetShaderAndViewport(hardRenderShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)MainScreenTex),0,0,256,256);
 	
 	doingBG = 0;
-	PPU_HardRender(PPU.MainScreen, PPU.ColorMath2);
-	
-	PPU_ClearAlpha();
-	//GPU_FinishDrawing();
+	bglOutputBuffers(MainScreenTex, OBJDepthBuffer);
+	PPU_HardRender(0);
+	PPU_ClearAlpha(0);
 	
 	// SUB SCREEN
-	myGPU_SetShaderAndViewport(hardRenderShader, (u32*)osConvertVirtToPhys((u32)OBJDepthBuffer),(u32*)osConvertVirtToPhys((u32)SubScreenTex),0,0,256,256);
+	
+	//memcpy(TempPalette, PPU.Palette, 512);
+	PPU_ClearSubScreen();
+	PPU_DrawWindowMask(1);
+	
+	bglUseShader(hardRenderShader);
 	
 	doingBG = 0;
-	PPU_HardRender(PPU.SubScreen, 0x1F);
-	//GPU_FinishDrawing();
-	
-	// TODO: appropriately clear alpha (for div2 shiz)
+	bglOutputBuffers(SubScreenTex, OBJDepthBuffer);
+	PPU_HardRender(1);
+	PPU_ClearAlpha(1);
 	
 	// reuse the color math system used by the soft renderer
+	bglScissorMode(GPU_SCISSOR_DISABLE);
 	PPU_BlendScreens(GPU_RGBA8);
+	
+	u32 taken = ((u32)vertexPtr - (u32)vertexBuf);
+	GSPGPU_FlushDataCache(NULL, vertexBuf, taken);
+	if (taken > 0x80000)
+		bprintf("OVERFLOW %05X/40000 (%d%%)\n", taken, (taken*100)/0x80000);
 		
 	
 	GSPGPU_FlushDataCache(NULL, PPU_TileCache, 1024*1024*sizeof(u16));
+	GSPGPU_FlushDataCache(NULL, Mode7ColorBuffer, 256*256*sizeof(u16));
 }
 

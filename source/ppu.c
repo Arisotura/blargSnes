@@ -121,6 +121,8 @@ void PPU_Init()
 	
 	if (PPU.HardwareRenderer)
 		PPU_Init_Hard();
+	else
+		PPU_Init_Soft();
 }
 
 void PPU_Reset()
@@ -178,6 +180,8 @@ void PPU_DeInit()
 	
 	if (PPU.HardwareRenderer)
 		PPU_DeInit_Hard();
+	else
+		PPU_DeInit_Soft();
 }
 
 
@@ -187,6 +191,7 @@ inline void PPU_SetXScroll(int nbg, u8 val)
 	{
 		PPU.M7XScroll = (s16)((val << 8) | PPU.M7Old);
 		PPU.M7Old = val;
+		PPU.Mode7Dirty = 1;
 	}
 	
 	PPU_Background* bg = &PPU.BG[nbg];
@@ -201,6 +206,7 @@ inline void PPU_SetYScroll(int nbg, u8 val)
 	{
 		PPU.M7YScroll = (s16)((val << 8) | PPU.M7Old);
 		PPU.M7Old = val;
+		PPU.Mode7Dirty = 1;
 	}
 	
 	PPU_Background* bg = &PPU.BG[nbg];
@@ -240,9 +246,30 @@ inline void PPU_SetColor(u32 num, u16 val)
 	
 	if (PPU.HardwareRenderer)
 	{
-		PPU.Palette[num] = temp | 0x0001;
-		PPU.PaletteUpdateCount[num >> 2]++;
-		PPU.PaletteUpdateCount256++;
+		// check if the write is happening mid-frame
+#if 0
+		if (PPU.VCount < 223 && !PPU.ForcedBlank)
+		{
+			// writes happening during this scanline will be applied to the next one
+			// (we assume they happen during HBlank)
+			u32 line = PPU.VCount + 1;
+			
+			u32 n = PPU.NumPaletteChanges[line];
+			PPU.PaletteChanges[line][n].Address = num;
+			PPU.PaletteChanges[line][n].Color = temp | 0x0001;
+			PPU.NumPaletteChanges[line] = n+1;
+			
+			// tell the hardware renderer to start a new section
+			// TODO: also check if the OBJ palette was updated
+			PPU.ModeDirty = 1;
+		}
+		else
+#endif
+		{
+			PPU.Palette[num] = temp | 0x0001;
+			PPU.PaletteUpdateCount[num >> 2]++;
+			PPU.PaletteUpdateCount256++;
+		}
 	}
 	else
 		PPU.Palette[num] = temp;
@@ -445,6 +472,7 @@ void PPU_Write8(u32 addr, u8 val)
 			
 		case 0x05:
 			PPU.Mode = val;
+			PPU.ModeDirty = 1;
 			break;
 			
 		case 0x06: // mosaic
@@ -524,6 +552,7 @@ void PPU_Write8(u32 addr, u8 val)
 			
 		case 0x1A:
 			PPU.M7Sel = val;
+			PPU.Mode7Dirty = 1;
 			break;
 			
 		case 0x1B: // multiply/mode7 shiz
@@ -534,29 +563,35 @@ void PPU_Write8(u32 addr, u8 val)
 				PPU.M7A = (s16)fval;
 				PPU.M7Old = val;
 			}
+			PPU.Mode7Dirty = 1;
 			break;
 		case 0x1C:
 			PPU.M7B = (s16)((val << 8) | PPU.M7Old);
 			PPU.M7Old = val;
 			PPU.MulB = (s8)val;
 			PPU.MulResult = (s32)PPU.MulA * (s32)PPU.MulB;
+			PPU.Mode7Dirty = 1;
 			break;
 		case 0x1D:
 			PPU.M7C = (s16)((val << 8) | PPU.M7Old);
 			PPU.M7Old = val;
+			PPU.Mode7Dirty = 1;
 			break;
 		case 0x1E:
 			PPU.M7D = (s16)((val << 8) | PPU.M7Old);
 			PPU.M7Old = val;
+			PPU.Mode7Dirty = 1;
 			break;
 			
 		case 0x1F: // mode7 center
 			PPU.M7RefX = (s16)((val << 8) | PPU.M7Old);
 			PPU.M7Old = val;
+			PPU.Mode7Dirty = 1;
 			break;
 		case 0x20:
 			PPU.M7RefY = (s16)((val << 8) | PPU.M7Old);
 			PPU.M7Old = val;
+			PPU.Mode7Dirty = 1;
 			break;
 			
 		case 0x21:
@@ -606,25 +641,45 @@ void PPU_Write8(u32 addr, u8 val)
 			break;
 			
 		case 0x2C:
-			PPU.MainLayerEnable = val;
+			if (PPU.MainLayerEnable != val)
+			{
+				PPU.MainLayerEnable = val;
+				PPU.ModeDirty = 1;
+			}
 			break;
 		case 0x2D:
-			PPU.SubLayerEnable = val;
+			if (PPU.SubLayerEnable != val)
+			{
+				PPU.SubLayerEnable = val;
+				PPU.ModeDirty = 1;
+			}
 			break;
 			
 		case 0x2E: // window enable
-			PPU.MainWindowEnable = val;
+			if (PPU.MainWindowEnable != val)
+			{
+				PPU.MainWindowEnable = val;
+				if (PPU.HardwareRenderer) PPU.WindowDirty = 1;
+			}
 			break;
 		case 0x2F:
-			PPU.SubWindowEnable = val;
+			if (PPU.SubWindowEnable != val)
+			{
+				PPU.SubWindowEnable = val;
+				if (PPU.HardwareRenderer) PPU.WindowDirty = 1;
+			}
 			break;
 		
 		case 0x30:
+			if ((PPU.ColorMath1 ^ val) & 0x03)
+				PPU.ModeDirty = 1;
 			PPU.ColorMath1 = val;
 			break;
 		case 0x31:
 			if ((PPU.ColorMath2 ^ val) & 0x80)
 				PPU.ColorEffectDirty = 1;
+			if ((PPU.ColorMath2 ^ val) & 0x7F)
+				PPU.ModeDirty = 1;
 			PPU.ColorMath2 = val;
 			break;
 			
@@ -634,6 +689,7 @@ void PPU_Write8(u32 addr, u8 val)
 				if (val & 0x20) PPU.SubBackdrop = (PPU.SubBackdrop & ~0xF800) | (intensity << 11);
 				if (val & 0x40) PPU.SubBackdrop = (PPU.SubBackdrop & ~0x07C0) | (intensity << 6);
 				if (val & 0x80) PPU.SubBackdrop = (PPU.SubBackdrop & ~0x003E) | (intensity << 1);
+				PPU.SubBackdropDirty = 1;
 			}
 			break;
 			
@@ -703,10 +759,8 @@ void PPU_Write16(u32 addr, u16 val)
 #define WINMASK_2   (3|(2<<2))
 #define WINMASK_12  (2|(2<<2))
 
-inline void PPU_ComputeSingleWindow(u16 x1, u16 x2, u8 mask)
+inline void PPU_ComputeSingleWindow(PPU_WindowSegment* s, u32 x1, u32 x2, u32 mask)
 {
-	PPU_WindowSegment* s = &PPU.Window[0];
-	
 	if (x1 < x2)
 	{
 		s->EndOffset = x1;
@@ -722,15 +776,14 @@ inline void PPU_ComputeSingleWindow(u16 x1, u16 x2, u8 mask)
 	s->WindowMask = WINMASK_OUT;
 }
 
-void PPU_ComputeWindows()
+void PPU_ComputeWindows(PPU_WindowSegment* s)
 {
-	PPU_WindowSegment* s;
+	PPU_WindowSegment* first_s = s;
 	
 	// check for cases that would disable windows fully
 	if ((!((PPU.MainScreen|PPU.SubScreen) & 0x1F00)) && 
 		(((PPU.ColorMath1 & 0x30) == 0x00) || ((PPU.ColorMath1 & 0x30) == 0x30)))
 	{
-		s = &PPU.Window[0];
 		s->EndOffset = 256;
 		s->WindowMask = 0x0F;
 		s->ColorMath = 0x10;
@@ -741,18 +794,16 @@ void PPU_ComputeWindows()
 
 	if (PPU.WinX[2] >= PPU.WinX[3])
 	{
-		PPU_ComputeSingleWindow(PPU.WinX[0], PPU.WinX[1], WINMASK_1);
+		PPU_ComputeSingleWindow(s, PPU.WinX[0], PPU.WinX[1], WINMASK_1);
 	}
 	else if (PPU.WinX[0] >= PPU.WinX[1])
 	{
-		PPU_ComputeSingleWindow(PPU.WinX[2], PPU.WinX[3], WINMASK_2);
+		PPU_ComputeSingleWindow(s, PPU.WinX[2], PPU.WinX[3], WINMASK_2);
 	}
 	else
 	{
 		// okay, we have two windows
-		
-		s = &PPU.Window[0];
-				
+
 		if (PPU.WinX[0] < PPU.WinX[2])
 		{
 			// window 1 first
@@ -850,7 +901,7 @@ void PPU_ComputeWindows()
 	}
 	
 	// precompute the final window for color math
-	s = &PPU.Window[0];
+	s = first_s;
 	for (;;)
 	{
 		u16 isinside = PPU.ColorMathWindowCombine & (1 << (s->WindowMask ^ PPU.ColorMathWindowMask));
@@ -862,22 +913,10 @@ void PPU_ComputeWindows()
 }
 
 
-extern u32* gxCmdBuf;
-extern u32* gpuOut;
-
-extern Handle gspEvents[GSPEVENT_MAX];
-
-
 void PPU_RenderScanline(u32 line)
 {
-	/*if (!(line & 7))
-	{
-		if (RenderState==1 && PeekEvent(gspEvents[GSPEVENT_P3D]))
-		{
-			GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
-			RenderState = 2;
-		}
-	}*/
+	if (!(line & 7))
+		ContinueRendering();
 	
 	if (SkipThisFrame) return;
 	
@@ -891,10 +930,10 @@ void PPU_VBlank()
 {
 	int i;
 	
+	FinishRendering();
+	
 	if (!SkipThisFrame)
 	{
-		myGPU_Reset();
-		
 		if (PPU.HardwareRenderer)
 			PPU_VBlank_Hard();
 		else
@@ -902,10 +941,14 @@ void PPU_VBlank()
 		
 		RenderTopScreen();
 	}
-	VSyncAndFrameskip();
+	else
+		RenderState = 4;
 	
 	PPU.OAMAddr = PPU.OAMReload;
 	
 	if (!PPU.ForcedBlank)
 		PPU.OBJOverflow = 0;
+		
+	if (SNES_AutoJoypad)
+		SNES_JoyBit = 16;
 }

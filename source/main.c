@@ -21,6 +21,7 @@
 #include <string.h>
 #include <3ds.h>
 
+#include "blargGL.h"
 #include "ui.h"
 #include "audio.h"
 
@@ -37,9 +38,9 @@
 #include "render_soft_vsh_shbin.h"
 #include "render_hard_vsh_shbin.h"
 #include "plain_quad_vsh_shbin.h"
+#include "window_mask_vsh_shbin.h"
 
 
-extern u32* gxCmdBuf;
 u32* gpuOut;
 u32* gpuDOut;
 u32* SNESFrame;
@@ -48,15 +49,8 @@ DVLB_s* finalShader;
 DVLB_s* softRenderShader;
 DVLB_s* hardRenderShader;
 DVLB_s* plainQuadShader;
+DVLB_s* windowMaskShader;
 
-u32 gpuCmdSize;
-u32* gpuCmd0;
-u32* gpuCmd1;
-u32* gpuCmd;
-int curCmd = 0;
-
-void* vertexBuf0;
-void* vertexBuf1;
 void* vertexBuf;
 void* vertexPtr;
 
@@ -70,6 +64,7 @@ u16* SubScreenTex;
 FS_archive sdmcArchive;
 
 
+int forceexit = 0;
 int running = 0;
 int pause = 0;
 u32 framecount = 0;
@@ -78,6 +73,9 @@ u8 RenderState = 0;
 int FramesSkipped = 0;
 bool SkipThisFrame = false;
 u64 LastVBlank = 0;
+
+// debug
+u32 ntriangles = 0;
 
 // hax
 extern Handle gspEventThread;
@@ -118,6 +116,8 @@ void SPCThread(u32 blarg)
 			
 			Audio_MixFinish();
 		}
+		else
+			Audio_Pause();
 	}
 	
 	svcExitThread();
@@ -231,22 +231,15 @@ float snesProjMatrix[16] =
 float vertexList[] = 
 {
 	// border
-	/*0.0, 0.0, 0.9,      0.78125, 0.0625,
+	0.0, 0.0, 0.9,      0.78125, 0.0625,
 	240.0, 0.0, 0.9,    0.78125, 1.0,
-	240.0, 400.0, 0.9,  0, 1.0,
+	240.0, 400.0, 0.9,  0.0, 1.0,
 	
 	0.0, 0.0, 0.9,      0.78125, 0.0625,
-	240.0, 400.0, 0.9,  0, 1.0,
-	0.0, 400.0, 0.9,    0, 0.0625,*/
+	240.0, 400.0, 0.9,  0.0, 1.0,
+	0.0, 400.0, 0.9,    0.0, 0.0625,
 	
-	// 0.0625 0.9375
-	/*0.0, 0.0, 0.9,      1.0, 0.875,
-	240.0, 0.0, 0.9,    1.0, 0.0,
-	240.0, 400.0, 0.9,  0.0, 0.0,
-	
-	0.0, 0.0, 0.9,      1.0, 0.875,
-	240.0, 400.0, 0.9,  0.0, 0.0,
-	0.0, 400.0, 0.9,    0.0, 0.875,*/
+	// screen
 	8.0, 72.0, 0.9,      1.0, 0.875,
 	232.0, 72.0, 0.9,    1.0, 0.0,
 	232.0, 328.0, 0.9,  0.0, 0.0,
@@ -254,156 +247,169 @@ float vertexList[] =
 	8.0, 72.0, 0.9,      1.0, 0.875,
 	232.0, 328.0, 0.9,  0.0, 0.0,
 	8.0, 328.0, 0.9,    0.0, 0.875,
-	
-	// screen
-	/*8.0, 72.0, 0.5,     1.0, 0.125,  0.125, 0.125,
-	232.0, 72.0, 0.5,   1.0, 1.0,    0.125, 1.0,
-	232.0, 328.0, 0.5,  0.0, 1.0,    0.0, 1.0,
-	
-	8.0, 72.0, 0.5,     1.0, 0.125,  0.125, 0.125,
-	232.0, 328.0, 0.5,  0.0, 1.0,    0.0,   1.0,
-	8.0, 328.0, 0.5,    0.0, 0.125,  0.0,   0.125,*/
-	0.0, 0.0, 0.5,     0.0, 0.125,  0.125, 0.125,
-	256.0, 0.0, 0.5,   1.0, 0.125,    0.125, 1.0,
-	256.0, 224.0, 0.5,  1.0, 1.0,    0.0, 1.0,
-	
-	0.0, 0.0, 0.5,     0.0, 0.125,  0.125, 0.125,
-	256.0, 224.0, 0.5,  1.0, 1.0,    0.0,   1.0,
-	0.0, 224.0, 0.5,    0.0, 1.0,  0.0,   0.125,
 };
 float* borderVertices;
 float* screenVertices;
 
-void setUniformMatrix(u32 startreg, float* m)
-{
-	float param[16];
-	param[0x0]=m[3]; //w
-	param[0x1]=m[2]; //z
-	param[0x2]=m[1]; //y
-	param[0x3]=m[0]; //x
-	param[0x4]=m[7];
-	param[0x5]=m[6];
-	param[0x6]=m[5];
-	param[0x7]=m[4];
-	param[0x8]=m[11];
-	param[0x9]=m[10];
-	param[0xa]=m[9];
-	param[0xb]=m[8];
-	param[0xc]=m[15];
-	param[0xd]=m[14];
-	param[0xe]=m[13];
-	param[0xf]=m[12];
-	GPU_SetUniform(startreg, (u32*)param, 4);
-}
 
-void GPU_SetDummyTexEnv(u8 num)
+bool PeekEvent(Handle evt)
 {
-	GPU_SetTexEnv(num, 
-		GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0), 
-		GPU_TEVSOURCES(GPU_PREVIOUS, 0, 0), 
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_TEVOPERANDS(0,0,0), 
-		GPU_REPLACE, 
-		GPU_REPLACE, 
-		0xFFFFFFFF);
-}
-
-void myGPU_Reset()
-{
-	GPUState = 0;
-	CurShader = NULL;
-}
-
-void myGPU_DrawArray(u32 type, u32 num)
-{
-	GPU_DrawArray(type, num);
-	GPUState = 1;
-}
-
-void myGPU_SetShaderAndViewport(DVLB_s* shader, u32* depth, u32* color, u32 x, u32 y, u32 w, u32 h)
-{
-	// FinishDrawing is required before changing shaders
-	// but not before changing viewport
-	
-	if (shader != CurShader)
+	// do a wait that returns immediately.
+	// if we get a timeout error code, the event didn't occur
+	Result res = svcWaitSynchronization(evt, 0);
+	if (!res)
 	{
-		if (GPUState) GPU_FinishDrawing();
-		SHDR_UseProgram(shader, 0);
-		CurShader = shader;
+		svcClearEvent(evt);
+		return true;
 	}
 	
-	GPU_SetViewport(depth, color, x, y, w, h);
+	return false;
 }
 
 void RenderTopScreen()
 {
-	if (RenderState) gspWaitForP3D();
-	GX_SetDisplayTransfer(gxCmdBuf, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
+	bglUseShader(finalShader);
 	
-	//shaderset = 0;
-	// notes on the drawing process 
-	// textures used here are actually 512x256. TODO: investigate if GPU_SetTexture() really has the params in the wrong order
-	// or if we did something wrong.
+	bglOutputBuffers(gpuOut, gpuDOut);
+	bglViewport(0, 0, 240*2, 400);
 	
+	bglEnableDepthTest(false);
+	bglColorDepthMask(GPU_WRITE_ALL);
 	
+	bglEnableTextures(GPU_TEXUNIT0);
 	
-	//GPU_FinishDrawing();
-
-	myGPU_SetShaderAndViewport(finalShader, (u32*)osConvertVirtToPhys((u32)gpuDOut),(u32*)osConvertVirtToPhys((u32)gpuOut),0,0,240*2,400);
-	
-	GPU_DepthRange(-1.0f, 0.0f);
-	GPU_SetFaceCulling(GPU_CULL_BACK_CCW);
-	GPU_SetStencilTest(false, GPU_ALWAYS, 0x00, 0xFF, 0x00);
-	GPU_SetStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
-	GPU_SetBlendingColor(0,0,0,0);
-	GPU_SetDepthTestAndWriteMask(false, GPU_ALWAYS, GPU_WRITE_ALL);
-	
-	GPUCMD_AddSingleParam(0x00010062, 0); 
-	GPUCMD_AddSingleParam(0x000F0118, 0);
-	
-	GPU_SetAlphaBlending(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-	GPU_SetAlphaTest(false, GPU_ALWAYS, 0x00);
-	
-	GPU_SetTextureEnable(GPU_TEXUNIT0);
-	
-	GPU_SetTexEnv(0, 
+	bglTexEnv(0, 
 		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0), 
 		GPU_TEVSOURCES(GPU_TEXTURE0, 0, 0),
 		GPU_TEVOPERANDS(0,0,0), 
 		GPU_TEVOPERANDS(0,0,0), 
 		GPU_REPLACE, GPU_REPLACE, 
 		0xFFFFFFFF);
-	GPU_SetDummyTexEnv(1);
-	GPU_SetDummyTexEnv(2);
-	GPU_SetDummyTexEnv(3);
-	GPU_SetDummyTexEnv(4);
-	GPU_SetDummyTexEnv(5);
+	bglDummyTexEnv(1);
+	bglDummyTexEnv(2);
+	bglDummyTexEnv(3);
+	bglDummyTexEnv(4);
+	bglDummyTexEnv(5);
 	
-	//GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)BorderTex),256,512,0,GPU_RGBA8); // texture is actually 512x256
-	GPU_SetTexture(GPU_TEXUNIT0, (u32*)osConvertVirtToPhys((u32)SNESFrame),256,256,/*0x6*/0,GPU_RGBA8);
+	bglTexImage(GPU_TEXUNIT0, BorderTex,512,256,0,GPU_RGBA8);
 	
-	//setup matrices
-	setUniformMatrix(0x20, screenProjMatrix);
+	bglUniformMatrix(0x20, screenProjMatrix);
 	
-	// border
-	GPU_SetAttributeBuffers(2, (u32*)osConvertVirtToPhys((u32)borderVertices),
-		GPU_ATTRIBFMT(0, 3, GPU_FLOAT)|GPU_ATTRIBFMT(1, 2, GPU_FLOAT),
-		0xFFC, 0x10, 1, (u32[]){0x00000000}, (u64[]){0x10}, (u8[]){2});
+	bglNumAttribs(2);
+	bglAttribType(0, GPU_FLOAT, 3);	// vertex
+	bglAttribType(1, GPU_FLOAT, 2);	// texcoord
+	bglAttribBuffer(borderVertices);
+	
+	bglDrawArrays(GPU_TRIANGLES, 2*3); // border
+	
+	
+	bglTexImage(GPU_TEXUNIT0, SNESFrame,256,256,/*0x6*/0,GPU_RGBA8);
+	
+	bglAttribBuffer(screenVertices);
+	
+	bglDrawArrays(GPU_TRIANGLES, 2*3); // screen
+	
+	if (!RenderState)
+	{
+		bglFlush();
+		RenderState = 1;
+	}
+}
+
+void ContinueRendering()
+{
+	switch (RenderState)
+	{
+		case 0: return;
 		
-	myGPU_DrawArray(GPU_TRIANGLES, 2*3); 
-	GPU_FinishDrawing();
+		case 3:
+			if (PeekEvent(gspEvents[GSPEVENT_PPF]))
+			{
+				bglFlush();
+				RenderState = 1;
+			}
+			break;
+			
+		case 1:
+			if (PeekEvent(gspEvents[GSPEVENT_P3D]))
+			{
+				GX_SetDisplayTransfer(NULL, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
+				RenderState = 2;
+			}
+			break;
+			
+		case 2:
+			if (PeekEvent(gspEvents[GSPEVENT_PPF]))
+			{
+				RenderState = 0;
+				VSyncAndFrameskip();
+			}
+			break;
+	}
+}
+
+void FinishRendering()
+{
+	if (RenderState == 3)
+	{
+		gspWaitForPPF();
+		bglFlush();
+		RenderState = 1;
+	}
+	if (RenderState == 1)
+	{
+		gspWaitForP3D();
+		GX_SetDisplayTransfer(NULL, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
+		RenderState = 2;
+	}
+	if (RenderState == 2)
+	{
+		gspWaitForPPF();
+		VSyncAndFrameskip();
+	}
+	if (RenderState == 4)
+	{
+		VSyncAndFrameskip();
+	}
 	
-	gspWaitForPPF();
-	// vsync here
-	
-	GPUCMD_Finalize();
-	GPUCMD_Run(gxCmdBuf);
-	RenderState = 1;
-	
-	curCmd ^= 1;
-	gpuCmd = curCmd ? gpuCmd1 : gpuCmd0;
-	vertexBuf = curCmd ? vertexBuf1 : vertexBuf0;
-	GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
+	RenderState = 0;
+}
+
+void VSyncAndFrameskip()
+{
+	if (running && !pause && PeekEvent(gspEvents[GSPEVENT_VBlank0]) && FramesSkipped<5)
+	{
+		// we missed the VBlank
+		// skip the next frames to compensate
+		
+		// TODO: doesn't work
+		/*s64 time = (s64)(svcGetSystemTick() - LastVBlank);
+		while (time > 4468724)
+		{
+			FramesSkipped++;
+			time -= 4468724;
+		}*/
+		
+		SkipThisFrame = true;
+		FramesSkipped++;
+	}
+	else
+	{
+		SkipThisFrame = false;
+		FramesSkipped = 0;
+		
+		{
+			u8* bottomfb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
+			
+			UI_SetFramebuffer(bottomfb);
+			UI_Render();
+			GSPGPU_FlushDataCache(NULL, bottomfb, 0x38400);
+		}
+		
+		gfxSwapBuffersGpu();
+		gspWaitForEvent(GSPEVENT_VBlank0, false);
+		//LastVBlank = svcGetSystemTick();
+	}
 }
 
 
@@ -590,8 +596,10 @@ bool StartROM(char* path)
 	
 	if (spcthread)
 	{
-		exitspc = 1;
+		exitspc = 1; pause = 1;
+		svcSignalEvent(SPCSync);
 		svcWaitSynchronization(spcthread, U64_MAX);
+		svcCloseHandle(spcthread);
 		exitspc = 0;
 	}
 	
@@ -607,7 +615,7 @@ bool StartROM(char* path)
 	
 	if (!SNES_LoadROM(temppath))
 		return false;
-		
+	
 	CPU_Reset();
 	SPC_Reset();
 
@@ -635,56 +643,14 @@ bool StartROM(char* path)
 
 
 int reported=0;
-void reportshit(u32 pc)
+void reportshit(u32 pc, u32 a, u32 y)
 {
-	if (reported) return;
+	/*if (reported) return;
 	reported = 1;
 	bprintf("-- %06X\n", pc);
-}
-
-
-bool PeekEvent(Handle evt)
-{
-	// do a wait that returns immediately.
-	// if we get a timeout error code, the event didn't occur
-	Result res = svcWaitSynchronization(evt, 0);
-	if (!res)
-	{
-		svcClearEvent(evt);
-		return true;
-	}
-	
-	return false;
-}
-
-
-void VSyncAndFrameskip()
-{
-	if (running && !pause && PeekEvent(gspEvents[GSPEVENT_VBlank0]) && FramesSkipped<5)
-	{
-		// we missed the VBlank
-		// skip the next frames to compensate
-		
-		// TODO: doesn't work
-		/*s64 time = (s64)(svcGetSystemTick() - LastVBlank);
-		while (time > 4468724)
-		{
-			FramesSkipped++;
-			time -= 4468724;
-		}*/
-		
-		SkipThisFrame = true;
-		FramesSkipped++;
-	}
-	else
-	{
-		SkipThisFrame = false;
-		FramesSkipped = 0;
-		
-		gfxSwapBuffersGpu();
-		gspWaitForEvent(GSPEVENT_VBlank0, false);
-		//LastVBlank = svcGetSystemTick();
-	}
+	bprintf("--- %04X %04X\n", *(u16*)&SNES_SysRAM[0x1E5A], *(u16*)&SNES_SysRAM[0x1E5E]);
+	bprintf("--- %04X %04X\n", *(u16*)&SNES_SysRAM[0x6], *(u16*)&SNES_SysRAM[0xA]);
+	dbg_save("/snesram_earthbound.bin", SNES_SysRAM, 128*1024);*/
 }
 
 
@@ -698,6 +664,7 @@ int main()
 	int repeatstate = 0;
 	int repeatcount = 0;
 	
+	forceexit = 0;
 	running = 0;
 	pause = 0;
 	exitspc = 0;
@@ -707,7 +674,7 @@ int main()
 	PPU_Init();
 	
 	
-	srvInit();
+	srvInit(); 
 		
 	aptInit();
 	aptOpenSession();
@@ -719,16 +686,11 @@ int main()
 	fsInit();
 	
 	GPU_Init(NULL);
-	gpuCmdSize = 0x40000;
-	gpuCmd0 = (u32*)linearAlloc(gpuCmdSize*4);
-	gpuCmd1 = (u32*)linearAlloc(gpuCmdSize*4);
-	curCmd = 0;
-	gpuCmd = gpuCmd0;
-	GPU_Reset(gxCmdBuf, gpuCmd, gpuCmdSize);
+	bglInit();
+	RenderState = 0;
 	
-	vertexBuf0 = linearAlloc(0x20000);
-	vertexBuf1 = linearAlloc(0x20000);
-	vertexBuf = vertexBuf0;
+	vertexBuf = linearAlloc(0x80000);
+	vertexPtr = vertexBuf;
 	
 	svcSetThreadPriority(gspEventThread, 0x30);
 	
@@ -740,8 +702,9 @@ int main()
 	softRenderShader = SHDR_ParseSHBIN((u32*)render_soft_vsh_shbin, render_soft_vsh_shbin_size);
 	hardRenderShader = SHDR_ParseSHBIN((u32*)render_hard_vsh_shbin, render_hard_vsh_shbin_size);
 	plainQuadShader = SHDR_ParseSHBIN((u32*)plain_quad_vsh_shbin, plain_quad_vsh_shbin_size);
+	windowMaskShader = SHDR_ParseSHBIN((u32*)window_mask_vsh_shbin, window_mask_vsh_shbin_size);
 	
-	GX_SetMemoryFill(gxCmdBuf, gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
+	GX_SetMemoryFill(NULL, gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
 	gspWaitForPSC0();
 	gfxSwapBuffersGpu();
 	
@@ -749,54 +712,40 @@ int main()
 	ClearConsole();
 	
 	BorderTex = (u32*)linearAlloc(512*256*4);
-	//MainScreenTex = (u16*)linearAlloc(256*512*2);
-	//SubScreenTex = &MainScreenTex[256*256];
 	
-	if (false) // TODO (software renderer)
-	{
-		MainScreenTex = (u16*)VRAM_Alloc(256*512*2);
-		SubScreenTex = &MainScreenTex[256*256];
-	}
-	else
-	{
-		MainScreenTex = (u16*)VRAM_Alloc(256*512*4);
-		SubScreenTex = &((u32*)MainScreenTex)[256*256];
-	}
-	
+	// copy some fixed vertices to linear memory
 	borderVertices = (float*)linearAlloc(5*3 * 2 * sizeof(float));
-	screenVertices = (float*)linearAlloc(7*3 * 2 * sizeof(float));
+	screenVertices = (float*)linearAlloc(5*3 * 2 * sizeof(float));
 	
 	float* fptr = &vertexList[0];
 	for (i = 0; i < 5*3*2; i++) borderVertices[i] = *fptr++;
-	for (i = 0; i < 7*3*2; i++) screenVertices[i] = *fptr++;
+	for (i = 0; i < 5*3*2; i++) screenVertices[i] = *fptr++;
 	
 
 	sdmcArchive = (FS_archive){0x9, (FS_path){PATH_EMPTY, 1, (u8*)""}};
 	FSUSER_OpenArchive(NULL, &sdmcArchive);
 	
+	// load border
 	if (!LoadBorder("/blargSnesBorder.bmp"))
 		CopyBitmapToTexture(defaultborder, BorderTex, 400, 240, 0xFF, 0, 64, 0x1);
-		
-	/*CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 0, 32, 0x3);
-	memset(SubScreenTex, 0, 256*256*2);*/
 
+	// copy splashscreen
 	u32* tempbuf = (u32*)linearAlloc(256*256*4);
-	CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x1);
-	GX_SetDisplayTransfer(gxCmdBuf, tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x8);
+	CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x0);
+	GSPGPU_FlushDataCache(NULL, tempbuf, 256*256*4);
+	GX_SetDisplayTransfer(NULL, tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
 	gspWaitForPPF();
 	linearFree(tempbuf);
 	
 	Audio_Init();
 	
 	UI_Switch(&UI_ROMMenu);
-	
-	GPUCMD_SetBuffer(gpuCmd, gpuCmdSize, 0);
-	
-	svcCreateEvent(&SPCSync, 0);
+
+	svcCreateEvent(&SPCSync, 0); 
 
 
 	APP_STATUS status;
-	while((status = aptGetStatus()) != APP_EXITING)
+	while(!forceexit && (status = aptGetStatus()) != APP_EXITING)
 	{
 		if(status == APP_RUNNING)
 		{
@@ -808,8 +757,8 @@ int main()
 			if (running && !pause)
 			{
 				// emulate
-				
 				CPU_Run(); // runs the SNES for one frame. Handles PPU rendering.
+				ContinueRendering();
 				
 				// SRAM autosave check
 				// TODO: also save SRAM under certain circumstances (pausing, returning to home menu, etc)
@@ -823,6 +772,7 @@ int main()
 					bprintf("Tap screen or press A to resume.\n");
 					bprintf("Press Select to load another game.\n");
 					pause = 1;
+					svcSignalEvent(SPCSync);
 				}
 			}
 			else
@@ -842,12 +792,19 @@ int main()
 						running = 0;
 						UI_Switch(&UI_ROMMenu);
 						
-						CopyBitmapToTexture(screenfill, MainScreenTex, 256, 224, 0, 0, 32, 0x3);
-						memset(SubScreenTex, 0, 256*256*2);
+						// copy splashscreen
+						FinishRendering();
+						u32* tempbuf = (u32*)linearAlloc(256*256*4);
+						CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x0);
+						GSPGPU_FlushDataCache(NULL, tempbuf, 256*256*4);
+						GX_SetDisplayTransfer(NULL, tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
+						gspWaitForPPF();
+						linearFree(tempbuf);
 					}
 					else if (release & KEY_X)
 					{
 						bprintf("PC: %02X|%04X\n", CPU_Regs.PBR, CPU_Regs.PC);
+						dbg_save("/snesram.bin", SNES_SysRAM, 128*1024);
 					}
 					
 					if ((held & (KEY_L|KEY_R)) == (KEY_L|KEY_R))
@@ -872,9 +829,8 @@ int main()
 						shot = 0;
 				}
 				
-				myGPU_Reset();
 				RenderTopScreen();
-				VSyncAndFrameskip();
+				FinishRendering();
 				
 				if (held & KEY_TOUCH)
 				{
@@ -911,14 +867,14 @@ int main()
 				}
 			}
 			
-			if (!SkipThisFrame)
-			{
+			//if (!SkipThisFrame)
+			/*{
 				u8* bottomfb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
 				
 				UI_SetFramebuffer(bottomfb);
 				UI_Render();
 				GSPGPU_FlushDataCache(NULL, bottomfb, 0x38400);
-			}
+			}*/
 			
 			//if ((!SkipThisFrame) || (FramesSkipped > 1))
 			//	gfxSwapBuffersGpu();
@@ -928,27 +884,40 @@ int main()
 		}
 		else if(status == APP_SUSPENDING)
 		{
+			FinishRendering();
 			aptReturnToMenu();
 		}
 		else if(status == APP_PREPARE_SLEEPMODE)
 		{
+			FinishRendering();
 			aptSignalReadyForSleep();
 			aptWaitStatusEvent();
 		}
 	}
-	 
-	exitspc = 1;
-	if (spcthread) svcWaitSynchronization(spcthread, U64_MAX);
 	
-	linearFree(gpuCmd);
+	exitspc = 1; pause = 1;
+	svcSignalEvent(SPCSync);
+	if (spcthread) 
+	{
+		svcWaitSynchronization(spcthread, U64_MAX);
+		svcCloseHandle(spcthread);
+	}
+	Audio_DeInit();
 	
 	PPU_DeInit();
+	
+	linearFree(borderVertices);
+	linearFree(screenVertices);
+	
+	linearFree(BorderTex);
+	
+	bglDeInit();
 
 	fsExit();
 	hidExit();
 	gfxExit();
 	aptExit();
-	svcExitProcess();
+	srvExit();
 
     return 0;
 }

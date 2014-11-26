@@ -20,6 +20,9 @@
 #define AUDIO_H
 
 void Audio_Init();
+void Audio_DeInit();
+
+void Audio_Pause();
 
 void Audio_Mix();
 void Audio_MixFinish();

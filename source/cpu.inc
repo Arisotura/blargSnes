@@ -46,6 +46,7 @@ memoryMap		.req r4		@ pointer to the memory map table
 .equ flagE, 0x100	@ not actually in P, but hey, we have to keep it somewhere
 .equ flagW, 0x200	@ not even an actual flag... set by WAI
 .equ flagI2, 0x400	@ set when NMIs are disabled
+.equ flagRender, 0x800  @ set when we rendered a scanline
 
 .equ flagNVZC, 0xC3
 .equ flagNZ,   0x82
@@ -58,6 +59,12 @@ memoryMap		.req r4		@ pointer to the memory map table
 	stmdb sp!, {r12}
 	bl \func
 	ldmia sp!, {r12}
+.endm
+
+.macro SafeCall_3 func
+	stmdb sp!, {r3, r12}
+	bl \func
+	ldmia sp!, {r3, r12}
 .endm
 
 .macro SafeCall_03 func

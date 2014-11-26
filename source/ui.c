@@ -25,6 +25,8 @@
 
 UIController* CurrentUI = NULL;
 
+extern int forceexit;
+
 void UI_Switch(UIController* ui)
 {
 	if (CurrentUI)
@@ -92,16 +94,16 @@ void DrawText(int x, int y, u32 color, char* str)
 	
 	for (i = 0; str[i] != '\0'; i++)
 	{
-		if (str[i] < 0x21)
+		if (str[i] == 0x20)
 		{
 			x += 6;
 			continue;
 		}
 		
-		u16 ch = str[i];
-		if (ch > 0x7E) ch = 0x7F;
+		u32 ch = str[i];
+		if (ch < 0x10 || ch > 0x7E) ch = 0x7F;
 		
-		ptr = &font[(ch-0x20) << 4];
+		ptr = &font[(ch-0x10) << 4];
 		glyphsize = ptr[0];
 		if (!glyphsize)
 		{
@@ -126,4 +128,50 @@ void DrawText(int x, int y, u32 color, char* str)
 		x++;
 		if (x >= 320) break;
 	}
+}
+
+
+#define TOOLBAR_HEIGHT 22
+#define BTN_WIDTH 26
+
+void DrawToolbar()
+{
+	u32 x;
+	u32 basey = (TOOLBAR_HEIGHT-12)/2;
+	
+	DrawText(basey, basey, RGB(255,255,255), "blargSNES 1.19");
+	
+	FillRect(0, 319, TOOLBAR_HEIGHT, TOOLBAR_HEIGHT, RGB(0,255,255));
+	FillRect(0, 319, TOOLBAR_HEIGHT+1, TOOLBAR_HEIGHT+1, RGB(0,128,255));
+	
+	// X button
+	x = 320-BTN_WIDTH;
+	FillRect(x, x, 0, TOOLBAR_HEIGHT-1, RGB(0,255,255));
+	DrawText(x+((BTN_WIDTH-12)/2), basey, RGB(255,32,32), "\x10");
+	
+	// config button
+	x = 320-(BTN_WIDTH*2);
+	FillRect(x, x, 0, TOOLBAR_HEIGHT-1, RGB(0,255,255));
+	DrawText(x+((BTN_WIDTH-12)/2), basey, RGB(32,255,255), "\x11");
+}
+
+bool HandleToolbar(u32 x, u32 y)
+{
+	if (y >= TOOLBAR_HEIGHT) return false;
+	
+	u32 btn1 = 320-(BTN_WIDTH*2);
+	u32 btn2 = 320-BTN_WIDTH;
+	
+	if (x >= btn1 && x < btn2)
+	{
+		// TODO: config screen
+		return true;
+	}
+	else if (x >= btn2)
+	{
+		forceexit = 1;
+		return true;
+	}
+	
+	return false;
 }
