@@ -902,6 +902,7 @@ int main()
 		svcWaitSynchronization(spcthread, U64_MAX);
 		svcCloseHandle(spcthread);
 	}
+	Audio_DeInit();
 	
 	PPU_DeInit();
 	
