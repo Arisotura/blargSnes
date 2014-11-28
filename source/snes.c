@@ -18,6 +18,7 @@
 
 #include <3ds.h>
 
+#include "main.h"
 #include "mem.h"
 #include "snes.h"
 #include "cpu.h"
@@ -125,7 +126,7 @@ bool SNES_LoadROM(char* path)
 		{
 			res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_READ|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
 			if ((res & 0xFFFC03FF) != 0)
-				bprintf("Error %08X while trying to open the savefile.\nMake sure it isn't read-only.\n");
+				bprintf("Error %08X while trying to open the savefile.\nMake sure it isn't read-only.\n", res);
 			else
 				FSFILE_SetSize(sram, SNES_SRAMMask + 1);
 		}
@@ -272,7 +273,7 @@ void SNES_SaveSRAM()
 	if ((res & 0xFFFC03FF) == 0)
 	{
 		u32 byteswritten = 0;
-		FSFILE_Write(sram, &byteswritten, 0, (u32*)SNES_SRAM, SNES_SRAMMask + 1, 0x10001);
+		FSFILE_Write(sram, &byteswritten, 0, (u32*)SNES_SRAM, SNES_SRAMMask + 1, FS_WRITE_FLUSH);
 		FSFILE_Close(sram);
 		bprintf("SRAM saved\n");
 	}

@@ -694,6 +694,13 @@ norender:
 				bgt hblank_end
 				orr r0, r0, #0x4000
 				strh r0, [memoryMap, #-0x6]
+				@stmdb sp!, {r0, r3, r12}
+				@mov r0, snesCycles, lsl #0x10
+				@cmp r0, #0xE00000
+				@movlt r0, r0, lsr #0x10
+				@bllt PPU_RenderScanline
+				@bl DMA_DoHDMA
+				@ldmia sp!, {r0, r3, r12}
 				SafeCall_03 DMA_DoHDMA
 				
 hblank_end:

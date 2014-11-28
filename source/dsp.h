@@ -12,6 +12,9 @@ extern u16 dspPreamp;
 void DspMixSamplesStereo(u32 samples, s16 *mixBuf);
 void DspWriteByte(u8 val, u8 address);
 
+void DSP_BufferSwap();
+void DSP_ReplayWrites(u32 idx);
+
 struct _DspChannel {
     int sampleSpeed;
     int samplePos;

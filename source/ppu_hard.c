@@ -91,26 +91,14 @@ int doingBG = 0;
 
 // + layer scroll
 // + layer tileset/tilemap address
-// * mode7 scroll/matrix/etc
+// + mode7 scroll/matrix/etc
 // + color math layer sel
 
 // * OBJ tileset address
 
-// * window registers
+// + window registers
 
 // + sub backdrop color
-
-
-// STENCIL BUFFER USAGE
-// * bit0: window mask
-// * bit1: 0=clear alpha, 1=keep alpha
-
-// DEPTH BUFFER USAGE (probably not right -- TODO update)
-// * 0x00-0x30: OBJ pal 0-3 (prio 0-3 resp.)
-// * 0x40-0x70: OBJ pal 4-7 (prio 0-3 resp.)
-
-// (note that final depth values are transformed to range between 0 and -1 
-//  -- GPU_GREATER in the depth test actually means LESS)
 
 
 #define TILE_2BPP 0
@@ -156,8 +144,6 @@ void PPU_Init_Hard()
 		
 	for (i = 0; i < 1024*1024; i++)
 		PPU_TileCache[i] = 0xF800;
-	for (i = 0; i < 64; i++)
-		PPU_TileCache[i] = 0x07C0;
 		
 	for (i = 0; i < 256; i++)
 	{
@@ -2099,10 +2085,15 @@ void PPU_VBlank_Hard()
 	u32 taken = ((u32)vertexPtr - (u32)vertexBuf);
 	GSPGPU_FlushDataCache(NULL, vertexBuf, taken);
 	if (taken > 0x80000)
-		bprintf("OVERFLOW %05X/40000 (%d%%)\n", taken, (taken*100)/0x80000);
+		bprintf("OVERFLOW %05X/80000 (%d%%)\n", taken, (taken*100)/0x80000);
 		
 	
 	GSPGPU_FlushDataCache(NULL, PPU_TileCache, 1024*1024*sizeof(u16));
+	//GX_SetDisplayTransfer(NULL, (u32*)PPU_TileCacheRAM, 0x04000400, (u32*)PPU_TileCache, 0x04000400, 0x3308);
+	//gspWaitForPPF();
+	//GX_RequestDma(NULL, (u32*)PPU_TileCacheRAM, (u32*)PPU_TileCache, 1024*1024*sizeof(u16));
+	//gspWaitForDMA();
+	
 	GSPGPU_FlushDataCache(NULL, Mode7ColorBuffer, 256*256*sizeof(u16));
 }
 

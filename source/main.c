@@ -21,6 +21,9 @@
 #include <string.h>
 #include <3ds.h>
 
+#include "main.h"
+#include "config.h"
+
 #include "blargGL.h"
 #include "ui.h"
 #include "audio.h"
@@ -30,6 +33,7 @@
 #include "spc700.h"
 #include "ppu.h"
 #include "snes.h"
+#include "dsp.h"
 
 #include "defaultborder.h"
 #include "screenfill.h"
@@ -137,7 +141,7 @@ void dbg_save(char* path, void* buf, int size)
 	if ((res & 0xFFFC03FF) == 0)
 	{
 		u32 byteswritten = 0;
-		FSFILE_Write(sram, &byteswritten, 0, (u32*)buf, size, 0x10001);
+		FSFILE_Write(sram, &byteswritten, 0, (u32*)buf, size, FS_WRITE_FLUSH);
 		FSFILE_Close(sram);
 	}
 }
@@ -251,6 +255,8 @@ float vertexList[] =
 float* borderVertices;
 float* screenVertices;
 
+
+void VSyncAndFrameskip();
 
 bool PeekEvent(Handle evt)
 {
@@ -670,6 +676,7 @@ int main()
 	exitspc = 0;
 	
 	
+	ClearConsole();
 	VRAM_Init();
 	PPU_Init();
 	
@@ -684,6 +691,11 @@ int main()
 	gfxInit();
 	hidInit(NULL);
 	fsInit();
+	
+	sdmcArchive = (FS_archive){0x9, (FS_path){PATH_EMPTY, 1, (u8*)""}};
+	FSUSER_OpenArchive(NULL, &sdmcArchive);
+	
+	LoadConfig();
 	
 	GPU_Init(NULL);
 	bglInit();
@@ -709,7 +721,7 @@ int main()
 	gfxSwapBuffersGpu();
 	
 	UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
-	ClearConsole();
+	//ClearConsole();
 	
 	BorderTex = (u32*)linearAlloc(512*256*4);
 	
@@ -721,9 +733,6 @@ int main()
 	for (i = 0; i < 5*3*2; i++) borderVertices[i] = *fptr++;
 	for (i = 0; i < 5*3*2; i++) screenVertices[i] = *fptr++;
 	
-
-	sdmcArchive = (FS_archive){0x9, (FS_path){PATH_EMPTY, 1, (u8*)""}};
-	FSUSER_OpenArchive(NULL, &sdmcArchive);
 	
 	// load border
 	if (!LoadBorder("/blargSnesBorder.bmp"))
@@ -738,11 +747,9 @@ int main()
 	linearFree(tempbuf);
 	
 	Audio_Init();
+	svcCreateEvent(&SPCSync, 0); 
 	
 	UI_Switch(&UI_ROMMenu);
-
-	svcCreateEvent(&SPCSync, 0); 
-
 
 	APP_STATUS status;
 	while(!forceexit && (status = aptGetStatus()) != APP_EXITING)
@@ -866,21 +873,6 @@ int main()
 					}
 				}
 			}
-			
-			//if (!SkipThisFrame)
-			/*{
-				u8* bottomfb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
-				
-				UI_SetFramebuffer(bottomfb);
-				UI_Render();
-				GSPGPU_FlushDataCache(NULL, bottomfb, 0x38400);
-			}*/
-			
-			//if ((!SkipThisFrame) || (FramesSkipped > 1))
-			//	gfxSwapBuffersGpu();
-			
-			//VSyncAndFrameskip();
-			//gspWaitForEvent(GSPEVENT_VBlank0, false);
 		}
 		else if(status == APP_SUSPENDING)
 		{
