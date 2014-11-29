@@ -859,6 +859,7 @@ int main()
 					bprintf("Pause.\n");
 					bprintf("Tap screen or press A to resume.\n");
 					bprintf("Press Select to load another game.\n");
+					bprintf("Press Start to enter the config.\n");
 					pause = 1;
 					svcSignalEvent(SPCSync);
 				}
@@ -868,7 +869,7 @@ int main()
 				// update UI
 				
 				// TODO move this chunk of code somewhere else?
-				if (running)
+				if (running && !UI_Level()) // only run this if not inside a child UI
 				{
 					if (release & (KEY_TOUCH|KEY_A))
 					{
@@ -891,6 +892,10 @@ int main()
 						//gspWaitForPPF();
 						SafeWait(gspEvents[GSPEVENT_PPF]);
 						linearFree(tempbuf);
+					}
+					else if (release & KEY_START)
+					{
+						UI_SaveAndSwitch(&UI_Config);
 					}
 					else if (release & KEY_X)
 					{

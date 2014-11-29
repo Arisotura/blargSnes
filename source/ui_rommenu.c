@@ -180,37 +180,43 @@ void ROMMenu_ButtonPress(u32 btn)
 	else if (btn & KEY_UP) // up
 	{
 		menusel--;
-		if (menusel < 0) {
-			menusel = nfiles - 2;
-			menuscroll = menusel-(MENU_MAX-1);
+		if (menusel < 0) 
+		{
+			menusel = nfiles - 1;
+			//menuscroll = menusel-(MENU_MAX-1);
 		}
 		if (menusel < menuscroll) menuscroll = menusel;
+		if (menusel-(MENU_MAX-1) > menuscroll) menuscroll = menusel-(MENU_MAX-1);
 		
 		menudirty = 2;
 	}
 	else if (btn & KEY_DOWN) // down
 	{
 		menusel++;
-		if (menusel > nfiles-1) {
+		if (menusel > nfiles-1) 
+		{
 			menusel = 0;
-			menuscroll = menusel;
+			//menuscroll = menusel;
 		}
+		if (menusel < menuscroll) menuscroll = menusel;
 		if (menusel-(MENU_MAX-1) > menuscroll) menuscroll = menusel-(MENU_MAX-1);
 		
 		menudirty = 2;
 	}
 	else if (btn & KEY_LEFT) // left
 	{
-		menusel -= 18;
+		menusel -= MENU_MAX;
 		if (menusel < 0) menusel = 0;
 		if (menusel < menuscroll) menuscroll = menusel;
+		if (menusel-(MENU_MAX-1) > menuscroll) menuscroll = menusel-(MENU_MAX-1);
 		
 		menudirty = 2;
 	}
 	else if (btn & KEY_RIGHT) // right
 	{
-		menusel += 18;
+		menusel += MENU_MAX;
 		if (menusel > nfiles-1) menusel = nfiles - 1;
+		if (menusel < menuscroll) menuscroll = menusel;
 		if (menusel-(MENU_MAX-1) > menuscroll) menuscroll = menusel-(MENU_MAX-1);
 		
 		menudirty = 2;

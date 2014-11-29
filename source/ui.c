@@ -70,6 +70,11 @@ void UI_Restore()
 	(*CurrentUI->Render)(true);
 }
 
+int UI_Level()
+{
+	return UIStackPointer;
+}
+
 
 void UI_Render()
 {
@@ -89,6 +94,8 @@ void UI_Touch(int touch, u32 x, u32 y)
 
 u8* BottomFB;
 
+#define CLAMP(x, min, max) if (x < min) x = min; else if (x > max) x = max;
+
 #define DRAW_PIXEL(x, y, color) \
 	{ \
 		int idx = ((x)*240) + (239-(y)); \
@@ -107,6 +114,9 @@ void DrawRect(int x1, int x2, int y1, int y2, u32 color)
 {
 	int x, y;
 	
+	CLAMP(x1, 0, 319); CLAMP(x2, 0, 319);
+	CLAMP(y1, 0, 239); CLAMP(y2, 0, 239);
+	
 	for (x = x1; x <= x2; x++)
 	{
 		DRAW_PIXEL(x, y1, color);
@@ -123,6 +133,9 @@ void DrawRect(int x1, int x2, int y1, int y2, u32 color)
 void DrawRectOutline(int x1, int x2, int y1, int y2, u32 colorin, u32 colorout)
 {
 	int x, y;
+	
+	CLAMP(x1, 1, 318); CLAMP(x2, 1, 318);
+	CLAMP(y1, 1, 238); CLAMP(y2, 1, 238);
 	
 	for (x = x1; x <= x2; x++)
 	{
@@ -144,6 +157,9 @@ void DrawRectOutline(int x1, int x2, int y1, int y2, u32 colorin, u32 colorout)
 void FillRect(int x1, int x2, int y1, int y2, u32 color)
 {
 	int x, y;
+	
+	CLAMP(x1, 0, 319); CLAMP(x2, 0, 319);
+	CLAMP(y1, 0, 239); CLAMP(y2, 0, 239);
 	
 	for (y = y1; y <= y2; y++)
 	{
@@ -220,6 +236,8 @@ void DrawText(int x, int y, u32 color, char* str)
 		x++;
 		for (cy = 0; cy < 12; cy++)
 		{
+			if ((y+cy) >= 240) break;
+			
 			unsigned short val = ptr[4+cy];
 			
 			for (cx = 0; cx < glyphsize; cx++)
