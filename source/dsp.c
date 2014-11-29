@@ -383,6 +383,12 @@ void DspWriteByte(u8 val, u8 address)
 	
 	u16* buffer = &DSP_WritingWriteBuffer[(SPC_ElapsedCycles & 0x3E00) >> 2];
 	
+	if (buffer[127] >= 127) 
+	{
+		bprintf("!! DSP WRITEBUFFER OVERFLOW\n");
+		return;
+	}
+	
 	buffer[buffer[127]] = (address << 8) | val;
 	buffer[127]++;
 }

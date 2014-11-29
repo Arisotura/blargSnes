@@ -467,16 +467,16 @@ void VSyncAndFrameskip()
 		gfxSwapBuffersGpu();
 		gspWaitForEvent(GSPEVENT_VBlank0, false);
 		//LastVBlank = svcGetSystemTick();
-		
-		// in PAL mode, wait one extra frame every 5 frames to slow down to 50FPS
-		if (running && ROM_Region)
+	}
+	
+	// in PAL mode, wait one extra frame every 5 frames to slow down to 50FPS
+	if (running && !pause && ROM_Region)
+	{
+		PALCount++;
+		if (PALCount >= 5)
 		{
-			PALCount++;
-			if (PALCount >= 5)
-			{
-				PALCount = 0;
-				gspWaitForVBlank();
-			}
+			PALCount = 0;
+			gspWaitForVBlank();
 		}
 	}
 }

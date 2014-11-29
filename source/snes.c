@@ -336,7 +336,7 @@ void IO_ManualReadKeys()
 
 u8 SNES_GIORead8(u32 addr)
 {
-	u8 ret = 0x42;
+	u8 ret = 0;
 	
 	switch (addr)
 	{
@@ -392,6 +392,7 @@ u8 SNES_GIORead8(u32 addr)
 			break;
 			
 		default: // open bus
+			ret = 0x42; // dirty open bus (may be incorrect when indirect addressing is used)
 			break;
 	}
 
