@@ -262,7 +262,10 @@ void ApplyScaling()
 	
 	float x1, x2, y1, y2;
 	
-	switch (Config.ScaleMode)
+	int scalemode = Config.ScaleMode;
+	if (!running && scalemode == 2) scalemode = 1;
+	
+	switch (scalemode)
 	{
 		case 1: // fullscreen
 			x1 = 0.0f; x2 = 240.0f;
@@ -656,6 +659,10 @@ bool StartROM(char* path)
 		exitspc = 0;
 	}
 	
+	running = 1;
+	pause = 0;
+	framecount = 0;
+	
 	ClearConsole();
 	bprintf("blargSNES console\n");
 	bprintf("http://blargsnes.kuribo64.net/\n");
@@ -672,10 +679,6 @@ bool StartROM(char* path)
 	CPU_Reset();
 	SPC_Reset();
 
-	running = 1;
-	pause = 0;
-	framecount = 0;
-	
 	RenderState = 0;
 	FramesSkipped = 0;
 	SkipThisFrame = false;
@@ -849,6 +852,8 @@ int main()
 						
 						// copy splashscreen
 						FinishRendering();
+						PPU.ScreenHeight = 224;
+						ApplyScaling();
 						u32* tempbuf = (u32*)linearAlloc(256*256*4);
 						CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x0);
 						GSPGPU_FlushDataCache(NULL, tempbuf, 256*256*4);

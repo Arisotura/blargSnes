@@ -138,6 +138,7 @@ void PPU_Reset()
 	memset(&PPU, 0, sizeof(PPUState));
 	
 	PPU.ScreenHeight = 224;
+	ApplyScaling();
 	
 	PPU.HardwareRenderer = hardrend;
 	PPU.MainBuffer = mbuf;
