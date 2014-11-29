@@ -18,6 +18,7 @@
 
 #include <3ds.h>
 
+#include "config.h"
 #include "snes.h"
 #include "ppu.h"
 
@@ -118,8 +119,38 @@ void PPU_Init()
 	c->ColorMath = 0;
 	c->Brightness = 0xFF;
 	
-	// TODO! MAKE ME CONFIGURABLE
-	PPU.HardwareRenderer = 1;
+	PPU.HardwareRenderer = Config.HardwareRenderer;
+	
+	if (PPU.HardwareRenderer)
+		PPU_Init_Hard();
+	else
+		PPU_Init_Soft();
+}
+
+void PPU_SwitchRenderers()
+{
+	int i;
+	
+	if (PPU.HardwareRenderer == Config.HardwareRenderer)
+		return;
+		
+	if (PPU.HardwareRenderer)
+		PPU_DeInit_Hard();
+	else
+		PPU_DeInit_Soft();
+		
+	PPU.HardwareRenderer = Config.HardwareRenderer;
+	
+	if (PPU.HardwareRenderer)
+	{
+		for (i = 1; i < 256; i++)
+			PPU.Palette[i] |= 0x0001;
+	}
+	else
+	{
+		for (i = 0; i < 256; i++)
+			PPU.Palette[i] &= ~0x0001;
+	}
 	
 	if (PPU.HardwareRenderer)
 		PPU_Init_Hard();

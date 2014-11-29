@@ -96,6 +96,7 @@ void DrawROMList()
 			int maxwidth = (nfiles>MENU_MAX) ? 308:320;
 			if (textwidth > maxwidth)
 			{
+				maxwidth -= 6;
 				if (!marquee_dir)
 				{
 					marquee_pos -= 1;

@@ -94,6 +94,7 @@ void Config_Touch(int touch, u32 x, u32 y)
 		UI_Restore();
 	}
 	
+	PPU_SwitchRenderers();
 	ApplyScaling();
 }
 

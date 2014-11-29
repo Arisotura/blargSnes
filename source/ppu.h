@@ -324,6 +324,7 @@ extern u8 RenderState;
 
 
 void PPU_Init();
+void PPU_SwitchRenderers();
 void PPU_Reset();
 void PPU_DeInit();
 
