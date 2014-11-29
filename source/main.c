@@ -856,6 +856,7 @@ int main()
 					
 				if (release & KEY_TOUCH) 
 				{
+					SNES_SaveSRAM();
 					bprintf("Pause.\n");
 					bprintf("Tap screen or press A to resume.\n");
 					bprintf("Press Select to load another game.\n");
@@ -965,16 +966,20 @@ int main()
 		}
 		else if(status == APP_SUSPENDING)
 		{
+			if (running) SNES_SaveSRAM();
 			FinishRendering();
 			aptReturnToMenu();
 		}
 		else if(status == APP_PREPARE_SLEEPMODE)
 		{
+			if (running) SNES_SaveSRAM();
 			FinishRendering();
 			aptSignalReadyForSleep();
 			aptWaitStatusEvent();
 		}
 	}
+	
+	if (running) SNES_SaveSRAM();
 	
 	exitspc = 1; pause = 1;
 	svcSignalEvent(SPCSync);
