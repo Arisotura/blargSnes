@@ -756,8 +756,6 @@ int main()
 	
 	
 	ClearConsole();
-	VRAM_Init();
-	PPU_Init();
 	
 	
 	srvInit(); 
@@ -775,6 +773,9 @@ int main()
 	FSUSER_OpenArchive(NULL, &sdmcArchive);
 	
 	LoadConfig();
+	
+	VRAM_Init();
+	PPU_Init();
 	
 	GPU_Init(NULL);
 	bglInit();
