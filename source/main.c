@@ -757,7 +757,6 @@ int main()
 	
 	ClearConsole();
 	
-	
 	srvInit(); 
 		
 	aptInit();
@@ -834,9 +833,9 @@ int main()
 	UI_Switch(&UI_ROMMenu);
 
 	APP_STATUS status;
-	while(!forceexit && (status = aptGetStatus()) != APP_EXITING)
+	while (!forceexit && (status = aptGetStatus()) != APP_EXITING)
 	{
-		if(status == APP_RUNNING)
+		if (status == APP_RUNNING)
 		{
 			hidScanInput();
 			u32 press = hidKeysDown();
@@ -965,20 +964,29 @@ int main()
 				}
 			}
 		}
-		else if(status == APP_SUSPENDING)
-		{
-			if (running) SNES_SaveSRAM();
-			FinishRendering();
-			aptReturnToMenu();
-		}
-		else if(status == APP_PREPARE_SLEEPMODE)
+		else if (status == APP_SUSPENDING)
 		{
 			int oldpause = pause; pause = 1;
 			svcSignalEvent(SPCSync);
+			
 			if (running) SNES_SaveSRAM();
 			FinishRendering();
+			 
+			aptReturnToMenu();
+			
+			pause = oldpause;
+		}
+		else if (status == APP_PREPARE_SLEEPMODE)
+		{
+			int oldpause = pause; pause = 1;
+			svcSignalEvent(SPCSync);
+			
+			if (running) SNES_SaveSRAM();
+			FinishRendering();
+			
 			aptSignalReadyForSleep();
 			aptWaitStatusEvent();
+			
 			pause = oldpause;
 		}
 	}
