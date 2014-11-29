@@ -431,6 +431,8 @@ void FinishRendering()
 	RenderState = 0;
 }
 
+u32 PALCount = 0;
+
 void VSyncAndFrameskip()
 {
 	if (running && !pause && PeekEvent(gspEvents[GSPEVENT_VBlank0]) && FramesSkipped<5)
@@ -465,6 +467,17 @@ void VSyncAndFrameskip()
 		gfxSwapBuffersGpu();
 		gspWaitForEvent(GSPEVENT_VBlank0, false);
 		//LastVBlank = svcGetSystemTick();
+		
+		// in PAL mode, wait one extra frame every 5 frames to slow down to 50FPS
+		if (running && ROM_Region)
+		{
+			PALCount++;
+			if (PALCount >= 5)
+			{
+				PALCount = 0;
+				gspWaitForVBlank();
+			}
+		}
 	}
 }
 
@@ -682,6 +695,7 @@ bool StartROM(char* path)
 	RenderState = 0;
 	FramesSkipped = 0;
 	SkipThisFrame = false;
+	PALCount = 0;
 	
 	// SPC700 thread (running on syscore)
 	res = svcCreateThread(&spcthread, SPCThread, 0, (u32*)(spcthreadstack+0x4000), 0x18, 1);

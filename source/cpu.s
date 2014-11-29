@@ -785,8 +785,10 @@ emulate_hardware:
 			strb r2, [memoryMap, #-0x5]
 			@bic snesP, snesP, #flagRender
 			mov r1, snesCycles, lsl #0x10
+			ldr r0, =PPU
+			ldrb r0, [r0, #2] @ screen height
 			
-			cmp r1, #0xDF0000
+			cmp r1, r0, lsl #0x10
 			orrge r2, r2, #0x80
 			orreq r2, r2, #0x20
 			strgeb r2, [memoryMap, #-0x5]
@@ -802,14 +804,18 @@ vblank:
 			beq CPU_TriggerNMI
 			
 vblank_notfirst:
-			ldr r3, =261
+			ldr r3, =ROM_Region
+			ldrb r3, [r3]
+			cmp r3, #0
+			ldreq r3, =261 @ NTSC
+			ldrne r3, =311 @ PAL
 			cmp r1, r3, lsl #0x10
 			blt newline
 			
 		sub snesCycles, snesCycles, r3
-		ldr r0, =262
+		add r3, r3, #1
 		ldr r1, =(PPU+0)	@ VCount
-		strh r0, [r1]
+		strh r3, [r1]
 		
 		mov r0, #36
 		bl SPC_Run
