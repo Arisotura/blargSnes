@@ -321,6 +321,18 @@ bool PeekEvent(Handle evt)
 	return false;
 }
 
+void SafeWait(Handle evt)
+{
+	// sometimes, we end up waiting for a given event, but for whatever reason the associated action failed to start
+	// and we end up 'freezing'
+	// this method of waiting avoids that
+	// it's dirty and doesn't solve the actual issue but atleast it avoids a freeze
+	
+	Result res = svcWaitSynchronization(evt, 20*1000*1000);
+	if (!res)
+		svcClearEvent(evt);
+}
+
 void RenderTopScreen()
 {
 	bglUseShader(finalShader);
@@ -408,19 +420,22 @@ void FinishRendering()
 {
 	if (RenderState == 3)
 	{
-		gspWaitForPPF();
+		//gspWaitForPPF();
+		SafeWait(gspEvents[GSPEVENT_PPF]);
 		bglFlush();
 		RenderState = 1;
 	}
 	if (RenderState == 1)
 	{
-		gspWaitForP3D();
+		//gspWaitForP3D();
+		SafeWait(gspEvents[GSPEVENT_P3D]);
 		GX_SetDisplayTransfer(NULL, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
 		RenderState = 2;
 	}
 	if (RenderState == 2)
 	{
-		gspWaitForPPF();
+		//gspWaitForPPF();
+		SafeWait(gspEvents[GSPEVENT_PPF]);
 		VSyncAndFrameskip();
 	}
 	if (RenderState == 4)
@@ -808,7 +823,8 @@ int main()
 	CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x0);
 	GSPGPU_FlushDataCache(NULL, tempbuf, 256*256*4);
 	GX_SetDisplayTransfer(NULL, tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
-	gspWaitForPPF();
+	//gspWaitForPPF();
+	SafeWait(gspEvents[GSPEVENT_PPF]);
 	linearFree(tempbuf);
 	
 	Audio_Init();
@@ -872,7 +888,8 @@ int main()
 						CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x0);
 						GSPGPU_FlushDataCache(NULL, tempbuf, 256*256*4);
 						GX_SetDisplayTransfer(NULL, tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
-						gspWaitForPPF();
+						//gspWaitForPPF();
+						SafeWait(gspEvents[GSPEVENT_PPF]);
 						linearFree(tempbuf);
 					}
 					else if (release & KEY_X)
