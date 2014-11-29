@@ -25,8 +25,14 @@
 
 void UI_SetFramebuffer(u8* buffer);
 void ClearFramebuffer();
+void DrawRect(int x1, int x2, int y1, int y2, u32 color);
+void DrawRectOutline(int x1, int x2, int y1, int y2, u32 colorin, u32 colorout);
 void FillRect(int x1, int y1, int x2, int y2, u32 color);
+int MeasureText(char* str);
 void DrawText(int x, int y, u32 color, char* str);
+
+void DrawButton(int x, int y, int width, u32 color, char* text);
+void DrawCheckBox(int x, int y, u32 color, char* text, bool check);
 
 
 typedef struct
@@ -34,7 +40,7 @@ typedef struct
 	void (*Init)();
 	void (*DeInit)();
 	
-	void (*Render)();
+	void (*Render)(bool force);
 	void (*ButtonPress)(u32 btn);
 	void (*Touch)(bool touch, u32 x, u32 y);
 	
@@ -42,6 +48,7 @@ typedef struct
 
 extern UIController UI_ROMMenu;
 extern UIController UI_Console;
+extern UIController UI_Config;
 
 void UI_Switch(UIController* ui);
 void UI_Render();

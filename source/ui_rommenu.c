@@ -158,8 +158,9 @@ void ROMMenu_DeInit()
 	MemFree(filelist);
 }
 
-void ROMMenu_Render()
+void ROMMenu_Render(bool force)
 {
+	if (force) menudirty = 2;
 	if (!menudirty) return;
 	menudirty--;
 	
@@ -222,7 +223,7 @@ void ROMMenu_Touch(int touch, u32 x, u32 y)
 	
 	if (y >= menuy)
 	{
-		if (x < 308)
+		if (x < 308 && touch == 0)
 		{
 			y -= menuy;
 			y /= 12;

@@ -46,7 +46,7 @@ void PPU_Init_Soft()
 
 void PPU_DeInit_Soft()
 {
-	linearFree(MainScreenTex);
+	VRAM_Free(MainScreenTex);
 }
 
 

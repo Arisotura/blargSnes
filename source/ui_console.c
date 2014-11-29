@@ -95,8 +95,9 @@ void Console_DeInit()
 {
 }
 
-void Console_Render()
+void Console_Render(bool force)
 {
+	if (force) consoledirty = 2;
 	if (!consoledirty) return;
 	consoledirty--;
 	

@@ -196,7 +196,7 @@ inline void PPU_SetXScroll(int nbg, u8 val)
 	
 	PPU_Background* bg = &PPU.BG[nbg];
 	
-	bg->XScroll = (val << 8) | (PPU.BGOld & 0xFFF8) | ((bg->XScroll >> 8) & 0x7);
+	bg->XScroll = (val << 8) | (PPU.BGOld & 0xF8) | ((bg->XScroll >> 8) & 0x7);
 	PPU.BGOld = val;
 }
 

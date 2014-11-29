@@ -159,6 +159,11 @@ void PPU_Init_Hard()
 void PPU_DeInit_Hard()
 {
 	linearFree(PPU_TileCache);
+	
+	VRAM_Free(MainScreenTex);
+	VRAM_Free(OBJColorBuffer);
+	VRAM_Free(OBJDepthBuffer);
+	VRAM_Free(Mode7ColorBuffer);
 }
 
 
