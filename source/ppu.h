@@ -181,6 +181,7 @@ typedef struct
 typedef struct
 {
 	u16 VCount;
+	u8 ScreenHeight;
 	
 	u8 HardwareRenderer;
 

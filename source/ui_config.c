@@ -93,6 +93,8 @@ void Config_Touch(int touch, u32 x, u32 y)
 		SaveConfig();
 		UI_Restore();
 	}
+	
+	ApplyScaling();
 }
 
 

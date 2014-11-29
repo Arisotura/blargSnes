@@ -109,6 +109,8 @@ void PPU_Init()
 	PPU.MainBuffer = (u16*)linearAlloc(256*512*2);
 	PPU.SubBuffer = &PPU.MainBuffer[256*256];
 	
+	PPU.ScreenHeight = 224;
+	
 	PPU.SubBackdrop = 0x0001;
 	
 	PPU_ColorEffectSection* c = &PPU.ColorEffectSections[0];
@@ -134,6 +136,8 @@ void PPU_Reset()
 	u16* sbuf = PPU.SubBuffer;
 	
 	memset(&PPU, 0, sizeof(PPUState));
+	
+	PPU.ScreenHeight = 224;
 	
 	PPU.HardwareRenderer = hardrend;
 	PPU.MainBuffer = mbuf;
@@ -248,7 +252,7 @@ inline void PPU_SetColor(u32 num, u16 val)
 	{
 		// check if the write is happening mid-frame
 #if 0
-		if (PPU.VCount < 223 && !PPU.ForcedBlank)
+		if (PPU.VCount < PPU.ScreenHeight-1 && !PPU.ForcedBlank)
 		{
 			// writes happening during this scanline will be applied to the next one
 			// (we assume they happen during HBlank)
@@ -694,10 +698,18 @@ void PPU_Write8(u32 addr, u8 val)
 			break;
 			
 		case 0x33: // SETINI
-			if (val & 0x80) bprintf("!! PPU EXT SYNC\n");
-			if (val & 0x40) bprintf("!! MODE7 EXTBG\n");
-			if (val & 0x08) bprintf("!! PSEUDO HIRES\n");
-			if (val & 0x02) bprintf("!! SMALL SPRITES\n");
+			{
+				u32 height = (val & 0x04) ? 239:224;
+				if (height != PPU.ScreenHeight)
+				{
+					PPU.ScreenHeight = height;
+					ApplyScaling();
+				}
+				if (val & 0x80) bprintf("!! PPU EXT SYNC\n");
+				if (val & 0x40) bprintf("!! MODE7 EXTBG\n");
+				if (val & 0x08) bprintf("!! PSEUDO HIRES\n");
+				if (val & 0x02) bprintf("!! SMALL SPRITES\n");
+			}
 			break;
 			
 		case 0x40: SPC_IOPorts[0] = val; break;

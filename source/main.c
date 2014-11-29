@@ -256,6 +256,52 @@ float* borderVertices;
 float* screenVertices;
 
 
+void ApplyScaling()
+{
+	float texy = (float)PPU.ScreenHeight / 256.0f;
+	
+	float x1, x2, y1, y2;
+	
+	switch (Config.ScaleMode)
+	{
+		case 1: // fullscreen
+			x1 = 0.0f; x2 = 240.0f;
+			y1 = 0.0f; y2 = 400.0f;
+			break;
+			
+		case 2: // overscan
+			{
+				float bigy = ((float)PPU.ScreenHeight * 240.0f) / (float)(PPU.ScreenHeight-16);
+				float margin = (bigy - 240.0f) / 2.0f;
+				x1 = -margin; x2 = 240.0f+margin;
+				y1 = 0.0f; y2 = 400.0f;
+			}
+			break;
+			
+		default: // 1:1
+			if (PPU.ScreenHeight == 239)
+			{
+				x1 = 1.0f; x2 = 240.0f;
+			}
+			else
+			{
+				x1 = 8.0f; x2 = 232.0f;
+			}
+			y1 = 72.0f; y2 = 328.0f;
+			break;
+	}
+	
+	screenVertices[5*0 + 0] = x1; screenVertices[5*0 + 1] = y1; screenVertices[5*0 + 4] = texy; 
+	screenVertices[5*1 + 0] = x2; screenVertices[5*1 + 1] = y1; 
+	screenVertices[5*2 + 0] = x2; screenVertices[5*2 + 1] = y2; 
+	screenVertices[5*3 + 0] = x1; screenVertices[5*3 + 1] = y1; screenVertices[5*3 + 4] = texy; 
+	screenVertices[5*4 + 0] = x2; screenVertices[5*4 + 1] = y2; 
+	screenVertices[5*5 + 0] = x1; screenVertices[5*5 + 1] = y2; screenVertices[5*5 + 4] = texy; 
+	
+	GSPGPU_FlushDataCache(NULL, (u32*)screenVertices, 5*6*sizeof(float));
+}
+
+
 void VSyncAndFrameskip();
 
 bool PeekEvent(Handle evt)
@@ -308,8 +354,9 @@ void RenderTopScreen()
 	
 	bglDrawArrays(GPU_TRIANGLES, 2*3); // border
 	
-	
-	bglTexImage(GPU_TEXUNIT0, SNESFrame,256,256,/*0x6*/0,GPU_RGBA8);
+	// filtering enabled only when scaling
+	// filtering at 1:1 causes output to not be pixel-perfect, but not filtering at higher res looks like total shit
+	bglTexImage(GPU_TEXUNIT0, SNESFrame,256,256, Config.ScaleMode?0x6:0 ,GPU_RGBA8);
 	
 	bglAttribBuffer(screenVertices);
 	
@@ -732,6 +779,7 @@ int main()
 	float* fptr = &vertexList[0];
 	for (i = 0; i < 5*3*2; i++) borderVertices[i] = *fptr++;
 	for (i = 0; i < 5*3*2; i++) screenVertices[i] = *fptr++;
+	ApplyScaling();
 	
 	
 	// load border

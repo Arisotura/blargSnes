@@ -665,8 +665,9 @@ newline:
 			
 			ldr r0, =(PPU+0)	@ VCount
 			strh snesCycles, [r0]
+			ldrb r1, [r0, #2] @ screen height
 			ldrh r0, [r0]
-			cmp r0, #0xE0
+			cmp r0, r1
 			bge emuloop
 			SafeCall PPU_RenderScanline
 			
