@@ -242,6 +242,7 @@ void DrawText(int x, int y, u32 color, char* str)
 			
 			for (cx = 0; cx < glyphsize; cx++)
 			{
+				if ((x+cx) < 0) continue;
 				if ((x+cx) >= 320) break;
 				
 				if (val & (1 << cx))

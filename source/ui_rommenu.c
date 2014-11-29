@@ -32,6 +32,9 @@ int menudirty = 0;
 int scrolltouch_y = 0;
 int scrolling = 0;
 
+int marquee_pos = 0;
+int marquee_dir = 0;
+
 
 void strncpy_u2a(char* dst, u16* src, int n)
 {
@@ -82,13 +85,49 @@ void DrawROMList()
 	
 	for (i = 0; i < maxfile; i++)
 	{
+		int xoffset = 3;
+		
 		// blue highlight for the selected ROM
 		if ((menuscroll+i) == menusel)
 		{
 			FillRect(0, 319, y, y+11, RGB(0,0,255));
+			
+			int textwidth = MeasureText(&filelist[0x106 * (menuscroll+i)]);
+			int maxwidth = (nfiles>MENU_MAX) ? 308:320;
+			if (textwidth > maxwidth)
+			{
+				if (!marquee_dir)
+				{
+					marquee_pos -= 1;
+					if (marquee_pos < -(textwidth-maxwidth)) 
+					{
+						marquee_pos = -(textwidth-maxwidth) - 1;
+						marquee_dir = 1;
+					}
+				}
+				else
+				{
+					marquee_pos += 1;
+					if (marquee_pos >= 0) 
+					{
+						marquee_pos = 0;
+						marquee_dir = 0;
+					}
+				}
+				
+				// force refreshing
+				menudirty++;
+			}
+			else
+			{
+				marquee_dir = 0;
+				marquee_pos = 0;
+			}
+			
+			xoffset += marquee_pos;
 		}
 		
-		DrawText(3, y, RGB(255,255,255), &filelist[0x106 * (menuscroll+i)]);
+		DrawText(xoffset, y, RGB(255,255,255), &filelist[0x106 * (menuscroll+i)]);
 		y += 12;
 	}
 	
@@ -221,6 +260,9 @@ void ROMMenu_ButtonPress(u32 btn)
 		
 		menudirty = 2;
 	}
+	
+	marquee_pos = 0;
+	marquee_dir = 0;
 }
 
 void ROMMenu_Touch(int touch, u32 x, u32 y)
