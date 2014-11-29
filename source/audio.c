@@ -84,12 +84,15 @@ void Audio_DeInit()
 void Audio_Pause()
 {
 	// stop
-	CSND_setchannel_playbackstate(8, 0);
-	CSND_setchannel_playbackstate(9, 0);
-	CSND_setchannel_playbackstate(10, 0);
-	CSND_setchannel_playbackstate(11, 0);
-			
-	CSND_sharedmemtype0_cmdupdatestate(0);
+	if (Audio_Type == 1)
+	{
+		CSND_setchannel_playbackstate(8, 0);
+		CSND_setchannel_playbackstate(9, 0);
+		CSND_setchannel_playbackstate(10, 0);
+		CSND_setchannel_playbackstate(11, 0);
+				
+		CSND_sharedmemtype0_cmdupdatestate(0);
+	}
 	
 	memset(Audio_Buffer, 0, MIXBUFSIZE*4*4*sizeof(s16));
 	GSPGPU_FlushDataCache(NULL, Audio_Buffer, MIXBUFSIZE*4*4*sizeof(s16));

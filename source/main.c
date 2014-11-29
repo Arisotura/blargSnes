@@ -973,10 +973,13 @@ int main()
 		}
 		else if(status == APP_PREPARE_SLEEPMODE)
 		{
+			int oldpause = pause; pause = 1;
+			svcSignalEvent(SPCSync);
 			if (running) SNES_SaveSRAM();
 			FinishRendering();
 			aptSignalReadyForSleep();
 			aptWaitStatusEvent();
+			pause = oldpause;
 		}
 	}
 	
