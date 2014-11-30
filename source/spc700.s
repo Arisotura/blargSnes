@@ -317,23 +317,23 @@ emuloop:
 			ldr pc, [pc, r0, lsl #0x2]
 			nop
 	.long OP_NOP, OP_TCALL_0, OP_SET0, OP_BBS_0, OP_OR_A_DP, OP_OR_A_lm, OP_OR_A_mX, OP_OR_A_m_Y	@0
-	.long OP_OR_A_Imm, OP_OR_DP_DP, OP_UNK, OP_ASL_DP, OP_ASL_Imm, OP_PUSH_P, OP_TSET, OP_BRK
+	.long OP_OR_A_Imm, OP_OR_DP_DP, OP_OR1_C_ab, OP_ASL_DP, OP_ASL_Imm, OP_PUSH_P, OP_TSET, OP_BRK
 	.long OP_BPL, OP_TCALL_1, OP_CLR0, OP_BBC_0, OP_OR_A_DP_X, OP_OR_A_lm_X, OP_OR_A_lm_Y, OP_OR_A_m_X	@1
 	.long OP_OR_DP_Imm, OP_OR_mX_mY, OP_DECW_DP, OP_ASL_DP_X, OP_ASL_A, OP_DEC_X, OP_CMP_X_mImm, OP_JMP_a_X
 	.long OP_CLRP, OP_TCALL_2, OP_SET1, OP_BBS_1, OP_AND_A_DP, OP_AND_A_lm, OP_AND_A_mX, OP_AND_A_m_X	@2
-	.long OP_AND_A_Imm, OP_AND_DP_DP, OP_UNK, OP_ROL_DP, OP_ROL_lm, OP_PUSH_A, OP_CBNE_DP, OP_BRA
+	.long OP_AND_A_Imm, OP_AND_DP_DP, OP_OR1_C_notab, OP_ROL_DP, OP_ROL_lm, OP_PUSH_A, OP_CBNE_DP, OP_BRA
 	.long OP_BMI, OP_TCALL_3, OP_CLR1, OP_BBC_1, OP_AND_A_DP_X, OP_AND_A_lm_X, OP_AND_A_lm_Y, OP_AND_A_m_Y	@3
 	.long OP_AND_DP_Imm, OP_AND_mX_mY, OP_INCW_DP, OP_ROL_DP_X, OP_ROL_A, OP_INC_X, OP_CMP_X_DP, OP_CALL
 	.long OP_SETP, OP_TCALL_4, OP_SET2, OP_BBS_2, OP_EOR_A_DP, OP_EOR_A_lm, OP_EOR_A_mX, OP_EOR_A_m_X	@4
-	.long OP_EOR_A_Imm, OP_EOR_DP_DP, OP_UNK, OP_LSR_DP, OP_LSR_lm, OP_PUSH_X, OP_TCLR, OP_PCALL
+	.long OP_EOR_A_Imm, OP_EOR_DP_DP, OP_AND1_C_ab, OP_LSR_DP, OP_LSR_lm, OP_PUSH_X, OP_TCLR, OP_PCALL
 	.long OP_BVC, OP_TCALL_5, OP_CLR2, OP_BBC_2, OP_EOR_A_DP_X, OP_EOR_A_lm_X, OP_EOR_A_lm_Y, OP_EOR_A_m_Y	@5
 	.long OP_EOR_DP_Imm, OP_EOR_mX_mY, OP_CMPW_YA_DP, OP_LSR_DP_X, OP_LSR_A, OP_MOV_X_A, OP_CMP_Y_mImm, OP_JMP_a
-	.long OP_CLRC, OP_TCALL_6, OP_SET3, OP_BBS_3, OP_CMP_A_DP, OP_CMP_A_mImm, OP_UNK, OP_CMP_A_m_X	@6
-	.long OP_CMP_A_Imm, OP_CMP_DP_DP, OP_UNK, OP_ROR_DP, OP_ROR_lm, OP_PUSH_Y, OP_DBNZ_DP, OP_RET
+	.long OP_CLRC, OP_TCALL_6, OP_SET3, OP_BBS_3, OP_CMP_A_DP, OP_CMP_A_mImm, OP_CMP_A_mX, OP_CMP_A_m_X	@6
+	.long OP_CMP_A_Imm, OP_CMP_DP_DP, OP_AND1_C_notab, OP_ROR_DP, OP_ROR_lm, OP_PUSH_Y, OP_DBNZ_DP, OP_RET
 	.long OP_BVS, OP_TCALL_7, OP_CLR3, OP_BBC_3, OP_CMP_A_DP_X, OP_CMP_A_mImm_X, OP_CMP_A_mImm_Y, OP_CMP_A_m_Y	@7
 	.long OP_CMP_DP_Imm, OP_CMP_mX_mY, OP_ADDW_YA_DP, OP_ROR_DP_X, OP_ROR_A, OP_MOV_A_X, OP_CMP_Y_DP, OP_RET1
 	.long OP_SETC, OP_TCALL_8, OP_SET4, OP_BBS_4, OP_ADC_A_DP, OP_ADC_A_lm, OP_ADC_A_mX, OP_ADC_A_m_X	@8
-	.long OP_ADC_A_Imm, OP_ADC_DP_DP, OP_UNK, OP_DEC_DP, OP_DEC_lm, OP_MOV_Y_Imm, OP_POP_P, OP_MOV_DP_Imm
+	.long OP_ADC_A_Imm, OP_ADC_DP_DP, OP_EOR1_C_ab, OP_DEC_DP, OP_DEC_lm, OP_MOV_Y_Imm, OP_POP_P, OP_MOV_DP_Imm
 	.long OP_BCC, OP_TCALL_9, OP_CLR4, OP_BBC_4, OP_ADC_A_DP_X, OP_ADC_A_lm_X, OP_ADC_A_lm_Y, OP_ADC_A_m_Y	@9
 	.long OP_ADC_DP_Imm, OP_ADC_mX_mY, OP_SUBW_YA_DP, OP_DEC_DP_X, OP_DEC_A, OP_MOV_X_SP, OP_DIV_YA, OP_XCN_A
 	.long OP_EI, OP_TCALL_A, OP_SET5, OP_BBS_5, OP_SBC_A_DP, OP_SBC_A_lm, OP_SBC_A_mX, OP_SBC_A_m_X	@A
@@ -341,11 +341,11 @@ emuloop:
 	.long OP_BCS, OP_TCALL_B, OP_CLR5, OP_BBC_5, OP_SBC_A_DP_X, OP_SBC_A_lm_X, OP_SBC_A_lm_Y, OP_SBC_A_m_Y	@B
 	.long OP_SBC_DP_Imm, OP_SBC_mX_mY, OP_MOVW_YA_DP, OP_INC_DP_X, OP_INC_A, OP_MOV_SP_X, OP_UNK, OP_MOV_A_mX_Inc
 	.long OP_DI, OP_TCALL_C, OP_SET6, OP_BBS_6, OP_MOV_DP_A, OP_MOV_Imm_A, OP_MOV_mX_A, OP_MOV_m_X_A	@C
-	.long OP_CMP_X_Imm, OP_MOV_Imm_X, OP_UNK, OP_MOV_DP_Y, OP_MOV_Imm_Y, OP_MOV_X_Imm, OP_POP_X, OP_MUL_YA
+	.long OP_CMP_X_Imm, OP_MOV_Imm_X, OP_MOV1_ab_C, OP_MOV_DP_Y, OP_MOV_Imm_Y, OP_MOV_X_Imm, OP_POP_X, OP_MUL_YA
 	.long OP_BNE, OP_TCALL_D, OP_CLR6, OP_BBC_6, OP_MOV_DP_X_A, OP_MOV_lmX_A, OP_MOV_lmY_A, OP_MOV_m_Y_A	@D
 	.long OP_MOV_DP_X, OP_MOV_DP_Y_X, OP_MOVW_DP_YA, OP_MOV_DP_X_Y, OP_DEC_Y, OP_MOV_A_Y, OP_CBNE_DP_X, OP_UNK
 	.long OP_CLRV, OP_TCALL_E, OP_SET7, OP_BBS_7, OP_MOV_A_DP, OP_MOV_A_lm, OP_MOV_A_mX, OP_MOV_A_m_X	@E
-	.long OP_MOV_A_Imm, OP_MOV_X_lm, OP_UNK, OP_MOV_Y_DP, OP_MOV_Y_lm, OP_NOTC, OP_POP_Y, OP_UNK
+	.long OP_MOV_A_Imm, OP_MOV_X_lm, OP_NOT1_ab, OP_MOV_Y_DP, OP_MOV_Y_lm, OP_NOTC, OP_POP_Y, OP_UNK
 	.long OP_BEQ, OP_TCALL_F, OP_CLR7, OP_BBC_7, OP_MOV_A_DP_X, OP_MOV_A_lmX, OP_MOV_A_lmY, OP_MOV_A_m_Y	@F
 	.long OP_MOV_X_DP, OP_MOV_X_DP_Y, OP_MOV_DP_DP, OP_MOV_Y_DP_X, OP_INC_Y, OP_MOV_Y_A, OP_DBNZ_Y, OP_UNK
 	
@@ -529,8 +529,8 @@ OP_UNK:
 	MemRead8
 	mov r1, r12
 	bl SPC_ReportUnk
-blarg2:
-	b blarg2
+	sub spcPC, spcPC, #0x10000
+	b op_return
 	
 @ --- ADC ---------------------------------------------------------------------
 
@@ -776,6 +776,30 @@ OP_AND_DP_Imm:
 	AddCycles 5
 	b op_return
 	
+@ --- AND1 --------------------------------------------------------------------
+
+OP_AND1_C_ab:
+	Prefetch16
+	mov r1, r0, lsr #0xD
+	bic r0, r0, #0xE000
+	MemRead8
+	mov r2, #1
+	tst r0, r2, lsl r1
+	biceq spcPSW, spcPSW, #flagC
+	AddCycles 4
+	b op_return
+	
+OP_AND1_C_notab:
+	Prefetch16
+	mov r1, r0, lsr #0xD
+	bic r0, r0, #0xE000
+	MemRead8
+	mov r2, #1
+	tst r0, r2, lsl r1
+	bicne spcPSW, spcPSW, #flagC
+	AddCycles 4
+	b op_return
+	
 @ --- ASL ---------------------------------------------------------------------
 
 .macro DO_ASL src, op
@@ -954,9 +978,7 @@ OP_BBS_7:
 @ --- BRK ---------------------------------------------------------------------
 
 OP_BRK:
-	mov r0, #0x55
-blarg:
-	b blarg
+	b OP_UNK
 	
 @ --- CALL --------------------------------------------------------------------
 
@@ -1059,6 +1081,12 @@ OP_CMP_A_Imm:
 	GetOp_Imm
 	DO_CMP spcA, r0
 	AddCycles 2
+	b op_return
+	
+OP_CMP_A_mX:
+	GetOp_mX
+	DO_CMP spcA, r0
+	AddCycles 3
 	b op_return
 	
 OP_CMP_A_DP:
@@ -1449,6 +1477,19 @@ OP_EOR_DP_Imm:
 	DO_EOR r0, r1
 	mov r1, r0
 	MemWrite8 r2, r1
+	AddCycles 5
+	b op_return
+	
+@ --- EOR1 --------------------------------------------------------------------
+
+OP_EOR1_C_ab:
+	Prefetch16
+	mov r1, r0, lsr #0xD
+	bic r0, r0, #0xE000
+	MemRead8
+	mov r2, #1
+	tst r0, r2, lsl r1
+	eorne spcPSW, spcPSW, #flagC
 	AddCycles 5
 	b op_return
 	
@@ -1876,6 +1917,21 @@ OP_MOV_SP_X:
 	
 @ --- MOV1 --------------------------------------------------------------------
 
+OP_MOV1_ab_C:
+	Prefetch16
+	mov r1, r0, lsr #0xD
+	bic r0, r0, #0xE000
+	mov r12, r0
+	MemRead8
+	tst spcPSW, #flagC
+	mov r2, #1
+	biceq r1, r0, r2, lsl r1
+	orrne r1, r0, r2, lsl r1
+	mov r0, r12
+	MemWrite8
+	AddCycles 6
+	b op_return
+
 OP_MOV1_C_ab:
 	Prefetch16
 	mov r1, r0, lsr #0xD
@@ -1929,6 +1985,21 @@ OP_MUL_YA:
 
 OP_NOP:
 	AddCycles 2
+	b op_return
+	
+@ --- NOT1 --------------------------------------------------------------------
+
+OP_NOT1_ab:
+	Prefetch16
+	mov r1, r0, lsr #0xD
+	bic r0, r0, #0xE000
+	mov r12, r0
+	MemRead8
+	mov r2, #1
+	eor r1, r0, r2, lsl r1
+	mov r0, r12
+	MemWrite8
+	AddCycles 5
 	b op_return
 	
 @ --- NOTC --------------------------------------------------------------------
@@ -2037,6 +2108,30 @@ OP_OR_DP_Imm:
 	DO_OR r0, r1
 	mov r1, r0
 	MemWrite8 r2, r1
+	AddCycles 5
+	b op_return
+	
+@ --- OR1 ---------------------------------------------------------------------
+
+OP_OR1_C_ab:
+	Prefetch16
+	mov r1, r0, lsr #0xD
+	bic r0, r0, #0xE000
+	MemRead8
+	mov r2, #1
+	tst r0, r2, lsl r1
+	orrne spcPSW, spcPSW, #flagC
+	AddCycles 5
+	b op_return
+	
+OP_OR1_C_notab:
+	Prefetch16
+	mov r1, r0, lsr #0xD
+	bic r0, r0, #0xE000
+	MemRead8
+	mov r2, #1
+	tst r0, r2, lsl r1
+	orreq spcPSW, spcPSW, #flagC
 	AddCycles 5
 	b op_return
 	

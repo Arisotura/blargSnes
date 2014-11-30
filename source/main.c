@@ -730,6 +730,16 @@ void reportshit(u32 pc, u32 a, u32 y)
 	bprintf("--- %04X %04X\n", *(u16*)&SNES_SysRAM[0x1E5A], *(u16*)&SNES_SysRAM[0x1E5E]);
 	bprintf("--- %04X %04X\n", *(u16*)&SNES_SysRAM[0x6], *(u16*)&SNES_SysRAM[0xA]);
 	dbg_save("/snesram_earthbound.bin", SNES_SysRAM, 128*1024);*/
+	//reported=pc;
+	
+	// C500A3
+	
+	/*u32 derpo = pc;
+	
+	if (framecount >= 51)
+	{
+		dbg_save("/derp.bin", &derpo, 4);
+	}*/
 }
 
 
