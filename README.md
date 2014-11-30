@@ -10,12 +10,11 @@ Features
  * CPU: 100% (only lacking a few unimportant tidbits)
  * PPU: ~80% (modes 0-4 and 7, 8x8 and 16x16 tiles, sprites, color math, brightness, windows)
  * SPC700: 99% (mostly everything is in)
- * DSP: no point yet
+ * DSP: lacking noise and echo; interpolation is linear only
  * DMA and HDMA
  * SRAM with auto-saving
 
 Missing, oncoming features
- * DSP, whenever we get to play sound on the 3DS
  * expansion chips
  * hires (modes 5/6), mosaic, other fancy shiz
 

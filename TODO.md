@@ -2,14 +2,17 @@ TODO
 
 short term
 
- * rebuild the rendering system to make it more flexible etc
- * some way to do pagescroll in the ROM list
+ * atleast one expansion chip
+ * bugfixes (see the GBAtemp thread)
+
+short-mid term
+
+ * sound via 3DS DSP
+ * mosaic? this effect is only used for screen transitions (also easier to implement in the hardware renderer)
  
 long term
 
- * sound
- * screen scaling
  * expansion chips and other fancy shiz
  * 3D
- * mosaic? this effect is only used for screen transitions
+
  

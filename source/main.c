@@ -86,12 +86,6 @@ extern Handle gspEventThread;
 extern Handle gspEvents[GSPEVENT_MAX];
 
 
-Result svcSetThreadPriority(Handle thread, s32 prio)
-{
-	asm("svc 0xC");
-}
-
-
 Handle spcthread = NULL;
 u8 spcthreadstack[0x4000] __attribute__((aligned(8)));
 Handle SPCSync;
