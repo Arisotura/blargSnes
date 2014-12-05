@@ -23,26 +23,6 @@
 #include "dsp.h"
 
 
-struct SPC_TimersStruct
-{
-	// 0x00
-	u8 EnableMask;
-	u8 __fgqgqdfh;
-	
-	// timer 0: 0x02
-	// timer 1: 0x08
-	// timer 2: 0x0E
-	struct
-	{
-		u16 CycleCount;
-		u16 Reload;
-		u8 Val;
-		u8 __zerfzergdf;
-		
-	} Timer[3];
-	
-} SPC_Timers;
-
 u8 SPC_ROMAccess;
 u8 SPC_DSPAddr;
 
@@ -58,16 +38,15 @@ void SPC_InitMisc()
 	*(u32*)&SPC_IOPorts[0] = 0;
 	*(u32*)&SPC_IOPorts[4] = 0;
 	
-	SPC_Timers.EnableMask = 0;
-	SPC_Timers.Timer[0].CycleCount = 0;
-	SPC_Timers.Timer[0].Reload = 0;
-	SPC_Timers.Timer[0].Val = 0;
-	SPC_Timers.Timer[1].CycleCount = 0;
-	SPC_Timers.Timer[1].Reload = 0;
-	SPC_Timers.Timer[1].Val = 0;
-	SPC_Timers.Timer[2].CycleCount = 0;
-	SPC_Timers.Timer[2].Reload = 0;
-	SPC_Timers.Timer[2].Val = 0;
+	SPC_TimerEnable = 0;
+	SPC_TimerReload[0] = 0;
+	SPC_TimerReload[1] = 0;
+	SPC_TimerReload[2] = 0;
+	SPC_TimerVal[0].Val = 0;
+	SPC_TimerVal[1].Val = 0;
+	SPC_TimerVal[2].Val = 0;
+	
+	SPC_ElapsedCycles = 0;
 	
 	DspReset();
 }
@@ -85,9 +64,9 @@ u8 SPC_IORead8(u16 addr)
 		case 0xF6: ret = SPC_IOPorts[2]; break;
 		case 0xF7: ret = SPC_IOPorts[3]; break;
 		
-		case 0xFD: ret = SPC_Timers.Timer[0].Val; SPC_Timers.Timer[0].Val = 0; break;
-		case 0xFE: ret = SPC_Timers.Timer[1].Val; SPC_Timers.Timer[1].Val = 0; break;
-		case 0xFF: ret = SPC_Timers.Timer[2].Val; SPC_Timers.Timer[2].Val = 0; break;
+		case 0xFD: ret = SPC_TimerVal[0].HighPart & 0x0F; SPC_TimerVal[0].HighPart = 0; break;
+		case 0xFE: ret = SPC_TimerVal[1].HighPart & 0x0F; SPC_TimerVal[1].HighPart = 0; break;
+		case 0xFF: ret = SPC_TimerVal[2].HighPart & 0x0F; SPC_TimerVal[2].HighPart = 0; break;
 	}
 
 	return ret;
@@ -114,16 +93,28 @@ void SPC_IOWrite8(u16 addr, u8 val)
 {
 	switch (addr)
 	{
+		case 0xF0:
+			if (val != 0x0A) bprintf("!! SPC CONFIG F0 = %02X\n", val);
+			break;
+			
 		case 0xF1:
 			{
-				SPC_Timers.EnableMask = val & 0x07;
+				SPC_TimerEnable = val & 0x07;
 				
-				if (!(val & 0x01)) SPC_Timers.Timer[0].Val = 0;
-				else { SPC_Timers.Timer[0].CycleCount = SPC_Timers.Timer[0].Reload; }
-				if (!(val & 0x02)) SPC_Timers.Timer[1].Val = 0;
-				else { SPC_Timers.Timer[1].CycleCount = SPC_Timers.Timer[1].Reload; }
-				if (!(val & 0x04)) SPC_Timers.Timer[2].Val = 0;
-				else { SPC_Timers.Timer[2].CycleCount = SPC_Timers.Timer[2].Reload; }
+				if (!(val & 0x01)) 
+					SPC_TimerVal[0].Val = 0;
+				else
+					SPC_TimerVal[0].Val = SPC_TimerReload[0];
+					
+				if (!(val & 0x02)) 
+					SPC_TimerVal[1].Val = 0;
+				else
+					SPC_TimerVal[1].Val = SPC_TimerReload[1];
+					
+				if (!(val & 0x04)) 
+					SPC_TimerVal[2].Val = 0;
+				else
+					SPC_TimerVal[2].Val = SPC_TimerReload[2];
 				
 				if (val & 0x10) *(u16*)&SPC_IOPorts[0] = 0x0000;
 				if (val & 0x20) *(u16*)&SPC_IOPorts[2] = 0x0000;
@@ -135,14 +126,19 @@ void SPC_IOWrite8(u16 addr, u8 val)
 		case 0xF2: SPC_DSPAddr = val; break;
 		case 0xF3: DspWriteByte(val, SPC_DSPAddr); break;
 			
-		case 0xF4: SPC_IOPorts[4] = val; break;
+		case 0xF4: /* TODO halt SPC here */ SPC_IOPorts[4] = val; break;
 		case 0xF5: SPC_IOPorts[5] = val; break;
 		case 0xF6: SPC_IOPorts[6] = val; break;
 		case 0xF7: SPC_IOPorts[7] = val; break;
 		
-		case 0xFA: SPC_Timers.Timer[0].Reload = val << 7; break;
-		case 0xFB: SPC_Timers.Timer[1].Reload = val << 7; break;
-		case 0xFC: SPC_Timers.Timer[2].Reload = val << 4; break;
+		case 0xF8:
+		case 0xF9:
+			if (val) bprintf("what?\n");
+			break;
+		
+		case 0xFA: SPC_TimerReload[0] = 0x10000 - (val << 7); break;
+		case 0xFB: SPC_TimerReload[1] = 0x10000 - (val << 7); break;
+		case 0xFC: SPC_TimerReload[2] = 0x10000 - (val << 4); break;
 	}
 }
 

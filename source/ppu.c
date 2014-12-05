@@ -744,10 +744,10 @@ void PPU_Write8(u32 addr, u8 val)
 			}
 			break;
 			
-		case 0x40: SPC_IOPorts[0] = val; break;
+		case 0x40: SPC_IOPorts[0] = val; /*{extern u32 debugpc; if (debugpc == 0x1144||debugpc==0x1147) bprintf("!! 2140=%02X %02X\n", val, SPC_IOPorts[3]); }*/break;
 		case 0x41: SPC_IOPorts[1] = val; break;
-		case 0x42: SPC_IOPorts[2] = val; break;
-		case 0x43: SPC_IOPorts[3] = val; break;
+		case 0x42: SPC_IOPorts[2] = val; /*{extern u32 debugpc; if (debugpc == 0x1142||debugpc==0x1145) bprintf("!! 2142=%02X\n", val); }*/break;
+		case 0x43: SPC_IOPorts[3] = val; /*{extern u32 debugpc; if (debugpc == 0x1143||debugpc==0x1146) bprintf("!! 2143=%02X\n", val); }*/break;
 		
 		case 0x80: SNES_SysRAM[Mem_WRAMAddr++] = val; Mem_WRAMAddr &= ~0x20000; break;
 		case 0x81: Mem_WRAMAddr = (Mem_WRAMAddr & 0x0001FF00) | val; break;
@@ -782,7 +782,7 @@ void PPU_Write16(u32 addr, u16 val)
 			
 		case 0x40: *(u16*)&SPC_IOPorts[0] = val; break;
 		case 0x41: *(u16*)&SPC_IOPorts[1] = val; break;
-		case 0x42: *(u16*)&SPC_IOPorts[2] = val; break;
+		case 0x42: *(u16*)&SPC_IOPorts[2] = val; /*{extern u32 debugpc; if ((val>>8) == 0x35) bprintf("!o! %06X\n", debugpc); }*/break;
 		
 		case 0x43: bprintf("!! write $21%02X %04X\n", addr, val); break;
 		

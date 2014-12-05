@@ -34,15 +34,22 @@
 SPC_Regs:
 	.long 0,0,0,0,0,0,0,0
 	
-.global SPC_CyclesRemaining
+.global SPC_TimerReload
+.global SPC_TimerVal
+.global SPC_TimerEnable
 .global SPC_ElapsedCycles
 	
 .global SPC_RAM
 .global SPC_ROM
 
-SPC_CyclesRemaining: @ -8
-	.long 0
-SPC_ElapsedCycles: @ -4
+SPC_TimerReload:	@ -32
+	.long 0,0,0
+SPC_TimerVal: 		@ -20
+	.long 0,0,0
+SPC_TimerEnable: 	@ -8
+	.byte 0
+	.byte 0,0,0
+SPC_ElapsedCycles: 	@ -4
 	.long 0
 SPC_RAM:
 	.rept 0x10040
@@ -289,33 +296,23 @@ SPC_Reset:
 	mov spcCycles, #0
 	StoreRegs
 	
-	ldr r0, =SPC_CyclesRemaining
-	mov r1, #0
-	str r1, [r0]
-	
 	ldmia sp!, {r3-r11, lr}
 	bx lr
 	
 @ --- Main loop ---------------------------------------------------------------
-	
+
 @ r0 = number of cycles to run
 SPC_Run:
 	stmdb sp!, {r4-r12, lr}
 	LoadRegs
 	
-	ldr r3, [memory, #-8]
-	add r3, r3, r0
-	str r3, [memory, #-8]
+	add spcCycles, r0
+			
+spcloop:
 		
-bigemuloop:
-		add spcCycles, spcCycles, #0x40
-		mov r4, spcCycles
-			
-emuloop:
-			
-			Prefetch8
-			ldr pc, [pc, r0, lsl #0x2]
-			nop
+		Prefetch8
+		ldr pc, [pc, r0, lsl #0x2]
+		nop
 	.long OP_NOP, OP_TCALL_0, OP_SET0, OP_BBS_0, OP_OR_A_DP, OP_OR_A_lm, OP_OR_A_mX, OP_OR_A_m_Y	@0
 	.long OP_OR_A_Imm, OP_OR_DP_DP, OP_OR1_C_ab, OP_ASL_DP, OP_ASL_Imm, OP_PUSH_P, OP_TSET, OP_BRK
 	.long OP_BPL, OP_TCALL_1, OP_CLR0, OP_BBC_0, OP_OR_A_DP_X, OP_OR_A_lm_X, OP_OR_A_lm_Y, OP_OR_A_m_X	@1
@@ -350,79 +347,49 @@ emuloop:
 	.long OP_MOV_X_DP, OP_MOV_X_DP_Y, OP_MOV_DP_DP, OP_MOV_Y_DP_X, OP_INC_Y, OP_MOV_Y_A, OP_DBNZ_Y, OP_UNK
 	
 op_return:
+		@ r3 = cycles taken by the instruction
 
-			tst spcPSW, #flagT1
-			movne r3, spcCycles
-			bicne spcPSW, spcPSW, #flagT1
-			
-			@ timer 2
-		
-			ldr r12, =SPC_Timers
-			ldrb r0, [r12]
-			
-			tst r0, #0x04
-			beq noTimer2
-			ldrh r1, [r12, #0xE]
-			subs r1, r1, r3
-			strplh r1, [r12, #0xE]
-			bpl noTimer2
-			ldrh r2, [r12, #0x10]
-			add r1, r1, r2
-			strh r1, [r12, #0xE]
-			ldrb r1, [r12, #0x12]
-			add r1, r1, #1
-			strb r1, [r12, #0x12]
-
-noTimer2:
-			subs spcCycles, spcCycles, r3
-			bpl emuloop
-			
-		@ timers 0 and 1
-		
-		sub r4, r4, spcCycles
-		
-		ldr r12, [memory, #-4]
-		add r12, r12, r4
-		cmp r12, #0x4000
-		subge r12, r12, #0x4000
-		str r12, [memory, #-4]
-		blge DSP_BufferSwap
-		
-		ldr r12, =SPC_Timers
-		ldrb r0, [r12]
+		ldrb r0, [memory, #-8] @ timer enable
 		
 		tst r0, #0x01
 		beq noTimer0
-		ldrh r1, [r12, #0x2]
-		subs r1, r1, r4
-		strplh r1, [r12, #0x2]
-		bpl noTimer0
-		ldrh r2, [r12, #0x4]
-		add r1, r1, r2
-		strh r1, [r12, #0x2]
-		ldrb r1, [r12, #0x6]
-		add r1, r1, #1
-		strb r1, [r12, #0x6]
-		
+		ldr r1, [memory, #-20] @ timer value
+		add r1, r1, r3
+		tst r1, #0x8000 @ check if the timer overflowed
+		ldreq r2, [memory, #-32] @ timer reload
+		addeq r1, r1, r2
+		str r1, [memory, #-20]
 noTimer0:
+
 		tst r0, #0x02
 		beq noTimer1
-		ldrh r1, [r12, #0x8]
-		subs r1, r1, r4
-		strplh r1, [r12, #0x8]
-		bpl noTimer1
-		ldrh r2, [r12, #0xA]
-		add r1, r1, r2
-		strh r1, [r12, #0x8]
-		ldrb r1, [r12, #0xC]
-		add r1, r1, #1
-		strb r1, [r12, #0xC]
-		
+		ldr r1, [memory, #-16] @ timer value
+		add r1, r1, r3
+		tst r1, #0x8000 @ check if the timer overflowed
+		ldreq r2, [memory, #-28] @ timer reload
+		addeq r1, r1, r2
+		str r1, [memory, #-16]
 noTimer1:
-		ldr r3, [memory, #-8]
-		subs r3, r3, r4
-		str r3, [memory, #-8]
-		bpl bigemuloop
+
+		tst r0, #0x04
+		beq noTimer2
+		ldr r1, [memory, #-12] @ timer value
+		add r1, r1, r3
+		tst r1, #0x8000 @ check if the timer overflowed
+		ldreq r2, [memory, #-24] @ timer reload
+		addeq r1, r1, r2
+		str r1, [memory, #-12]
+noTimer2:
+		
+		ldr r0, [memory, #-4] @ elapsed cycles
+		add r0, r0, r3
+		cmp r0, #0x4000
+		subge r0, r0, #0x4000
+		str r0, [memory, #-4]
+		blge DSP_BufferSwap
+		
+		subs spcCycles, spcCycles, r3
+		bpl spcloop
 		
 	StoreRegs
 	ldmia sp!, {r4-r12, pc}

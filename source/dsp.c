@@ -334,6 +334,10 @@ void DspKeyOnChannel(u32 i) {
 
     channels[i].envCount = ENVCNT_START;
     channels[i].active = true;
+	
+	/*bprintf("%d -> %04X %04X\n", 
+		i, 
+		channels[i].blockPos, channels[i].sampleSpeed);*/
 
     if ((DSP_MEM[DSP_NOV]>>i)&1) {
         channels[i].active = false;

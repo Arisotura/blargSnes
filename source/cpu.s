@@ -528,6 +528,8 @@ CPU_Reset:
 	ldr r0, =CPU_Cycles
 	mov r1, #0
 	str r1, [r0]
+	ldr r0, =SPC_Debt
+	str r1, [r0]
 	StoreRegs
 	
 	ldmia sp!, {r3-r12, lr}
@@ -621,10 +623,28 @@ CPU_GetReg:
 @
 @ SPC700 normally runs at 1.024 MHz, which is, 17066.666666 cycles per frame
 @ we approximate it to 65 cycles per scanline, plus 36 cycles to compensate
+@
+@
+@ SPC700 debt system
+@ 
+@ positive debt: SPC is behind
+@ negative debt: CPU is behind
+@
+@ SPC is run:
+@ 1. when the debt is >= 64 SPC cycles
+@ 2. before a write to the CPU->SPC ports is applied
+@
+@ CPU is run:
+@ 1. when the debt is <= 0 SPC cycles
+@ 2. before a write to the SPC->CPU ports is applied
 
 .data
 
 CPU_Cycles:
+	.long 0
+	
+.global SPC_Debt
+SPC_Debt:
 	.long 0
 	
 .global debugpc
@@ -766,6 +786,8 @@ irq_end:
 				@ debug code
 				@mov r0, snesPC, lsr #0x10
 				@orr r0, r0, snesPBR, lsl #0x10
+				@ldr r1, =debugpc
+				@str snesY, [r1]
 				@mov r1, snesA
 				@mov r2, snesY
 				@stmdb sp!, {r12}

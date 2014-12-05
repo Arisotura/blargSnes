@@ -160,7 +160,7 @@ void ReportCrash()
 	ClearConsole();
 	bprintf("Game has crashed (STOP)\n");
 	
-	bprintf("PC: %02X|%04X\n", CPU_Regs.PBR, CPU_Regs.PC);
+	bprintf("PC: %02X:%04X\n", CPU_Regs.PBR, CPU_Regs.PC);
 	bprintf("P: %02X | M=%d X=%d E=%d\n", CPU_Regs.P.val&0xFF, CPU_Regs.P.M, CPU_Regs.P.X, CPU_Regs.P.E);
 	bprintf("A: %04X X: %04X Y: %04X\n", CPU_Regs.A, CPU_Regs.X, CPU_Regs.Y);
 	bprintf("S: %04X D: %02X DBR: %02X\n", CPU_Regs.S, CPU_Regs.D, CPU_Regs.DBR);
@@ -724,9 +724,13 @@ bool StartROM(char* path)
 int reported=0;
 void reportshit(u32 pc, u32 a, u32 y)
 {
-	/*if (reported) return;
+	if (reported) return;
 	reported = 1;
-	bprintf("-- %06X\n", pc);
+	bprintf("o_O %04X %02X %02X %02X %02X\n", pc, SPC_IOPorts[0], SPC_IOPorts[1], SPC_IOPorts[2], SPC_IOPorts[3]);
+	bprintf("-> %02X %02X %02X %02X\n", SPC_IOPorts[4], SPC_IOPorts[5], SPC_IOPorts[6], SPC_IOPorts[7]);
+	// 49B4 49B5
+	bprintf("%02X %02X | %02X %02X | %04X\n", SPC_RAM[0x49B4], SPC_RAM[0x49B5], SPC_RAM[0x49B7], SPC_RAM[0x49B8], a);
+	/*bprintf("-- %06X\n", pc);
 	bprintf("--- %04X %04X\n", *(u16*)&SNES_SysRAM[0x1E5A], *(u16*)&SNES_SysRAM[0x1E5E]);
 	bprintf("--- %04X %04X\n", *(u16*)&SNES_SysRAM[0x6], *(u16*)&SNES_SysRAM[0xA]);
 	dbg_save("/snesram_earthbound.bin", SNES_SysRAM, 128*1024);*/
@@ -740,6 +744,17 @@ void reportshit(u32 pc, u32 a, u32 y)
 	{
 		dbg_save("/derp.bin", &derpo, 4);
 	}*/
+}
+
+int reported2=0;
+void reportshit2(u32 pc, u32 a, u32 y)
+{
+	if (reported2) return;
+	reported2 = 1;
+	bprintf(">_< %04X %02X %02X %02X %02X\n", pc, SPC_IOPorts[0], SPC_IOPorts[1], SPC_IOPorts[2], SPC_IOPorts[3]);
+	bprintf("-> %02X %02X %02X %02X\n", SPC_IOPorts[4], SPC_IOPorts[5], SPC_IOPorts[6], SPC_IOPorts[7]);
+	// 49B4 49B5
+	bprintf("%02X %02X | %02X %02X | %04X\n", SPC_RAM[0x49B4], SPC_RAM[0x49B5], SPC_RAM[0x49B7], SPC_RAM[0x49B8], a);
 }
 
 
@@ -904,8 +919,9 @@ int main()
 					}
 					else if (release & KEY_X)
 					{
-						bprintf("PC: %02X|%04X\n", CPU_Regs.PBR, CPU_Regs.PC);
+						bprintf("PC: CPU %02X:%04X  SPC %04X\n", CPU_Regs.PBR, CPU_Regs.PC, SPC_Regs.PC);
 						dbg_save("/snesram.bin", SNES_SysRAM, 128*1024);
+						dbg_save("/spcram.bin", SPC_RAM, 64*1024);
 					}
 					
 					if ((held & (KEY_L|KEY_R)) == (KEY_L|KEY_R))
