@@ -42,6 +42,9 @@ SPC_Regs:
 .global SPC_RAM
 .global SPC_ROM
 
+@ r0-r4, r12, lr
+@SPC_ResumeInfo:		@ -60
+@	.long 0,0,0,0,0,0,0
 SPC_TimerReload:	@ -32
 	.long 0,0,0
 SPC_TimerVal: 		@ -20
@@ -96,101 +99,132 @@ SPC_UpdateMemMap:
 	ldmia sp!, {r0-r8}
 	bx lr
 	
+.macro SPCPause
+	add r4, pc, #12
+	sub memory, memory, #60
+	orr spcPSW, spcPSW, #flagPause
+	stmia memory, {r0-r4, r12, lr}
+	b spcpause
+.endm
+
+.macro SPCResume
+	tst spcPSW, #flagPause
+	beq 1f
+	ldmia memory, {r0-r4, r12, lr}
+	bic spcPSW, spcPSW, #flagPause
+	add memory, memory, #60
+	blx r4
+1:
+.endm
+	
 @ --- General purpose read/write ----------------------------------------------
 
-.macro MemRead8 addr=r0
-	bic r3, \addr, #0x000F
+_MemRead8:
+	bic r3, r0, #0x000F
 	cmp r3, #0x00F0
-	ldrneb r0, [memory, \addr]
-	bne 1f
-	@ speedhack: when reading timer values, eat cycles
-	cmp \addr, #0xFD
-	orrge spcPSW, spcPSW, #flagT1
-2:
+	ldrneb r0, [memory, r0]
+	bxne lr
+	stmdb sp!, {r1-r3, r12, lr}
+	bl SPC_IORead8
+	ldmia sp!, {r1-r3, r12, pc}
+
+_MemRead16:
+	bic r3, r0, #0x000F
+	cmp r3, #0x00F0
+	addne r3, memory, r0
+	ldrneh r0, [r3]
+	bxne lr
+	stmdb sp!, {r1-r3, r12, lr}
+	bl SPC_IORead16
+	ldmia sp!, {r1-r3, r12, pc}
+
+_MemWrite8:
+	bic r3, r0, #0x000F
+	cmp r3, #0x00F0
+	beq w8_io
+	add r3, r0, #0x40
+	cmp r3, #0x10000
+	andge r3, spcPSW, #flagR
+	addge r0, r0, r3, lsr #2
+	strb r1, [memory, r0]
+	bx lr
+w8_io:
+	@and r3, r0, #0xFC
+	@cmp r3, #0xF4
+	@bne w8_nopause
+	@SPCPause
+w8_nopause:
+	stmdb sp!, {r1-r3, r12, lr}
+	cmp r0, #0xF1
+	moveq r3, r1
+	bleq SPC_UpdateMemMap
+	bl SPC_IOWrite8
+	ldmia sp!, {r1-r3, r12, pc}
+
+_MemWrite16:
+	bic r3, r0, #0x000F
+	cmp r3, #0x00F0
+	beq w16_io
+	add r3, r0, #0x40
+	cmp r3, #0x10000
+	andge r3, spcPSW, #flagR
+	addge r0, r0, r3, lsr #2
+	add r3, memory, r0
+	strh r1, [r3]
+	bx lr
+w16_io:
+	@and r3, r0, #0xFC
+	@cmp r3, #0xF4
+	@bne w16_nopause
+	@SPCPause
+w16_nopause:
+	stmdb sp!, {r1-r3, r12, lr}
+	cmp r0, #0xF0
+	bne w16_notF0
+	mov r3, r1, lsr #0x8
+	bl SPC_UpdateMemMap
+	b w16_F0_done
+w16_notF0:
+	cmp r0, #0xF1
+	moveq r3, r1
+	bleq SPC_UpdateMemMap
+w16_F0_done:
+	bl SPC_IOWrite16
+	ldmia sp!, {r1-r3, r12, pc}
+
+
+.macro MemRead8 addr=r0
 	.ifnc \addr, r0
 		mov r0, \addr
 	.endif
-	stmdb sp!, {r1-r3, r12}
-	bl SPC_IORead8
-	ldmia sp!, {r1-r3, r12}
-1:
+	bl _MemRead8
 .endm
 
 .macro MemRead16 addr=r0
-	bic r3, \addr, #0x000F
-	cmp r3, #0x00F0
-	beq 1f
-	add r3, memory, \addr
-	ldrh r0, [r3]
-	b 2f
-1:
 	.ifnc \addr, r0
 		mov r0, \addr
 	.endif
-	stmdb sp!, {r1-r3, r12}
-	bl SPC_IORead16
-	ldmia sp!, {r1-r3, r12}
-2:
+	bl _MemRead16
 .endm
 
 .macro MemWrite8 addr=r0, val=r1
-	bic r3, \addr, #0x000F
-	cmp r3, #0x00F0
-	beq 1f
-	add r3, \addr, #0x40
-	cmp r3, #0x10000
-	andge r3, spcPSW, #flagR
-	addge \addr, \addr, r3, lsr #2
-	strb \val, [memory, \addr]
-	b 2f
-1:
 	.ifnc \addr, r0
 		mov r0, \addr
 	.endif
 	.ifnc \val, r1
 		mov r1, \val
 	.endif
-	cmp r0, #0xF1
-	moveq r3, r1
-	bleq SPC_UpdateMemMap
-	stmdb sp!, {r1-r3, r12}
-	bl SPC_IOWrite8
-	ldmia sp!, {r1-r3, r12}
-2:
+	bl _MemWrite8
 .endm
 
 .macro MemWrite16 addr=r0, val=r1
-	bic r3, \addr, #0x000F
-	cmp r3, #0x00F0
-	beq 1f
-	add r3, \addr, #0x40
-	cmp r3, #0x10000
-	andge r3, spcPSW, #flagR
-	addge \addr, \addr, r3, lsr #2
-	add r3, memory, \addr
-	strh \val, [r3]
-	b 2f
-1:
 	.ifnc \addr, r0
 		mov r0, \addr
 	.endif
 	.ifnc \val, r1
 		mov r1, \val
 	.endif
-	cmp r0, #0xF0
-	bne 4f
-	mov r3, r1, lsr #0x8
-	bl SPC_UpdateMemMap
-	b 3f
-4:
-	cmp r0, #0xF1
-	moveq r3, r1
-	bleq SPC_UpdateMemMap
-3:
-	stmdb sp!, {r1-r3, r12}
-	bl SPC_IOWrite16
-	ldmia sp!, {r1-r3, r12}
-2:
+	bl _MemWrite16
 .endm
 
 @ --- Stack read/write --------------------------------------------------------
@@ -303,10 +337,12 @@ SPC_Reset:
 
 @ r0 = number of cycles to run
 SPC_Run:
-	stmdb sp!, {r4-r12, lr}
+	stmdb sp!, {r3-r12, lr}
 	LoadRegs
 	
 	add spcCycles, r0
+	
+	@SPCResume
 			
 spcloop:
 		
@@ -391,8 +427,9 @@ noTimer2:
 		subs spcCycles, spcCycles, r3
 		bpl spcloop
 		
+spcpause:
 	StoreRegs
-	ldmia sp!, {r4-r12, pc}
+	ldmia sp!, {r3-r12, pc}
 		
 .ltorg
 	

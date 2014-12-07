@@ -28,11 +28,26 @@ snesDBR			.req r8		@ low hword: DBR
 snesPC			.req r7		@ high hword: PC
 snesP			.req r7		@ low hword: P
 snesCycles		.req r6		@ high hword: master cycle count
-snesLines		.req r6		@ low hword: scanline count (0-261)
 opTable			.req r5		@ pointer to the opcode table in use
 memoryMap		.req r4		@ pointer to the memory map table
+snesStatus		.req r4 	@ status data is before this pointer
 
 @ --- Variables and whatever --------------------------------------------------
+
+.equ SRAMDirty, 		-4
+.equ HVBFlags, 			-5
+.equ IRQCond, 			-6
+.equ ScreenHeight, 		-7
+.equ TotalLines, 		-8
+.equ SRAMMask, 			-12
+.equ HCount, 			-14
+.equ HCountFull, 		-16
+.equ VCount, 			-18
+.equ IRQ_CurHMatch, 	-20
+.equ IRQ_HMatch, 		-22
+.equ IRQ_VMatch, 		-24
+.equ SPC_LastCycle, 	-28
+.equ SPC_CycleRatio,	-32
 
 .equ flagC, 0x01
 .equ flagZ, 0x02
@@ -45,8 +60,8 @@ memoryMap		.req r4		@ pointer to the memory map table
 .equ flagN, 0x80
 .equ flagE, 0x100	@ not actually in P, but hey, we have to keep it somewhere
 .equ flagW, 0x200	@ not even an actual flag... set by WAI
-.equ flagI2, 0x400	@ set when NMIs are disabled
-.equ flagRender, 0x800  @ set when we rendered a scanline
+.equ flagNMI, 0x400 @ NMI requested
+.equ flagDMA, 0x800 @ DMA transfer in progress
 
 .equ flagNVZC, 0xC3
 .equ flagNZ,   0x82

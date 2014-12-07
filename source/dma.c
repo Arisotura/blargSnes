@@ -301,9 +301,9 @@ extern u16 PPU_VCount;
 const u8 hdma_sizes[8] = {1, 2, 2, 4, 4, 4, 2, 4};
 
 void DMA_DoHDMA()
-{
+{	
 	register u8 flag = DMA_HDMAFlag;
-	if (flag && (PPU.VCount < PPU.ScreenHeight))
+	if (flag)
 	{
 		int c;
 		for (c = 0; c < 8; c++)

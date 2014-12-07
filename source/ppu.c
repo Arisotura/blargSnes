@@ -110,7 +110,7 @@ void PPU_Init()
 	PPU.MainBuffer = (u16*)linearAlloc(256*512*2);
 	PPU.SubBuffer = &PPU.MainBuffer[256*256];
 	
-	PPU.ScreenHeight = 224;
+	SNES_Status->ScreenHeight = 224;
 	
 	PPU.SubBackdrop = 0x0001;
 	
@@ -168,7 +168,6 @@ void PPU_Reset()
 	
 	memset(&PPU, 0, sizeof(PPUState));
 	
-	PPU.ScreenHeight = 224;
 	ApplyScaling();
 	
 	PPU.HardwareRenderer = hardrend;
@@ -314,13 +313,25 @@ inline void PPU_SetColor(u32 num, u16 val)
 
 void PPU_LatchHVCounters()
 {
-	// TODO simulate this one based on CPU cycle counter
-	PPU.OPHCT = 22;
+	PPU.OPHCT = 22 + (SNES_Status->HCount >> 2);
+	if (PPU.OPHCT >= 340) PPU.OPHCT -= 340;
 	
-	PPU.OPVCT = 1 + PPU.VCount;
+	PPU.OPVCT = 1 + SNES_Status->VCount;
 	if (PPU.OPVCT > 261) PPU.OPVCT = 0;
 	
 	PPU.OPLatch = 0x40;
+}
+
+
+void SPC_Compensate()
+{
+	int torun = (SNES_Status->HCount - SNES_Status->SPC_LastCycle) * SNES_Status->SPC_CycleRatio;
+	torun >>= 24;
+	if (torun > 0)
+	{
+		SPC_Run(torun);
+		SNES_Status->SPC_LastCycle = SNES_Status->HCount;
+	}
 }
 
 
@@ -732,9 +743,9 @@ void PPU_Write8(u32 addr, u8 val)
 		case 0x33: // SETINI
 			{
 				u32 height = (val & 0x04) ? 239:224;
-				if (height != PPU.ScreenHeight)
+				if (height != SNES_Status->ScreenHeight)
 				{
-					PPU.ScreenHeight = height;
+					SNES_Status->ScreenHeight = height;
 					ApplyScaling();
 				}
 				if (val & 0x80) bprintf("!! PPU EXT SYNC\n");
@@ -744,10 +755,10 @@ void PPU_Write8(u32 addr, u8 val)
 			}
 			break;
 			
-		case 0x40: SPC_IOPorts[0] = val; /*{extern u32 debugpc; if (debugpc == 0x1144||debugpc==0x1147) bprintf("!! 2140=%02X %02X\n", val, SPC_IOPorts[3]); }*/break;
-		case 0x41: SPC_IOPorts[1] = val; break;
-		case 0x42: SPC_IOPorts[2] = val; /*{extern u32 debugpc; if (debugpc == 0x1142||debugpc==0x1145) bprintf("!! 2142=%02X\n", val); }*/break;
-		case 0x43: SPC_IOPorts[3] = val; /*{extern u32 debugpc; if (debugpc == 0x1143||debugpc==0x1146) bprintf("!! 2143=%02X\n", val); }*/break;
+		case 0x40: SPC_Compensate(); SPC_IOPorts[0] = val; break;
+		case 0x41: SPC_Compensate(); SPC_IOPorts[1] = val; break;
+		case 0x42: SPC_Compensate(); SPC_IOPorts[2] = val; break;
+		case 0x43: SPC_Compensate(); SPC_IOPorts[3] = val; break;
 		
 		case 0x80: SNES_SysRAM[Mem_WRAMAddr++] = val; Mem_WRAMAddr &= ~0x20000; break;
 		case 0x81: Mem_WRAMAddr = (Mem_WRAMAddr & 0x0001FF00) | val; break;
@@ -780,9 +791,9 @@ void PPU_Write16(u32 addr, u16 val)
 			PPU.VRAMAddr += PPU.VRAMStep;
 			break;
 			
-		case 0x40: *(u16*)&SPC_IOPorts[0] = val; break;
-		case 0x41: *(u16*)&SPC_IOPorts[1] = val; break;
-		case 0x42: *(u16*)&SPC_IOPorts[2] = val; /*{extern u32 debugpc; if ((val>>8) == 0x35) bprintf("!o! %06X\n", debugpc); }*/break;
+		case 0x40: SPC_Compensate(); *(u16*)&SPC_IOPorts[0] = val; break;
+		case 0x41: SPC_Compensate(); *(u16*)&SPC_IOPorts[1] = val; break;
+		case 0x42: SPC_Compensate(); *(u16*)&SPC_IOPorts[2] = val; break;
 		
 		case 0x43: bprintf("!! write $21%02X %04X\n", addr, val); break;
 		

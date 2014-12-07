@@ -156,6 +156,7 @@ void SPC_ReportUnk(u8 op, u32 pc)
 void ReportCrash()
 {
 	pause = 1;
+	running = 0;
 	
 	ClearConsole();
 	bprintf("Game has crashed (STOP)\n");
@@ -252,7 +253,7 @@ float* screenVertices;
 
 void ApplyScaling()
 {
-	float texy = (float)PPU.ScreenHeight / 256.0f;
+	float texy = (float)SNES_Status->ScreenHeight / 256.0f;
 	
 	float x1, x2, y1, y2;
 	
@@ -268,7 +269,7 @@ void ApplyScaling()
 			
 		case 2: // overscan
 			{
-				float bigy = ((float)PPU.ScreenHeight * 240.0f) / (float)(PPU.ScreenHeight-16);
+				float bigy = ((float)SNES_Status->ScreenHeight * 240.0f) / (float)(SNES_Status->ScreenHeight-16);
 				float margin = (bigy - 240.0f) / 2.0f;
 				x1 = -margin; x2 = 240.0f+margin;
 				y1 = 0.0f; y2 = 400.0f;
@@ -276,7 +277,7 @@ void ApplyScaling()
 			break;
 			
 		default: // 1:1
-			if (PPU.ScreenHeight == 239)
+			if (SNES_Status->ScreenHeight == 239)
 			{
 				x1 = 1.0f; x2 = 240.0f;
 			}
@@ -724,6 +725,14 @@ bool StartROM(char* path)
 int reported=0;
 void reportshit(u32 pc, u32 a, u32 y)
 {
+	//bprintf("SPC -> %d %d\n", (int)pc, a);
+	//pause=1;
+	u32 derpo = pc;
+	if (framecount >= 16) dbg_save("/derp.bin", &derpo, 4);
+	return;
+
+
+
 	if (reported) return;
 	reported = 1;
 	bprintf("o_O %04X %02X %02X %02X %02X\n", pc, SPC_IOPorts[0], SPC_IOPorts[1], SPC_IOPorts[2], SPC_IOPorts[3]);
@@ -749,6 +758,12 @@ void reportshit(u32 pc, u32 a, u32 y)
 int reported2=0;
 void reportshit2(u32 pc, u32 a, u32 y)
 {
+	bprintf("vblank line %d\n", SNES_Status->VCount);
+	return;
+	
+	
+	
+	
 	if (reported2) return;
 	reported2 = 1;
 	bprintf(">_< %04X %02X %02X %02X %02X\n", pc, SPC_IOPorts[0], SPC_IOPorts[1], SPC_IOPorts[2], SPC_IOPorts[3]);
@@ -793,6 +808,7 @@ int main()
 	LoadConfig();
 	
 	VRAM_Init();
+	SNES_Init();
 	PPU_Init();
 	
 	GPU_Init(NULL);
@@ -864,7 +880,7 @@ int main()
 			if (running && !pause)
 			{
 				// emulate
-				CPU_Run(); // runs the SNES for one frame. Handles PPU rendering.
+				CPU_MainLoop(); // runs the SNES for one frame. Handles PPU rendering.
 				ContinueRendering();
 				
 				// SRAM autosave check
@@ -903,7 +919,7 @@ int main()
 						
 						// copy splashscreen
 						FinishRendering();
-						PPU.ScreenHeight = 224;
+						SNES_Status->ScreenHeight = 224;
 						ApplyScaling();
 						u32* tempbuf = (u32*)linearAlloc(256*256*4);
 						CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x0);

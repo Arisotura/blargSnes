@@ -40,7 +40,8 @@ extern FS_archive sdmcArchive;
 // TODO find a better way to do speedhacks
 // (like, detecting branches with offset -4 or -5 at runtime)
 void ROM_ApplySpeedHacks(int banknum, u8* bank)
-{return;
+{
+	return;
 	int i;
 	int bsize = SNES_HiROM ? 0x10000 : 0x8000;
 

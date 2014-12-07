@@ -60,9 +60,6 @@ u32* Mem_PtrTable;
 SNES_StatusData* SNES_Status;
 
 u8 SNES_HVBJOY = 0x00;
-u16 SNES_VMatch = 0;
-u16 SNES_HMatchRaw = 0, SNES_HMatch = 0;
-u16 SNES_HCheck = 0;
 
 u8 SNES_AutoJoypad = 0;
 u8 SNES_JoyBit = 0;
@@ -84,12 +81,16 @@ extern u8 DMA_HDMAFlag;
 u8 SNES_ExecTrap[8192] __attribute__((aligned(256)));
 
 
+void SNES_Init()
+{
+	// TODO get rid of this junk!
+	SNES_Status = &_Mem_PtrTable[0];
+	Mem_PtrTable = &_Mem_PtrTable[SNESSTATUS_SIZE >> 2];
+}
+
 
 bool SNES_LoadROM(char* path)
 {
-	SNES_Status = &_Mem_PtrTable[0];
-	Mem_PtrTable = &_Mem_PtrTable[SNESSTATUS_SIZE >> 2];
-	
 	if (!ROM_LoadFile(path))
 		return false;
 		
@@ -103,6 +104,11 @@ bool SNES_LoadROM(char* path)
 		ROM_Region = 0;
 	else
 		ROM_Region = 1;
+		
+	SNES_Status->TotalLines = (ROM_Region ? 312 : 262) >> 1;
+	SNES_Status->ScreenHeight = 224;
+	
+	SNES_Status->SPC_CycleRatio = ROM_Region ? 0x000C51D9 : 0x000C39C6;
 	
 	SNES_SRAMMask = sramsize ? ((1024 << sramsize) - 1) : 0;
 	SNES_SRAMMask &= 0x000FFFFF;
@@ -189,6 +195,14 @@ void SNES_Reset()
 	SNES_Status->SRAMMask = SNES_SRAMMask;
 	SNES_Status->IRQCond = 0;
 	
+	SNES_Status->VCount = 0;
+	SNES_Status->HCount = 0;
+	SNES_Status->IRQ_VMatch = 0;
+	SNES_Status->IRQ_HMatch = 0;
+	SNES_Status->IRQ_CurHMatch = 0x8000;
+	
+	SNES_Status->SPC_LastCycle = 0;
+	
 	for (b = 0; b < 0x40; b++)
 	{
 		MEM_PTR(b, 0x0000) = MEM_PTR(0x80 + b, 0x0000) = MPTR_SLOW | (u32)&SNES_SysRAM[0];
@@ -237,8 +251,6 @@ void SNES_Reset()
 				MEM_PTR(0x7E + b, a) = MEM_PTR(0xFE + b, a) = MPTR_SLOW | (u32)&SNES_SysRAM[(b << 16) + a];
 	}
 	
-	bprintf("sysram = %08X\n", &SNES_SysRAM[0]);
-	
 	SNES_HVBJOY = 0x00;
 	
 	SNES_MulA = 0;
@@ -281,19 +293,6 @@ void SNES_SaveSRAM()
 		bprintf("SRAM save failed (%08X)\n", res);
 		
 	SNES_Status->SRAMDirty = 0;
-}
-
-
-void report_unk_lol(u32 op, u32 pc)
-{
-	if (op == 0xDB) 
-	{
-		bprintf("STOP %06X\n", pc);
-		return; 
-	}
-
-	bprintf("OP_UNK %08X %02X\n", pc, op);
-	for (;;);// swiWaitForVBlank();
 }
 
 
@@ -357,7 +356,8 @@ u8 SNES_GIORead8(u32 addr)
 			break;
 			
 		case 0x12:
-			ret = SNES_Status->HVBFlags & 0xC0;
+			ret = SNES_Status->HVBFlags & 0x80;
+			if (SNES_Status->HCount >= 1024) ret |= 0x40;
 			break;
 			
 		case 0x14:
@@ -430,9 +430,26 @@ void SNES_GIOWrite8(u32 addr, u8 val)
 	switch (addr)
 	{
 		case 0x00:
-			// the NMI flag is handled in mem_io.s
-			SNES_Status->IRQCond = (val & 0x30) >> 4;
-			SNES_HCheck = (SNES_Status->IRQCond & 0x1) ? SNES_HMatch : 1364;
+			if ((SNES_Status->IRQCond ^ val) & 0x30) // reschedule the IRQ if needed
+			{
+				switch (val & 0x30)
+				{
+					case 0x00: SNES_Status->IRQ_CurHMatch = 0x8000; break;
+					case 0x10: 
+						SNES_Status->IRQ_CurHMatch = (SNES_Status->HCount > SNES_Status->IRQ_HMatch) ? 0x8000:SNES_Status->IRQ_HMatch; 
+						break;
+					case 0x20:
+						SNES_Status->IRQ_CurHMatch = (SNES_Status->VCount != SNES_Status->IRQ_VMatch) ? 0x8000:0; 
+						break;
+					case 0x30:
+						SNES_Status->IRQ_CurHMatch = 
+							((SNES_Status->VCount != SNES_Status->IRQ_VMatch) || 
+							 (SNES_Status->HCount > SNES_Status->IRQ_HMatch))
+							 ? 0x8000:SNES_Status->IRQ_HMatch; 
+						break;
+				}
+			}
+			SNES_Status->IRQCond = val;
 			SNES_AutoJoypad = (val & 0x01);
 			break;
 			
@@ -466,25 +483,21 @@ void SNES_GIOWrite8(u32 addr, u8 val)
 			break;
 			
 		case 0x07:
-			SNES_HMatchRaw &= 0xFF00;
-			SNES_HMatchRaw |= val;
-			SNES_HMatch = 1364 - (SNES_HMatchRaw << 2);
-			SNES_HCheck = (SNES_Status->IRQCond & 0x1) ? SNES_HMatch : 1364;
+			SNES_Status->IRQ_HMatch &= 0x0400;
+			SNES_Status->IRQ_HMatch |= (val << 2);
 			break;
 		case 0x08:
-			SNES_HMatchRaw &= 0x00FF;
-			SNES_HMatchRaw |= (val << 8);
-			SNES_HMatch = 1364 - (SNES_HMatchRaw << 2);
-			SNES_HCheck = (SNES_Status->IRQCond & 0x1) ? SNES_HMatch : 1364;
+			SNES_Status->IRQ_HMatch &= 0x03FC;
+			SNES_Status->IRQ_HMatch |= ((val & 0x01) << 10);
 			break;
 			
 		case 0x09:
-			SNES_VMatch &= 0xFF00;
-			SNES_VMatch |= val;
+			SNES_Status->IRQ_VMatch &= 0x0100;
+			SNES_Status->IRQ_VMatch |= val;
 			break;
 		case 0x0A:
-			SNES_VMatch &= 0x00FF;
-			SNES_VMatch |= (val << 8);
+			SNES_Status->IRQ_VMatch &= 0x00FF;
+			SNES_Status->IRQ_VMatch |= ((val & 0x01) << 8);
 			break;
 			
 		case 0x0B:
@@ -522,13 +535,11 @@ void SNES_GIOWrite16(u32 addr, u16 val)
 			break;
 			
 		case 0x07:
-			SNES_HMatchRaw = val;
-			SNES_HMatch = 1364 - (SNES_HMatchRaw << 2);
-			SNES_HCheck = (SNES_Status->IRQCond & 0x1) ? SNES_HMatch : 1364;
+			SNES_Status->IRQ_HMatch = (val & 0x01FF) << 2;
 			break;
 			
 		case 0x09:
-			SNES_VMatch = val;
+			SNES_Status->IRQ_VMatch = val & 0x01FF;
 			break;
 			
 		case 0x0B:

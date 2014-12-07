@@ -24,20 +24,29 @@
 
 typedef struct
 {
-	u32 NextEventTime;			// -0x14
-	void (*NextEventFunc)(); 	// -0x10
+	s32 SPC_CycleRatio;		// -32
+	s32 SPC_LastCycle;		// -28 | CPU cycle count at last SPC run
+	
+	u16 IRQ_VMatch;		// -24
+	u16 IRQ_HMatch;		// -22
+	u16 IRQ_CurHMatch; 	// -20 | reset when the IRQ is fired
+	
+	u16 VCount;		// -18
+	
+	u8 __pad1[2];	// -16 for 'full' HCount (lower 16 bits are garbage)
+	u16 HCount;		// -14
 	
 	u32 SRAMMask;	// -0xC
 	
-	u8 __pad0[2];	// -0x8
+	u8 TotalLines;		// -8 | 262 for NTSC, 312 for PAL
+	u8 ScreenHeight; 	// -7 | 224 or 239
 	
 	u8 IRQCond;		// -0x6
 	
 	// bit7: vblank
-	// bit6: hblank
+	// bit6: hblank (retired)
 	// bit5: vblank (ack)
 	// bit4: IRQ (ack)
-	// bit3: IRQ (sticky, per-scanline)
 	u8 HVBFlags;	// -0x5
 	
 	u32 SRAMDirty;	// -0x4
@@ -70,12 +79,9 @@ extern u8 ROM_Region;
 extern bool SNES_HiROM;
 extern bool SNES_FastROM;
 extern u32* Mem_PtrTable;
+extern SNES_StatusData* SNES_Status;
 
 extern u8 SNES_SysRAM[0x20000];
-
-extern u16 SNES_VMatch;
-extern u16 SNES_HMatch;
-extern u16 SNES_HCheck;
 
 extern u8 SPC_IOPorts[8];
 
@@ -83,6 +89,8 @@ extern u8 SPC_IOPorts[8];
 bool ROM_LoadFile(char* name);
 void ROM_MapBank(u32 bank, u8* ptr);
 void ROM_SpeedChanged();
+
+void SNES_Init();
 
 bool SNES_LoadROM(char* path);
 void SNES_Reset();

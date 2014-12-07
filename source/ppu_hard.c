@@ -1481,7 +1481,7 @@ void PPU_HardRenderOBJs()
 	if (i < 0) i = 127;
 	int last = i;
 	int ntiles = 0;
-	int ystart = 0, yend = PPU.ScreenHeight;
+	int ystart = 0, yend = SNES_Status->ScreenHeight;
 	void* vstart = vertexPtr;
 
 	do

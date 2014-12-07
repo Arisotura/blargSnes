@@ -56,7 +56,7 @@ extern u8 SPC_ROM[0x40];
 
 	
 void SPC_Reset();
-void SPC_Run(u32 cycles);
+void SPC_Run(int cycles);
 
 void SPC_InitMisc();
 
