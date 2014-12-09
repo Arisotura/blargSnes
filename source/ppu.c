@@ -310,6 +310,29 @@ inline void PPU_SetColor(u32 num, u16 val)
 		PPU.Palette[num] = temp;
 }
 
+u32 PPU_TranslateVRAMAddress(u32 addr)
+{
+	switch (PPU.VRAMInc & 0x0C)
+	{
+		case 0x00: return addr;
+		
+		case 0x04:
+			return (addr & 0x1FE01) |
+				  ((addr & 0x001C0) >> 5) |
+				  ((addr & 0x0003E) << 3);
+				  
+		case 0x08:
+			return (addr & 0x1FC01) |
+				  ((addr & 0x00380) >> 6) |
+				  ((addr & 0x0007E) << 3);
+				  
+		case 0x0C:
+			return (addr & 0x1F801) |
+				  ((addr & 0x00700) >> 7) |
+				  ((addr & 0x000FE) << 3);
+	}
+}
+
 
 void PPU_LatchHVCounters()
 {
@@ -364,7 +387,8 @@ u8 PPU_Read8(u32 addr)
 				ret = PPU.VRAMPref & 0xFF;
 				if (!(PPU.VRAMInc & 0x80))
 				{
-					PPU.VRAMPref = *(u16*)&PPU.VRAM[PPU.VRAMAddr];
+					addr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
+					PPU.VRAMPref = *(u16*)&PPU.VRAM[addr];
 					PPU.VRAMAddr += PPU.VRAMStep;
 				}
 			}
@@ -374,7 +398,8 @@ u8 PPU_Read8(u32 addr)
 				ret = PPU.VRAMPref >> 8;
 				if (PPU.VRAMInc & 0x80)
 				{
-					PPU.VRAMPref = *(u16*)&PPU.VRAM[PPU.VRAMAddr];
+					addr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
+					PPU.VRAMPref = *(u16*)&PPU.VRAM[addr];
 					PPU.VRAMAddr += PPU.VRAMStep;
 				}
 			}
@@ -560,7 +585,6 @@ void PPU_Write8(u32 addr, u8 val)
 		case 0x14: PPU_SetYScroll(3, val); break;
 		
 		case 0x15:
-			if ((val & 0x0C) != 0x00) bprintf("UNSUPPORTED VRAM MODE %02X\n", val);
 			PPU.VRAMInc = val;
 			switch (val & 0x03)
 			{
@@ -574,20 +598,23 @@ void PPU_Write8(u32 addr, u8 val)
 		case 0x16:
 			PPU.VRAMAddr &= 0xFE00;
 			PPU.VRAMAddr |= (val << 1);
-			PPU.VRAMPref = *(u16*)&PPU.VRAM[PPU.VRAMAddr];
+			addr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
+			PPU.VRAMPref = *(u16*)&PPU.VRAM[addr];
 			break;
 		case 0x17:
 			PPU.VRAMAddr &= 0x01FE;
 			PPU.VRAMAddr |= ((val & 0x7F) << 9);
-			PPU.VRAMPref = *(u16*)&PPU.VRAM[PPU.VRAMAddr];
+			addr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
+			PPU.VRAMPref = *(u16*)&PPU.VRAM[addr];
 			break;
 		
 		case 0x18: // VRAM shit
 			{
-				if (PPU.VRAM[PPU.VRAMAddr] != val)
+				addr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
+				if (PPU.VRAM[addr] != val)
 				{
-					PPU.VRAM[PPU.VRAMAddr] = val;
-					PPU.VRAMUpdateCount[PPU.VRAMAddr >> 4]++;
+					PPU.VRAM[addr] = val;
+					PPU.VRAMUpdateCount[addr >> 4]++;
 				}
 				if (!(PPU.VRAMInc & 0x80))
 					PPU.VRAMAddr += PPU.VRAMStep;
@@ -595,10 +622,11 @@ void PPU_Write8(u32 addr, u8 val)
 			break;
 		case 0x19:
 			{
-				if (PPU.VRAM[PPU.VRAMAddr+1] != val)
+				addr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
+				if (PPU.VRAM[addr+1] != val)
 				{
-					PPU.VRAM[PPU.VRAMAddr+1] = val;
-					PPU.VRAMUpdateCount[PPU.VRAMAddr >> 4]++;
+					PPU.VRAM[addr+1] = val;
+					PPU.VRAMUpdateCount[addr >> 4]++;
 				}
 				if (PPU.VRAMInc & 0x80)
 					PPU.VRAMAddr += PPU.VRAMStep;
@@ -787,14 +815,16 @@ void PPU_Write16(u32 addr, u16 val)
 		
 		case 0x16:
 			PPU.VRAMAddr = (val << 1) & 0xFFFEFFFF;
-			PPU.VRAMPref = *(u16*)&PPU.VRAM[PPU.VRAMAddr];
+			addr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
+			PPU.VRAMPref = *(u16*)&PPU.VRAM[addr];
 			break;
 			
 		case 0x18:
-			if (*(u16*)&PPU.VRAM[PPU.VRAMAddr] != val)
+			addr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
+			if (*(u16*)&PPU.VRAM[addr] != val)
 			{
-				*(u16*)&PPU.VRAM[PPU.VRAMAddr] = val;
-				PPU.VRAMUpdateCount[PPU.VRAMAddr >> 4]++;
+				*(u16*)&PPU.VRAM[addr] = val;
+				PPU.VRAMUpdateCount[addr >> 4]++;
 			}
 			PPU.VRAMAddr += PPU.VRAMStep;
 			break;
