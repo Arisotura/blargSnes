@@ -330,6 +330,8 @@ void PPU_DeInit();
 
 void PPU_SetColor(u32 num, u16 val);
 
+void PPU_LatchHVCounters();
+
 u8 PPU_Read8(u32 addr);
 u16 PPU_Read16(u32 addr);
 void PPU_Write8(u32 addr, u8 val);

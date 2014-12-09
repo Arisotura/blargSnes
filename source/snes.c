@@ -60,6 +60,7 @@ u32* Mem_PtrTable;
 SNES_StatusData* SNES_Status;
 
 u8 SNES_HVBJOY = 0x00;
+u8 SNES_WRIO = 0;
 
 u8 SNES_AutoJoypad = 0;
 u8 SNES_JoyBit = 0;
@@ -252,6 +253,7 @@ void SNES_Reset()
 	}
 	
 	SNES_HVBJOY = 0x00;
+	SNES_WRIO = 0;
 	
 	SNES_MulA = 0;
 	SNES_MulRes = 0;
@@ -332,9 +334,30 @@ void IO_ManualReadKeys()
 	SNES_JoyBuffer = 0xFFFF0000 | IO_ReadKeysLow() | (IO_ReadKeysHigh() << 8);
 }
 
-extern u32 debugpc;
+
+void SNES_RescheduleIRQ(u8 val)
+{
+	switch (val & 0x30)
+	{
+		case 0x00: SNES_Status->IRQ_CurHMatch = 0x8000; break;
+		case 0x10: 
+			SNES_Status->IRQ_CurHMatch = (SNES_Status->HCount > SNES_Status->IRQ_HMatch) ? 0x8000:SNES_Status->IRQ_HMatch; 
+			break;
+		case 0x20:
+			SNES_Status->IRQ_CurHMatch = (SNES_Status->VCount != SNES_Status->IRQ_VMatch) ? 0x8000:0; 
+			break;
+		case 0x30:
+			SNES_Status->IRQ_CurHMatch = 
+				((SNES_Status->VCount != SNES_Status->IRQ_VMatch) || 
+				 (SNES_Status->HCount > SNES_Status->IRQ_HMatch))
+				 ? 0x8000:SNES_Status->IRQ_HMatch; 
+			break;
+	}
+}
+
+
 u8 SNES_GIORead8(u32 addr)
-{//bprintf("read8 42%02X %08X %02X\n", addr, debugpc, SNES_Status->IRQCond);
+{
 	u8 ret = 0;
 	
 	switch (addr)
@@ -400,7 +423,7 @@ u8 SNES_GIORead8(u32 addr)
 }
 
 u16 SNES_GIORead16(u32 addr)
-{//bprintf("read16 42%02X %08X\n", addr, debugpc);
+{
 	u16 ret = 0;
 	switch (addr)
 	{
@@ -431,26 +454,16 @@ void SNES_GIOWrite8(u32 addr, u8 val)
 	{
 		case 0x00:
 			if ((SNES_Status->IRQCond ^ val) & 0x30) // reschedule the IRQ if needed
-			{
-				switch (val & 0x30)
-				{
-					case 0x00: SNES_Status->IRQ_CurHMatch = 0x8000; break;
-					case 0x10: 
-						SNES_Status->IRQ_CurHMatch = (SNES_Status->HCount > SNES_Status->IRQ_HMatch) ? 0x8000:SNES_Status->IRQ_HMatch; 
-						break;
-					case 0x20:
-						SNES_Status->IRQ_CurHMatch = (SNES_Status->VCount != SNES_Status->IRQ_VMatch) ? 0x8000:0; 
-						break;
-					case 0x30:
-						SNES_Status->IRQ_CurHMatch = 
-							((SNES_Status->VCount != SNES_Status->IRQ_VMatch) || 
-							 (SNES_Status->HCount > SNES_Status->IRQ_HMatch))
-							 ? 0x8000:SNES_Status->IRQ_HMatch; 
-						break;
-				}
-			}
+				SNES_RescheduleIRQ(val);
+			if (!(val & 0x30)) // acknowledge current IRQ if needed
+				SNES_Status->HVBFlags &= 0xEF;
 			SNES_Status->IRQCond = val;
 			SNES_AutoJoypad = (val & 0x01);
+			break;
+			
+		case 0x01:
+			if ((SNES_WRIO & ~val) & 0x80) PPU_LatchHVCounters();
+			SNES_WRIO = val;
 			break;
 			
 		case 0x02:
@@ -485,19 +498,23 @@ void SNES_GIOWrite8(u32 addr, u8 val)
 		case 0x07:
 			SNES_Status->IRQ_HMatch &= 0x0400;
 			SNES_Status->IRQ_HMatch |= (val << 2);
+			if (SNES_Status->IRQCond & 0x10) SNES_RescheduleIRQ(SNES_Status->IRQCond);
 			break;
 		case 0x08:
 			SNES_Status->IRQ_HMatch &= 0x03FC;
 			SNES_Status->IRQ_HMatch |= ((val & 0x01) << 10);
+			if (SNES_Status->IRQCond & 0x10) SNES_RescheduleIRQ(SNES_Status->IRQCond);
 			break;
 			
 		case 0x09:
 			SNES_Status->IRQ_VMatch &= 0x0100;
 			SNES_Status->IRQ_VMatch |= val;
+			if (SNES_Status->IRQCond & 0x20) SNES_RescheduleIRQ(SNES_Status->IRQCond);
 			break;
 		case 0x0A:
 			SNES_Status->IRQ_VMatch &= 0x00FF;
 			SNES_Status->IRQ_VMatch |= ((val & 0x01) << 8);
+			if (SNES_Status->IRQCond & 0x20) SNES_RescheduleIRQ(SNES_Status->IRQCond);
 			break;
 			
 		case 0x0B:
@@ -536,10 +553,12 @@ void SNES_GIOWrite16(u32 addr, u16 val)
 			
 		case 0x07:
 			SNES_Status->IRQ_HMatch = (val & 0x01FF) << 2;
+			if (SNES_Status->IRQCond & 0x10) SNES_RescheduleIRQ(SNES_Status->IRQCond);
 			break;
 			
 		case 0x09:
 			SNES_Status->IRQ_VMatch = val & 0x01FF;
+			if (SNES_Status->IRQCond & 0x20) SNES_RescheduleIRQ(SNES_Status->IRQCond);
 			break;
 			
 		case 0x0B:

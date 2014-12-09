@@ -94,8 +94,8 @@ void Audio_Pause()
 		CSND_sharedmemtype0_cmdupdatestate(0);
 	}
 	
-	memset(Audio_Buffer, 0, MIXBUFSIZE*4*4*sizeof(s16));
-	GSPGPU_FlushDataCache(NULL, Audio_Buffer, MIXBUFSIZE*4*4*sizeof(s16));
+	memset(Audio_Buffer0, 0, MIXBUFSIZE*4*4*sizeof(s16));
+	GSPGPU_FlushDataCache(NULL, Audio_Buffer0, MIXBUFSIZE*4*4*sizeof(s16));
 }
 
 void Audio_Mix()

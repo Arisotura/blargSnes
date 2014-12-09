@@ -645,6 +645,11 @@ cpuloop:
 		tst r3, #0x10
 		blne CPU_TriggerIRQ
 		
+		@mov r0, snesPC, lsr #16
+		@orr r0, r0, snesPBR, lsl #16
+		@ldr r1, =debugpc
+		@str r0, [r1]
+		
 		OpcodePrefetch8
 		str snesCycles, [snesStatus, #HCountFull]
 		ldr pc, [opTable, r0, lsl #0x2]
@@ -739,9 +744,9 @@ lineloop1:
 		ldr r0, =((1364<<16) + 340)
 		sub snesCycles, snesCycles, r0
 		
-		add r3, r3, #1
 		ldrb r0, [snesStatus, #ScreenHeight]
 		cmp r3, r0
+		add r3, r3, #1
 		blt lineloop1
 		
 	mov snesCycles, snesCycles, lsr #16

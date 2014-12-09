@@ -581,7 +581,7 @@ void PPU_ClearMainScreen()
 	bglAttribBuffer(vptr);
 	
 	int nvtx = 0;
-	int ystart = 0;
+	int ystart = 1;
 	PPU_ModeSection* s = &PPU.ModeSections[0];
 	for (;;)
 	{
@@ -675,7 +675,7 @@ void PPU_ClearSubScreen()
 	bglAttribBuffer(vptr);
 		
 	int nvtx = 0;
-	int ystart = 0;
+	int ystart = 1;
 	PPU_SubBackdropSection* s = &PPU.SubBackdropSections[0];
 	for (;;)
 	{
@@ -748,7 +748,7 @@ void PPU_DrawWindowMask(u32 snum)
 	bglAttribBuffer(vptr);
 		
 	int nvtx = 0;
-	int ystart = 0;
+	int ystart = 1;
 	PPU_WindowSection* s = &PPU.WindowSections[0];
 	for (;;)
 	{
@@ -877,7 +877,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart,
 	u16 curtile;
 	int x, y;
 	u32 idx;
-	int systart = 0, syend;
+	int systart = 1, syend;
 	int ntiles = 0;
 	u16* vptr = (u16*)vertexPtr;
 	
@@ -1023,7 +1023,7 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystar
 	u16 curtile;
 	int x, y;
 	u32 idx;
-	int systart = 0, syend;
+	int systart = 1, syend;
 	int ntiles = 0;
 	u16* vptr = (u16*)vertexPtr;
 	
@@ -1192,7 +1192,7 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystar
 
 void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend)
 {
-	int systart = 0, syend;
+	int systart = 1, syend;
 	s32 x, y;
 	int i, j;
 	u32 tileidx;
@@ -1481,7 +1481,7 @@ void PPU_HardRenderOBJs()
 	if (i < 0) i = 127;
 	int last = i;
 	int ntiles = 0;
-	int ystart = 0, yend = SNES_Status->ScreenHeight;
+	int ystart = 1, yend = SNES_Status->ScreenHeight;
 	void* vstart = vertexPtr;
 
 	do
@@ -1495,10 +1495,10 @@ void PPU_HardRenderOBJs()
 		{
 			ntiles += PPU_HardRenderOBJ(oam, oamextra, oy, oh, ystart, yend);
 		}
-		else if (oy >= 192)
+		if (oy >= 192)
 		{
 			oy -= 0x100;
-			if ((oy+oh) > 1 && (oy+oh) > ystart)
+			if ((oy+oh) > ystart)
 			{
 				ntiles += PPU_HardRenderOBJ(oam, oamextra, oy, oh, ystart, yend);
 			}
@@ -1963,7 +1963,7 @@ void PPU_HardRender_Mode7(int ystart, int yend, u32 screen, u32 mode, u32 colorm
 void PPU_HardRender(u32 snum)
 {
 	PPU_ModeSection* s = &PPU.ModeSections[0];
-	int ystart = 0;
+	int ystart = 1;
 	
 	for (;;)
 	{

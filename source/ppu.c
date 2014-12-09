@@ -313,11 +313,12 @@ inline void PPU_SetColor(u32 num, u16 val)
 
 void PPU_LatchHVCounters()
 {
+	if (!(SNES_WRIO & 0x80)) return;
+	
 	PPU.OPHCT = 22 + (SNES_Status->HCount >> 2);
 	if (PPU.OPHCT >= 340) PPU.OPHCT -= 340;
 	
-	PPU.OPVCT = 1 + SNES_Status->VCount;
-	if (PPU.OPVCT > 261) PPU.OPVCT = 0;
+	PPU.OPVCT = SNES_Status->VCount;
 	
 	PPU.OPLatch = 0x40;
 }
@@ -346,6 +347,7 @@ u8 PPU_Read8(u32 addr)
 		
 		case 0x37:
 			PPU_LatchHVCounters();
+			ret = 0x21;
 			break;
 			
 		case 0x38:
@@ -977,6 +979,8 @@ void PPU_ComputeWindows(PPU_WindowSegment* s)
 
 void PPU_RenderScanline(u32 line)
 {
+	if (line >= SNES_Status->ScreenHeight) return;
+	
 	if (!(line & 7))
 		ContinueRendering();
 	

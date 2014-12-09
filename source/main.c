@@ -726,12 +726,13 @@ int reported=0;extern u32 debugpc;
 u32 oldshiz=0;
 void reportshit(u32 pc, u32 a, u32 y)
 {
-	if (*(u32*)&SNES_SysRAM[0x300] != 0xEFEFEFEF && oldshiz==0xEFEFEFEF)
+	/*if (*(u32*)&SNES_SysRAM[0x300] != 0xEFEFEFEF && oldshiz==0xEFEFEFEF)
 	{
 		if (reported) return; reported=1;
 		bprintf("%06X A=%04X %04X\n", pc, a, *(u32*)&SNES_SysRAM[0x300]);
 	}
-	oldshiz = *(u32*)&SNES_SysRAM[0x300];
+	oldshiz = *(u32*)&SNES_SysRAM[0x300];*/
+	bprintf("!! IRQ %04X %02X\n", SNES_Status->IRQ_CurHMatch, SNES_Status->IRQCond);
 	//pause=1;
 	return;
 

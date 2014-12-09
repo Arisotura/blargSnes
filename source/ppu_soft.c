@@ -1278,6 +1278,7 @@ void PPU_RenderScanline_Soft(u32 line)
 		PPU.ColorEffectDirty = 0;
 	}
 	
+	if (!line) return;
 	if (!PPU.CurBrightness) return;
 	
 	if (PPU.WindowDirty)
@@ -1390,7 +1391,7 @@ void PPU_RenderScanline_Soft(u32 line)
 
 void PPU_BlendScreens(u32 colorformat)
 {
-	int startoffset = 0;
+	int startoffset = 1;
 	
 	u16* vptr = (u16*)vertexPtr;
 	

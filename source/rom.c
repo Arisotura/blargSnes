@@ -270,6 +270,12 @@ bool ROM_LoadFile(char* name)
 	if (score[3] > score[0])
 		bestone = 3;
 		
+	if (bestone == 0 && score[0] < 0)
+	{
+		bprintf("Invalid ROM\n");
+		return false;
+	}
+		
 	ROM_BaseOffset = (bestone & 1) ? 0x200 : 0;
 	SNES_HiROM = (bestone & 2) ? true : false;
 	ROM_HeaderOffset = SNES_HiROM ? 0xFFC0 : 0x7FC0;
@@ -289,7 +295,7 @@ bool ROM_LoadFile(char* name)
 	if (!ROM_Buffer)
 	{
 		FSFILE_Close(fileHandle);
-		bprintf("Error %08X while allocating ROM buffer\n", res);
+		bprintf("Error while allocating ROM buffer\n");
 		return false;
 	}
 	

@@ -83,6 +83,8 @@ extern SNES_StatusData* SNES_Status;
 
 extern u8 SNES_SysRAM[0x20000];
 
+extern u8 SNES_WRIO;
+
 extern u8 SPC_IOPorts[8];
 
 
