@@ -1009,8 +1009,6 @@ void PPU_ComputeWindows(PPU_WindowSegment* s)
 
 void PPU_RenderScanline(u32 line)
 {
-	if (line >= SNES_Status->ScreenHeight) return;
-	
 	if (!(line & 7))
 		ContinueRendering();
 	

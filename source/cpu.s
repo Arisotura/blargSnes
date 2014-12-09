@@ -4176,8 +4176,8 @@ OP_e0_TCS:
 OP_e1_TCS:
 	mov snesS, snesS, lsl #0x10
 	mov snesS, snesS, lsr #0x10
-	and r4, snesA, #0xFF
-	orr snesS, snesS, r4, lsl #0x10
+	and r0, snesA, #0xFF
+	orr snesS, snesS, r0, lsl #0x10
 	orr snesS, snesS, #0x01000000
 	AddCycles 1
 	b op_return

@@ -239,13 +239,13 @@ float vertexList[] =
 	0.0, 400.0, 0.9,    0.0, 0.0625,
 	
 	// screen
-	8.0, 72.0, 0.9,      1.0, 0.875,
-	232.0, 72.0, 0.9,    1.0, 0.0,
-	232.0, 328.0, 0.9,  0.0, 0.0,
+	8.0, 72.0, 0.9,      1.0, 0.87890625,
+	232.0, 72.0, 0.9,    1.0, 0.00390625,
+	232.0, 328.0, 0.9,  0.0, 0.00390625,
 	
-	8.0, 72.0, 0.9,      1.0, 0.875,
-	232.0, 328.0, 0.9,  0.0, 0.0,
-	8.0, 328.0, 0.9,    0.0, 0.875,
+	8.0, 72.0, 0.9,      1.0, 0.87890625,
+	232.0, 328.0, 0.9,  0.0, 0.00390625,
+	8.0, 328.0, 0.9,    0.0, 0.87890625,
 };
 float* borderVertices;
 float* screenVertices;
@@ -253,7 +253,7 @@ float* screenVertices;
 
 void ApplyScaling()
 {
-	float texy = (float)SNES_Status->ScreenHeight / 256.0f;
+	float texy = (float)(SNES_Status->ScreenHeight+1) / 256.0f;
 	
 	float x1, x2, y1, y2;
 	
@@ -732,49 +732,15 @@ void reportshit(u32 pc, u32 a, u32 y)
 		bprintf("%06X A=%04X %04X\n", pc, a, *(u32*)&SNES_SysRAM[0x300]);
 	}
 	oldshiz = *(u32*)&SNES_SysRAM[0x300];*/
-	bprintf("!! IRQ %04X %02X\n", SNES_Status->IRQ_CurHMatch, SNES_Status->IRQCond);
+	//bprintf("!! IRQ %04X %02X\n", SNES_Status->IRQ_CurHMatch, SNES_Status->IRQCond);
 	//pause=1;
-	return;
-
-
-
-	if (reported) return;
-	reported = 1;
-	bprintf("o_O %04X %02X %02X %02X %02X\n", pc, SPC_IOPorts[0], SPC_IOPorts[1], SPC_IOPorts[2], SPC_IOPorts[3]);
-	bprintf("-> %02X %02X %02X %02X\n", SPC_IOPorts[4], SPC_IOPorts[5], SPC_IOPorts[6], SPC_IOPorts[7]);
-	// 49B4 49B5
-	bprintf("%02X %02X | %02X %02X | %04X\n", SPC_RAM[0x49B4], SPC_RAM[0x49B5], SPC_RAM[0x49B7], SPC_RAM[0x49B8], a);
-	/*bprintf("-- %06X\n", pc);
-	bprintf("--- %04X %04X\n", *(u16*)&SNES_SysRAM[0x1E5A], *(u16*)&SNES_SysRAM[0x1E5E]);
-	bprintf("--- %04X %04X\n", *(u16*)&SNES_SysRAM[0x6], *(u16*)&SNES_SysRAM[0xA]);
-	dbg_save("/snesram_earthbound.bin", SNES_SysRAM, 128*1024);*/
-	//reported=pc;
-	
-	// C500A3
-	
-	/*u32 derpo = pc;
-	
-	if (framecount >= 51)
-	{
-		dbg_save("/derp.bin", &derpo, 4);
-	}*/
+	bprintf("TSX S=%04X X=%04X P=%04X  %04X\n", pc>>16, a, y&0xFFFF, y>>16);
 }
 
 int reported2=0;
 void reportshit2(u32 pc, u32 a, u32 y)
 {
-	bprintf("JSR %06X -> %04X\n", a, pc);
-	return;
-	
-	
-	
-	
-	if (reported2) return;
-	reported2 = 1;
-	bprintf(">_< %04X %02X %02X %02X %02X\n", pc, SPC_IOPorts[0], SPC_IOPorts[1], SPC_IOPorts[2], SPC_IOPorts[3]);
-	bprintf("-> %02X %02X %02X %02X\n", SPC_IOPorts[4], SPC_IOPorts[5], SPC_IOPorts[6], SPC_IOPorts[7]);
-	// 49B4 49B5
-	bprintf("%02X %02X | %02X %02X | %04X\n", SPC_RAM[0x49B4], SPC_RAM[0x49B5], SPC_RAM[0x49B7], SPC_RAM[0x49B8], a);
+	bprintf("TSC S=%04X A=%04X P=%04X  %04X\n", pc>>16, a, y&0xFFFF, y>>16);
 }
 
 
@@ -943,6 +909,9 @@ int main()
 						bprintf("PC: CPU %02X:%04X  SPC %04X\n", CPU_Regs.PBR, CPU_Regs.PC, SPC_Regs.PC);
 						dbg_save("/snesram.bin", SNES_SysRAM, 128*1024);
 						dbg_save("/spcram.bin", SPC_RAM, 64*1024);
+						dbg_save("/vram.bin", PPU.VRAM, 64*1024);
+						dbg_save("/oam.bin", PPU.OAM, 0x220);
+						dbg_save("/cgram.bin", PPU.CGRAM, 512);
 					}
 					
 					if ((held & (KEY_L|KEY_R)) == (KEY_L|KEY_R))
