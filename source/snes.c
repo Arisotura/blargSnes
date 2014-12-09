@@ -332,9 +332,9 @@ void IO_ManualReadKeys()
 	SNES_JoyBuffer = 0xFFFF0000 | IO_ReadKeysLow() | (IO_ReadKeysHigh() << 8);
 }
 
-
+extern u32 debugpc;
 u8 SNES_GIORead8(u32 addr)
-{
+{//bprintf("read8 42%02X %08X %02X\n", addr, debugpc, SNES_Status->IRQCond);
 	u8 ret = 0;
 	
 	switch (addr)
@@ -400,7 +400,7 @@ u8 SNES_GIORead8(u32 addr)
 }
 
 u16 SNES_GIORead16(u32 addr)
-{
+{//bprintf("read16 42%02X %08X\n", addr, debugpc);
 	u16 ret = 0;
 	switch (addr)
 	{

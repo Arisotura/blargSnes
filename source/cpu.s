@@ -597,25 +597,6 @@ nmi_nostack:
 	b cpuloop
 	
 @ --- Main loop ---------------------------------------------------------------
-@
-@ Notes on SPC700 timing
-@
-@ SPC700 normally runs at 1.024 MHz, which is, 17066.666666 cycles per frame
-@ we approximate it to 65 cycles per scanline, plus 36 cycles to compensate
-@
-@
-@ SPC700 debt system
-@ 
-@ positive debt: SPC is behind
-@ negative debt: CPU is behind
-@
-@ SPC is run:
-@ 1. when the debt is >= 64 SPC cycles
-@ 2. before a write to the CPU->SPC ports is applied
-@
-@ CPU is run:
-@ 1. when the debt is <= 0 SPC cycles
-@ 2. before a write to the SPC->CPU ports is applied
 
 .data
 	
@@ -663,10 +644,6 @@ cpuloop:
 	
 		tst r3, #0x10
 		blne CPU_TriggerIRQ
-		
-		@mov r0, snesPC, lsr #16
-		@orr r0, r0, snesPBR, lsl #16
-		@SafeCall reportshit
 		
 		OpcodePrefetch8
 		str snesCycles, [snesStatus, #HCountFull]

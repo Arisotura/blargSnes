@@ -155,17 +155,73 @@ void ROM_MapBank(u32 bank, u8* ptr)
 	ROM_ApplySpeedHacks(bank, ptr);
 }
 
-bool ROM_CheckHeader(Handle file, u32 offset)
+int ROM_ScoreHeader(Handle file, u32 offset)
 {
 	if ((offset + 0x20) >= ROM_FileSize)
-		return false;
+		return -1;
+		
+	int score = 0;
+	int i;
+	u32 bytesread;
+	
+	// 1. check opcodes at reset vector
+	
+	u16 resetvec;
+	FSFILE_Read(file, &bytesread, offset + 0x3C, (u32*)&resetvec, 2);
+	if (resetvec < 0x8000)	// invalid reset vector, not likely to go anywhere with this header
+		return -1;
+
+	u32 firstops;
+	FSFILE_Read(file, &bytesread, (offset - 0x7FC0) + (resetvec - 0x8000), (u32*)&firstops, 4);
+	
+	if ((firstops & 0xFFFFFF) == 0xFB1878) // typical SEI/CLC/XCE sequence
+		score += 100;
+	else if ((firstops & 0xFFFF) == 0xFB18) // CLC/XCE sequence
+		score += 100;
+	else if (firstops == 0xFB18D878) // SEI/CLD/CLC/XCE sequence
+		score += 100;
+	else if ((firstops & 0xFF) == 0x5C) // possible JML
+	{
+		// if a JML is used, chances are that it will go to the FastROM banks
+		if (firstops >= 0x80000000) score += 90;
+		else score += 80;
+	}
+	else // look for a more atypical sequence
+	{
+		u8 firstbytes[0x40];
+		*(u32*)&firstbytes[0] = firstops;
+		FSFILE_Read(file, &bytesread, (offset - 0x7FC0) + (resetvec - 0x8000) + 4, (u32*)&firstbytes[4], 0x3C);
+		
+		for (i = 0; i < 0x3F; i++)
+		{
+			if (*(u16*)&firstbytes[i] == 0xFB18)
+			{
+				score += 90;
+				break;
+			}
+		}
+	}
+	
+	// 2. check the checksum
 	
 	u16 chksum, chkcomp;
-	u32 bytesread;
 	FSFILE_Read(file, &bytesread, offset + 0x1C, (u32*)&chkcomp, 2);
 	FSFILE_Read(file, &bytesread, offset + 0x1E, (u32*)&chksum, 2);
 	
-	return (chkcomp ^ chksum) == 0xFFFF;
+	if ((chkcomp ^ chksum) == 0xFFFF) score += 50;
+	
+	// 3. check the characters in the title
+	
+	char title[21];
+	FSFILE_Read(file, &bytesread, offset, title, 21);
+	
+	for (i = 0; i < 21; i++)
+	{
+		if (title[i] >= 0x20 && title[i] <= 0x7F)
+			score++;
+	}
+	
+	return score;
 }
 
 bool ROM_LoadFile(char* name)
@@ -193,44 +249,32 @@ bool ROM_LoadFile(char* name)
 	}
 	ROM_FileSize = (u32)size;
 	
-	if (ROM_CheckHeader(fileHandle, 0x81C0) || ROM_FileSize == 0x8200) // headered, LoROM
+	
+	int bestone = 0;
+	int score[4];
+	score[0] = ROM_ScoreHeader(fileHandle, 0x7FC0);
+	score[1] = ROM_ScoreHeader(fileHandle, 0x81C0);
+	score[2] = ROM_ScoreHeader(fileHandle, 0xFFC0);
+	score[3] = ROM_ScoreHeader(fileHandle, 0x101C0);
+	
+	if (score[1] > score[0])
 	{
-		ROM_BaseOffset = 0x200;
-		SNES_HiROM = false;
-		ROM_HeaderOffset = 0x7FC0;
-		bprintf("ROM type: headered LoROM\n");
+		score[0] = score[1];
+		bestone = 1;
 	}
-	else if (ROM_CheckHeader(fileHandle, 0x101C0)) // headered, HiROM
+	if (score[2] > score[0])
 	{
-		ROM_BaseOffset = 0x200;
-		SNES_HiROM = true;
-		ROM_HeaderOffset = 0xFFC0;
-		bprintf("ROM type: headered HiROM\n");
+		score[0] = score[2];
+		bestone = 2;
 	}
-	else if (ROM_CheckHeader(fileHandle, 0x7FC0) || ROM_FileSize == 0x8000) // headerless, LoROM
-	{
-		ROM_BaseOffset = 0;
-		SNES_HiROM = false;
-		ROM_HeaderOffset = 0x7FC0;
-		bprintf("ROM type: headerless LoROM\n");
-	}
-	else if (ROM_CheckHeader(fileHandle, 0xFFC0)) // headerless, HiROM
-	{
-		ROM_BaseOffset = 0;
-		SNES_HiROM = true;
-		ROM_HeaderOffset = 0xFFC0;
-		bprintf("ROM type: headerless HiROM\n");
-	}
-	else // whatever piece of shit
-	{
-		// assume header at 0x81C0
-		// TODO use 0x7FC0 instead if no header
-		// we can guess from the filesize but that isn't accurate (eg homebrew)
-		ROM_BaseOffset = 0x200;
-		SNES_HiROM = false;
-		ROM_HeaderOffset = 0x81C0;
-		bprintf("ROM type: not found, assuming headered LoROM\n");
-	}
+	if (score[3] > score[0])
+		bestone = 3;
+		
+	ROM_BaseOffset = (bestone & 1) ? 0x200 : 0;
+	SNES_HiROM = (bestone & 2) ? true : false;
+	ROM_HeaderOffset = SNES_HiROM ? 0xFFC0 : 0x7FC0;
+	
+	bprintf("ROM type: %s %s\n", (bestone & 1) ? "headered":"headerless", SNES_HiROM ? "HiROM":"LoROM");
 	
 	size -= ROM_BaseOffset;
 	

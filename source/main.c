@@ -722,13 +722,17 @@ bool StartROM(char* path)
 
 
 
-int reported=0;
+int reported=0;extern u32 debugpc;
+u32 oldshiz=0;
 void reportshit(u32 pc, u32 a, u32 y)
 {
-	//bprintf("SPC -> %d %d\n", (int)pc, a);
+	if (*(u32*)&SNES_SysRAM[0x300] != 0xEFEFEFEF && oldshiz==0xEFEFEFEF)
+	{
+		if (reported) return; reported=1;
+		bprintf("%06X A=%04X %04X\n", pc, a, *(u32*)&SNES_SysRAM[0x300]);
+	}
+	oldshiz = *(u32*)&SNES_SysRAM[0x300];
 	//pause=1;
-	u32 derpo = pc;
-	if (framecount >= 16) dbg_save("/derp.bin", &derpo, 4);
 	return;
 
 
@@ -758,7 +762,7 @@ void reportshit(u32 pc, u32 a, u32 y)
 int reported2=0;
 void reportshit2(u32 pc, u32 a, u32 y)
 {
-	bprintf("vblank line %d\n", SNES_Status->VCount);
+	bprintf("JSR %06X -> %04X\n", a, pc);
 	return;
 	
 	

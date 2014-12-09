@@ -79,7 +79,7 @@ void DMA_Enable(u8 flag)
 		u32 bytecount = *(u16*)&chan[5];
 		if (!bytecount) bytecount = 0x10000;
 		
-		//emergency_printf("DMA%d %d %06X %s 21%02X m:%d p:%d\n", c, bytecount, memaddr|membank, (params&0x80)?"<-":"->", ppuaddr, maddrinc, paddrinc);
+		//bprintf("DMA%d %d %06X %s 21%02X m:%d p:%d\n", c, bytecount, memaddr|membank, (params&0x80)?"<-":"->", ppuaddr, maddrinc, paddrinc);
 		
 		u8 scheck = params & 0x9F;
 		if (scheck == 0x00 || scheck == 0x02)
@@ -297,7 +297,6 @@ void DMA_ReloadHDMA()
 	}
 }
 
-extern u16 PPU_VCount;
 const u8 hdma_sizes[8] = {1, 2, 2, 4, 4, 4, 2, 4};
 
 void DMA_DoHDMA()

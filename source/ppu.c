@@ -378,6 +378,12 @@ u8 PPU_Read8(u32 addr)
 			}
 			break;
 			
+		case 0x3B:
+			ret = ((u8*)PPU.CGRAM)[PPU.CGRAMAddr];
+			PPU.CGRAMAddr++;
+			PPU.CGRAMAddr &= ~0x200; // prevent overflow
+			break;
+			
 		case 0x3C:
 			if (PPU.OPHFlag)
 			{
@@ -417,12 +423,12 @@ u8 PPU_Read8(u32 addr)
 		case 0x43: ret = SPC_IOPorts[7]; break;
 		
 		case 0x80: ret = SNES_SysRAM[Mem_WRAMAddr++]; Mem_WRAMAddr &= ~0x20000; break;
-		
-		case 0x3B: bprintf("CGRAM read\n"); break;
 
 		default:
 			if (addr >= 0x84) // B-Bus open bus
 				ret = 0x21; // high address byte
+			else if (addr >= 0x44 && addr < 0x80)
+				bprintf("!! SPC IO MIRROR READ %02X\n", addr);
 			else
 				bprintf("Open bus 21%02X\n", addr); 
 			break;
@@ -766,7 +772,7 @@ void PPU_Write8(u32 addr, u8 val)
 		case 0x83: Mem_WRAMAddr = (Mem_WRAMAddr & 0x0000FFFF) | ((val & 0x01) << 16); break;
 				
 		default:
-			//iprintf("PPU_Write8(%08X, %08X)\n", addr, val);
+			iprintf("PPU_Write8(%08X, %08X)\n", addr, val);
 			break;
 	}
 }
@@ -795,6 +801,7 @@ void PPU_Write16(u32 addr, u16 val)
 		case 0x41: SPC_Compensate(); *(u16*)&SPC_IOPorts[1] = val; break;
 		case 0x42: SPC_Compensate(); *(u16*)&SPC_IOPorts[2] = val; break;
 		
+		case 0x3F:
 		case 0x43: bprintf("!! write $21%02X %04X\n", addr, val); break;
 		
 		case 0x81: Mem_WRAMAddr = (Mem_WRAMAddr & 0x00010000) | val; break;
