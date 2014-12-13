@@ -77,6 +77,7 @@ _MemRead8:
 
 .macro MemRead8
 	bl _MemRead8
+	strb r0, [snesStatus, #LastBusVal]
 .endm
 
 _MemRead16:
@@ -99,6 +100,7 @@ _MemRead16:
 
 .macro MemRead16
 	bl _MemRead16
+	strh r0, [snesStatus, #(LastBusVal-1)]
 .endm
 
 _MemRead24:
@@ -119,6 +121,7 @@ _MemRead24:
 
 .macro MemRead24
 	bl _MemRead24
+	str r0, [snesStatus, #(LastBusVal-2)]
 .endm
 
 _MemWrite8:
@@ -184,6 +187,7 @@ _MemWrite16:
 	bic r3, r3, #0xF
 	mov r0, snesS, lsl #0x3
 	ldrb r0, [r3, r0, lsr #0x13]
+	strb r0, [snesStatus, #LastBusVal]
 .endm
 
 .macro StackRead16
@@ -195,6 +199,7 @@ _MemWrite16:
 	mov r0, snesS, lsl #0x3
 	add r3, r3, r0, lsr #0x13
 	ldrh r0, [r3, #-0x1]
+	strh r0, [snesStatus, #(LastBusVal-1)]
 .endm
 
 .macro StackWrite8 src=r0
@@ -238,10 +243,14 @@ _MemWrite16:
 	addeq snesCycles, snesCycles, #0x60000
 	addne snesCycles, snesCycles, #0x80000
 	mov r0, snesPC, lsl #0x3
-	bic r2, r3, #0xF
+	bics r2, r3, #0xF
+	ldreqb r0, [snesStatus, #LastBusVal] @ open bus opcode (Home Alone)
+	beq 1f
 	add r2, r2, r0, lsr #0x13
 	ldrb r0, [r2]
 	add snesPC, snesPC, #0x10000
+	strb r0, [snesStatus, #LastBusVal]
+1:
 .endm
 
 @ can be used multiple times-- r0 or r1 should be used as dest
@@ -251,6 +260,7 @@ _MemWrite16:
 	addne snesCycles, snesCycles, #0x80000
 	ldrb \dst, [r2, #1]!
 	add snesPC, snesPC, #0x10000
+	strb \dst, [snesStatus, #LastBusVal]
 .endm
 
 .macro Prefetch16
@@ -259,6 +269,7 @@ _MemWrite16:
 	addne snesCycles, snesCycles, #0x100000
 	ldrh r0, [r2, #1]
 	add snesPC, snesPC, #0x20000
+	strh r0, [snesStatus, #(LastBusVal-1)]
 .endm
 
 .macro Prefetch24
@@ -268,6 +279,7 @@ _MemWrite16:
 	ldr r0, [r2, #1]
 	bic r0, r0, #0xFF000000
 	add snesPC, snesPC, #0x30000
+	str r0, [snesStatus, #(LastBusVal-2)]
 .endm
 
 
@@ -644,11 +656,6 @@ cpuloop:
 	
 		tst r3, #0x10
 		blne CPU_TriggerIRQ
-		
-		@mov r0, snesPC, lsr #16
-		@orr r0, r0, snesPBR, lsl #16
-		@ldr r1, =debugpc
-		@str r0, [r1]
 		
 		OpcodePrefetch8
 		str snesCycles, [snesStatus, #HCountFull]

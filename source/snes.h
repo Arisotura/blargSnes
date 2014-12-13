@@ -24,6 +24,10 @@
 
 typedef struct
 {
+	u8 __pad3[2];		// -40 
+	u8 LastBusVal;		// -38
+	u8 __pad2;			// -37
+	
 	s32 SPC_CyclesPerLine;	// -36 | cycleratio * 1364
 	s32 SPC_CycleRatio;		// -32
 	s32 SPC_LastCycle;		// -28 | SPC cycle count (<<24) at last SPC run

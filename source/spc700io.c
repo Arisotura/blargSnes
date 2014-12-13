@@ -126,7 +126,7 @@ void SPC_IOWrite8(u16 addr, u8 val)
 		case 0xF2: SPC_DSPAddr = val; break;
 		case 0xF3: DspWriteByte(val, SPC_DSPAddr); break;
 			
-		case 0xF4: /* TODO halt SPC here */ SPC_IOPorts[4] = val; break;
+		case 0xF4: SPC_IOPorts[4] = val; break;
 		case 0xF5: SPC_IOPorts[5] = val; break;
 		case 0xF6: SPC_IOPorts[6] = val; break;
 		case 0xF7: SPC_IOPorts[7] = val; break;

@@ -79,7 +79,11 @@ extern u8 DMA_HDMAFlag;
 // execution trap
 // I/O regions are mapped to this buffer, so that when an accidental jump to those regions occurs,
 // we can trace it instead of just crashing
+#ifdef OPENBUS_EXEC_TRAP
 u8 SNES_ExecTrap[8192] __attribute__((aligned(256)));
+#else
+#define SNES_ExecTrap ((u8*)NULL)
+#endif
 
 
 void SNES_Init()
@@ -162,7 +166,9 @@ void SNES_Reset()
 	}
 	
 	// fill it with STP opcodes
+#ifdef OPENBUS_EXEC_TRAP
 	memset(SNES_ExecTrap, 0xDB, 8192);
+#endif
 		
 	SNES_FastROM = false;
 	
@@ -418,7 +424,7 @@ u8 SNES_GIORead8(u32 addr)
 			break;
 			
 		default: // open bus
-			ret = 0x42; // dirty open bus (may be incorrect when indirect addressing is used)
+			ret = SNES_Status->LastBusVal;
 			break;
 	}
 
@@ -599,7 +605,7 @@ u8 SNES_JoyRead8(u32 addr)
 		ret = 0x01;
 	}
 	else if (addr != 0x17) 
-		bprintf("Open bus 40%02X\n", addr);
+		ret = SNES_Status->LastBusVal;
 
 	return ret;
 }

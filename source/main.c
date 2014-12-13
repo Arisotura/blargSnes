@@ -185,7 +185,8 @@ void ReportCrash()
 	ClearConsole();
 	bprintf("Game has crashed (STOP)\n");
 	
-	bprintf("PC: %02X:%04X\n", CPU_Regs.PBR, CPU_Regs.PC);
+	extern u32 debugpc;
+	bprintf("PC: %02X:%04X (%06X)\n", CPU_Regs.PBR, CPU_Regs.PC, debugpc);
 	bprintf("P: %02X | M=%d X=%d E=%d\n", CPU_Regs.P.val&0xFF, CPU_Regs.P.M, CPU_Regs.P.X, CPU_Regs.P.E);
 	bprintf("A: %04X X: %04X Y: %04X\n", CPU_Regs.A, CPU_Regs.X, CPU_Regs.Y);
 	bprintf("S: %04X D: %02X DBR: %02X\n", CPU_Regs.S, CPU_Regs.D, CPU_Regs.DBR);
@@ -759,13 +760,17 @@ void reportshit(u32 pc, u32 a, u32 y)
 	//bprintf("!! IRQ %04X %02X\n", SNES_Status->IRQ_CurHMatch, SNES_Status->IRQCond);
 	//pause=1;
 	//bprintf("TSX S=%04X X=%04X P=%04X  %04X\n", pc>>16, a, y&0xFFFF, y>>16);
-	bprintf("SPC: %d %d\n", pc, a);
+	bprintf("%06X\n", debugpc);
+	running=0; pause=1;
 }
 
 int reported2=0;
 void reportshit2(u32 pc, u32 a, u32 y)
 {
 	//bprintf("TSC S=%04X A=%04X P=%04X  %04X\n", pc>>16, a, y&0xFFFF, y>>16);
+	if (SNES_SysRAM[0x3C8] == 0 && reported2 != 0)
+		bprintf("[%06X] 3C8=0\n", debugpc);
+	reported2 = SNES_SysRAM[0x3C8];
 }
 
 

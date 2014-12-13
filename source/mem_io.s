@@ -48,7 +48,7 @@ SNES_IORead8:
 	addeq snesCycles, snesCycles, #0x60000
 	beq SNES_JoyRead8
 	
-	mov r0, r12, lsr #8	@ open bus
+	ldrb r0, [snesStatus, #LastBusVal]
 ior8_ret:
 	ldmia sp!, {r12, pc}
 	
@@ -72,7 +72,8 @@ SNES_IORead16:
 	addeq snesCycles, snesCycles, #0xC0000
 	beq SNES_JoyRead16
 	
-	orr r0, r12, r12, lsr #8	@ open bus
+	ldrb r0, [snesStatus, #LastBusVal]
+	orr r0, r0, r0, lsl #8
 ior16_ret:
 	ldmia sp!, {r12, pc}
 	

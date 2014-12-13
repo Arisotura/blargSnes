@@ -454,7 +454,7 @@ u8 PPU_Read8(u32 addr)
 
 		default:
 			if (addr >= 0x84) // B-Bus open bus
-				ret = 0x21; // high address byte
+				ret = SNES_Status->LastBusVal;
 			else if (addr >= 0x44 && addr < 0x80)
 				bprintf("!! SPC IO MIRROR READ %02X\n", addr);
 			else

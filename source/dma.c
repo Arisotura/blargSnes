@@ -28,13 +28,13 @@ u8 HDMA_Pause[8];
 
 u8 DMA_Read8(u32 addr)
 {
-	u8 ret = (addr > 0x7F) ? 0x43 : DMA_Chans[addr];
+	u8 ret = (addr > 0x7F) ? SNES_Status->LastBusVal : DMA_Chans[addr];
 	return ret;
 }
 
 u16 DMA_Read16(u32 addr)
 {
-	u16 ret = (addr > 0x7F) ? 0x4343 : *(u16*)&DMA_Chans[addr];
+	u16 ret = (addr > 0x7F) ? (SNES_Status->LastBusVal|(SNES_Status->LastBusVal<<8)) : *(u16*)&DMA_Chans[addr];
 	return ret;
 }
 
