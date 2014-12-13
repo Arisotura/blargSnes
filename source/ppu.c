@@ -349,12 +349,13 @@ void PPU_LatchHVCounters()
 
 void SPC_Compensate()
 {
-	int torun = (SNES_Status->HCount - SNES_Status->SPC_LastCycle) * SNES_Status->SPC_CycleRatio;
+	int cyclenow = (SNES_Status->HCount * SNES_Status->SPC_CycleRatio);
+	int torun = cyclenow - SNES_Status->SPC_LastCycle;
 	torun >>= 24;
 	if (torun > 0)
 	{
 		SPC_Run(torun);
-		SNES_Status->SPC_LastCycle = SNES_Status->HCount;
+		SNES_Status->SPC_LastCycle = cyclenow;
 	}
 }
 

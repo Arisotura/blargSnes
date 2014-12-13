@@ -24,8 +24,9 @@
 
 typedef struct
 {
+	s32 SPC_CyclesPerLine;	// -36 | cycleratio * 1364
 	s32 SPC_CycleRatio;		// -32
-	s32 SPC_LastCycle;		// -28 | CPU cycle count at last SPC run
+	s32 SPC_LastCycle;		// -28 | SPC cycle count (<<24) at last SPC run
 	
 	u16 IRQ_VMatch;		// -24
 	u16 IRQ_HMatch;		// -22

@@ -676,8 +676,6 @@ CPU_MainLoop:
 
 lineloop1:
 		strh r3, [snesStatus, #VCount]
-		mov r0, snesCycles, asr #16
-		str r0, [snesStatus, #SPC_LastCycle]
 		
 		@ IRQ check
 		ldrb r0, [snesStatus, #IRQCond]
@@ -730,16 +728,17 @@ lineloop1:
 		bl CPU_Run
 		
 		@ run the SPC700
-		ldr r0, [snesStatus, #SPC_LastCycle]
-		rsb r0, r0, snesCycles, asr #16
-		ldr r1, [snesStatus, #SPC_CycleRatio]
-		mul r0, r1, r0
-		movs r0, r0, asr #24
-		ble _1_nospc
-		bl SPC_Run
 		mov r0, snesCycles, asr #16
-		str r0, [snesStatus, #SPC_LastCycle]
-	_1_nospc:
+		ldr r1, [snesStatus, #SPC_CycleRatio]
+		mul r2, r1, r0
+		ldr r1, [snesStatus, #SPC_LastCycle]
+		sub r0, r2, r1
+		ldr r1, [snesStatus, #SPC_CyclesPerLine]
+		sub r2, r2, r1
+		str r2, [snesStatus, #SPC_LastCycle]
+		movs r0, r0, asr #24
+		movmis r0, #0
+		blne SPC_Run
 		
 		ldr r0, =((1364<<16) + 340)
 		sub snesCycles, snesCycles, r0
@@ -767,8 +766,6 @@ lineloop1:
 	
 lineloop2:
 		strh r3, [snesStatus, #VCount]
-		mov r0, snesCycles, asr #16
-		str r0, [snesStatus, #SPC_LastCycle]
 		
 		@ IRQ check
 		ldrb r0, [snesStatus, #IRQCond]
@@ -806,16 +803,17 @@ lineloop2:
 		bl CPU_Run
 		
 		@ run the SPC700
-		ldr r0, [snesStatus, #SPC_LastCycle]
-		rsb r0, r0, snesCycles, asr #16
-		ldr r1, [snesStatus, #SPC_CycleRatio]
-		mul r0, r1, r0
-		movs r0, r0, asr #24
-		ble _2_nospc
-		bl SPC_Run
 		mov r0, snesCycles, asr #16
-		str r0, [snesStatus, #SPC_LastCycle]
-	_2_nospc:
+		ldr r1, [snesStatus, #SPC_CycleRatio]
+		mul r2, r1, r0
+		ldr r1, [snesStatus, #SPC_LastCycle]
+		sub r0, r2, r1
+		ldr r1, [snesStatus, #SPC_CyclesPerLine]
+		sub r2, r2, r1
+		str r2, [snesStatus, #SPC_LastCycle]
+		movs r0, r0, asr #24
+		movmis r0, #0
+		blne SPC_Run
 		
 		ldr r0, =(1364<<16)
 		sub snesCycles, snesCycles, r0

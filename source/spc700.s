@@ -34,6 +34,13 @@
 SPC_Regs:
 	.long 0,0,0,0,0,0,0,0
 	
+.global dbgcycles
+dbgcycles:
+	.long 0
+.global nruns
+nruns:
+	.long 0
+	
 .global SPC_TimerReload
 .global SPC_TimerVal
 .global SPC_TimerEnable
@@ -416,6 +423,12 @@ noTimer1:
 		addeq r1, r1, r2
 		str r1, [memory, #-12]
 noTimer2:
+
+		@debug
+		@ldr r0, =dbgcycles
+		@ldr r1, [r0]
+		@add r1, r1, r3
+		@str r1, [r0]
 		
 		ldr r0, [memory, #-4] @ elapsed cycles
 		add r0, r0, r3

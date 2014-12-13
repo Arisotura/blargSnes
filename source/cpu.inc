@@ -48,6 +48,7 @@ snesStatus		.req r4 	@ status data is before this pointer
 .equ IRQ_VMatch, 		-24
 .equ SPC_LastCycle, 	-28
 .equ SPC_CycleRatio,	-32
+.equ SPC_CyclesPerLine, -36
 
 .equ flagC, 0x01
 .equ flagZ, 0x02

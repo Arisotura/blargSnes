@@ -98,7 +98,10 @@ int exitspc = 0;
 void SPCThread(u32 blarg)
 {
 	int i;
-	
+			/*u64 lastmixtime = svcGetSystemTick();
+			u32 mixtimes[2048];
+			memset(mixtimes, 0, 2048*4);
+			int k = 0;*/
 	while (!exitspc)
 	{
 		svcWaitSynchronization(SPCSync, U64_MAX);
@@ -113,6 +116,27 @@ void SPCThread(u32 blarg)
 			}
 			
 			Audio_MixFinish();
+			/*if (k < 2048)
+			{
+				u64 t = svcGetSystemTick();
+				u32 diff = (u32)(t-lastmixtime);
+				lastmixtime = t;
+				mixtimes[k] = diff;
+				k++;
+				if (k >= 2048)
+				{
+					double avg = 0;
+					int m;
+					for (m = 0; m < 2048; m++) avg += (double)mixtimes[m];
+					avg /= 2048.0f;
+					avg = (avg * 1000.0f) / 268123480.0f;
+					// avg = time in ms for 512 samples
+					double freq = (1000.0f * 512.0f) / avg;
+					bprintf("time: %f | freq: %f\n", avg, freq);
+					
+					k = 0;
+				}
+			}*/
 		}
 		else
 			Audio_Pause();
@@ -734,13 +758,14 @@ void reportshit(u32 pc, u32 a, u32 y)
 	oldshiz = *(u32*)&SNES_SysRAM[0x300];*/
 	//bprintf("!! IRQ %04X %02X\n", SNES_Status->IRQ_CurHMatch, SNES_Status->IRQCond);
 	//pause=1;
-	bprintf("TSX S=%04X X=%04X P=%04X  %04X\n", pc>>16, a, y&0xFFFF, y>>16);
+	//bprintf("TSX S=%04X X=%04X P=%04X  %04X\n", pc>>16, a, y&0xFFFF, y>>16);
+	bprintf("SPC: %d %d\n", pc, a);
 }
 
 int reported2=0;
 void reportshit2(u32 pc, u32 a, u32 y)
 {
-	bprintf("TSC S=%04X A=%04X P=%04X  %04X\n", pc>>16, a, y&0xFFFF, y>>16);
+	//bprintf("TSC S=%04X A=%04X P=%04X  %04X\n", pc>>16, a, y&0xFFFF, y>>16);
 }
 
 
@@ -853,6 +878,15 @@ int main()
 				// emulate
 				CPU_MainLoop(); // runs the SNES for one frame. Handles PPU rendering.
 				ContinueRendering();
+				
+				/*{
+					extern u32 dbgcycles, nruns;
+					bprintf("SPC: %d / 17066  %08X\n", dbgcycles, SNES_Status->SPC_CycleRatio);
+					dbgcycles = 0; nruns=0;
+				}*/
+				/*if (press & KEY_X) SNES_Status->SPC_CycleRatio+=0x1000;
+				if (press & KEY_Y) SNES_Status->SPC_CycleRatio-=0x1000;
+				SNES_Status->SPC_CyclesPerLine = SNES_Status->SPC_CycleRatio*1364;*/
 				
 				// SRAM autosave check
 				// TODO: also save SRAM under certain circumstances (pausing, returning to home menu, etc)
