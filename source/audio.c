@@ -44,7 +44,7 @@ void Audio_Init()
 	Audio_Buffer0 = (s16*)linearAlloc(MIXBUFSIZE*4*4);
 	Audio_Buffer1 = &Audio_Buffer0[MIXBUFSIZE*4];
 	
-	memset(Audio_Buffer0, 0, MIXBUFSIZE*4*4*sizeof(s16));
+	memset(Audio_Buffer0, 0, MIXBUFSIZE*4*4);
 	
 	curbuffer = 0;
 	Audio_Buffer = Audio_Buffer0;
@@ -90,8 +90,8 @@ void Audio_Pause()
 		CSND_sharedmemtype0_cmdupdatestate(0);
 	}
 	
-	memset(Audio_Buffer0, 0, MIXBUFSIZE*4*4*sizeof(s16));
-	GSPGPU_FlushDataCache(NULL, Audio_Buffer0, MIXBUFSIZE*4*4*sizeof(s16));
+	memset(Audio_Buffer0, 0, MIXBUFSIZE*4*4);
+	GSPGPU_FlushDataCache(NULL, Audio_Buffer0, MIXBUFSIZE*4*4);
 }
 
 void Audio_Mix()
@@ -138,7 +138,7 @@ void myCSND_playsound(u32 channel, u32 looping, u32 encoding, u32 samplerate, u3
 
 void Audio_MixFinish()
 {
-	GSPGPU_FlushDataCache(NULL, Audio_Buffer, MIXBUFSIZE*4*4*sizeof(s16));
+	GSPGPU_FlushDataCache(NULL, Audio_Buffer, MIXBUFSIZE*4*4);
 	
 	curpos++;
 	if (curpos >= (MIXBUFSIZE/256))
