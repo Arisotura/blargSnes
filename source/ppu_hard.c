@@ -507,7 +507,7 @@ void PPU_StartBG()
 	
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	
-	SET_UNIFORM(0x24, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
+	SET_UNIFORM(4, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
 	
 	bglEnableTextures(GPU_TEXUNIT0);
 	
@@ -544,6 +544,7 @@ void PPU_ClearMainScreen()
 	*vptr++ = b; \
 	*vptr++ = a;
 	
+	bglGeometryShaderParams(4, 0x3);
 	bglUseShader(plainQuadShader);
 	
 	bglOutputBuffers(MainScreenTex, OBJDepthBuffer);
@@ -558,7 +559,7 @@ void PPU_ClearMainScreen()
 	
 	bglColorDepthMask(GPU_WRITE_ALL);
 	
-	bglUniformMatrix(0x20, snesProjMatrix);
+	bglUniformMatrix(0, snesProjMatrix);
 	
 	bglEnableTextures(0);
 	
@@ -587,19 +588,15 @@ void PPU_ClearMainScreen()
 	{
 		u8 alpha = (s->ColorMath2 & 0x20) ? 0xFF:0x80;
 		ADDVERTEX(0, ystart, 0x80,      	r, g, b, alpha);
-		ADDVERTEX(256, ystart, 0x80,    	r, g, b, alpha);
 		ADDVERTEX(256, s->EndOffset, 0x80,  r, g, b, alpha);
-		ADDVERTEX(0, ystart, 0x80,      	r, g, b, alpha);
-		ADDVERTEX(256, s->EndOffset, 0x80,  r, g, b, alpha);
-		ADDVERTEX(0, s->EndOffset, 0x80,    r, g, b, alpha);
-		nvtx += 6;
+		nvtx += 2;
 		
 		if (s->EndOffset >= 240) break;
 		ystart = s->EndOffset;
 		s++;
 	}
 	
-	bglDrawArrays(GPU_TRIANGLES, nvtx);
+	bglDrawArrays(GPU_UNKPRIM, nvtx);
 	
 	// clear the OBJ buffer
 
@@ -611,14 +608,10 @@ void PPU_ClearMainScreen()
 		
 	// Z here doesn't matter
 	ADDVERTEX(0, 0, 0,      255, 0, 255, 0);
-	ADDVERTEX(256, 0, 0,    255, 0, 255, 0);
 	ADDVERTEX(256, 256, 0,  255, 0, 255, 0);
-	ADDVERTEX(0, 0, 0,      255, 0, 255, 0);
-	ADDVERTEX(256, 256, 0,  255, 0, 255, 0);
-	ADDVERTEX(0, 256, 0,    255, 0, 255, 0);
 	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
 	
-	bglDrawArrays(GPU_TRIANGLES, 2*3);
+	bglDrawArrays(GPU_UNKPRIM, 2);
 	
 	vertexPtr = vptr;
 	
@@ -638,6 +631,7 @@ void PPU_ClearSubScreen()
 	*vptr++ = b; \
 	*vptr++ = a;
 	
+	bglGeometryShaderParams(4, 0x3);
 	bglUseShader(plainQuadShader);
 	
 	bglOutputBuffers(SubScreenTex, OBJDepthBuffer);
@@ -652,7 +646,7 @@ void PPU_ClearSubScreen()
 	
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	
-	bglUniformMatrix(0x20, snesProjMatrix);
+	bglUniformMatrix(0, snesProjMatrix);
 	
 	bglEnableTextures(0);
 	
@@ -688,12 +682,8 @@ void PPU_ClearSubScreen()
 		// -> this causes a glitch in Super Puyo Puyo-- it has subscreen disabled but color math enabled on BG1 AND div2 enabled
 		u8 alpha = 0xFF;//(s->Div2) ? 0x80:0xFF;
 		ADDVERTEX(0, ystart, 0x80,      	r, g, b, alpha);
-		ADDVERTEX(256, ystart, 0x80,    	r, g, b, alpha);
 		ADDVERTEX(256, s->EndOffset, 0x80,  r, g, b, alpha);
-		ADDVERTEX(0, ystart, 0x80,      	r, g, b, alpha);
-		ADDVERTEX(256, s->EndOffset, 0x80,  r, g, b, alpha);
-		ADDVERTEX(0, s->EndOffset, 0x80,    r, g, b, alpha);
-		nvtx += 6;
+		nvtx += 2;
 		
 		if (s->EndOffset >= 240) break;
 		ystart = s->EndOffset;
@@ -702,7 +692,7 @@ void PPU_ClearSubScreen()
 	
 	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
 	
-	bglDrawArrays(GPU_TRIANGLES, nvtx);
+	bglDrawArrays(GPU_UNKPRIM, nvtx);
 	
 	vertexPtr = vptr;
 	
@@ -726,6 +716,7 @@ void PPU_DrawWindowMask(u32 snum)
 	*(u16*)vptr = y; vptr += 2; \
 	*vptr++ = a; vptr++;
 	
+	bglGeometryShaderParams(4, 0x3);
 	bglUseShader(windowMaskShader);
 	
 	bglOutputBuffers(OBJDepthBuffer, OBJDepthBuffer);
@@ -740,7 +731,7 @@ void PPU_DrawWindowMask(u32 snum)
 	
 	bglColorDepthMask(GPU_WRITE_RED);
 	
-	bglUniformMatrix(0x20, snesProjMatrix);
+	bglUniformMatrix(0, snesProjMatrix);
 	
 	bglNumAttribs(2);
 	bglAttribType(0, GPU_SHORT, 2);	// vertex
@@ -760,12 +751,8 @@ void PPU_DrawWindowMask(u32 snum)
 			{
 				u8 alpha = snum ? ws->FinalMaskSub : ws->FinalMaskMain;
 				ADDVERTEX(xstart, ystart,       	    alpha);
-				ADDVERTEX(ws->EndOffset, ystart,     	alpha);
 				ADDVERTEX(ws->EndOffset, s->EndOffset,  alpha);
-				ADDVERTEX(xstart, ystart,       	    alpha);
-				ADDVERTEX(ws->EndOffset, s->EndOffset,  alpha);
-				ADDVERTEX(xstart, s->EndOffset,         alpha);
-				nvtx += 6;
+				nvtx += 2;
 			}
 			
 			if (ws->EndOffset >= 256) break;
@@ -780,7 +767,7 @@ void PPU_DrawWindowMask(u32 snum)
 	
 	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
 	
-	bglDrawArrays(GPU_TRIANGLES, nvtx);
+	bglDrawArrays(GPU_UNKPRIM, nvtx);
 	
 	vertexPtr = vptr;
 	
@@ -801,6 +788,7 @@ void PPU_ClearAlpha(u32 snum)
 	*vptr++ = b; \
 	*vptr++ = a;
 	
+	bglGeometryShaderParams(4, 0x3);
 	bglUseShader(plainQuadShader);
 	
 	bglEnableStencilTest(false);
@@ -818,7 +806,7 @@ void PPU_ClearAlpha(u32 snum)
 	
 	bglColorDepthMask(GPU_WRITE_ALPHA);
 	
-	bglUniformMatrix(0x20, snesProjMatrix);
+	bglUniformMatrix(0, snesProjMatrix);
 	
 	bglEnableTextures(0);
 	
@@ -841,14 +829,10 @@ void PPU_ClearAlpha(u32 snum)
 	bglAttribBuffer(vptr);
 	
 	ADDVERTEX(0, 0, 0,      255, 0, 255, 255);
-	ADDVERTEX(256, 0, 0,    255, 0, 255, 255);
 	ADDVERTEX(256, 256, 0,  255, 0, 255, 255);
-	ADDVERTEX(0, 0, 0,      255, 0, 255, 255);
-	ADDVERTEX(256, 256, 0,  255, 0, 255, 255);
-	ADDVERTEX(0, 256, 0,    255, 0, 255, 255);
 	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
 	
-	bglDrawArrays(GPU_TRIANGLES, 2*3);
+	bglDrawArrays(GPU_UNKPRIM, 2);
 	
 	// clear alpha wherever the color math window applies
 	if (!snum)
@@ -859,7 +843,7 @@ void PPU_ClearAlpha(u32 snum)
 		bglBlendEquation(GPU_BLEND_ADD, GPU_BLEND_ADD);
 		bglBlendFunc(GPU_ONE, GPU_ZERO, GPU_ZERO, GPU_ZERO);
 		
-		bglDrawArrays(GPU_TRIANGLES, 2*3);
+		bglDrawArrays(GPU_UNKPRIM, 2);
 	}
 
 	vertexPtr = vptr;
@@ -941,38 +925,22 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart,
 				{
 					case 0x0000:
 						ADDVERTEX(x,   y,     coord);
-						ADDVERTEX(x+8, y,     coord+0x0001);
 						ADDVERTEX(x+8, y+8,   coord+0x0101);
-						ADDVERTEX(x,   y,     coord);
-						ADDVERTEX(x+8, y+8,   coord+0x0101);
-						ADDVERTEX(x,   y+8,   coord+0x0100);
 						break;
 						
 					case 0x4000: // hflip
 						ADDVERTEX(x,   y,     coord+0x0001);
-						ADDVERTEX(x+8, y,     coord);
 						ADDVERTEX(x+8, y+8,   coord+0x0100);
-						ADDVERTEX(x,   y,     coord+0x0001);
-						ADDVERTEX(x+8, y+8,   coord+0x0100);
-						ADDVERTEX(x,   y+8,   coord+0x0101);
 						break;
 						
 					case 0x8000: // vflip
 						ADDVERTEX(x,   y,     coord+0x0100);
-						ADDVERTEX(x+8, y,     coord+0x0101);
 						ADDVERTEX(x+8, y+8,   coord+0x0001);
-						ADDVERTEX(x,   y,     coord+0x0100);
-						ADDVERTEX(x+8, y+8,   coord+0x0001);
-						ADDVERTEX(x,   y+8,   coord);
 						break;
 						
 					case 0xC000: // hflip+vflip
 						ADDVERTEX(x,   y,     coord+0x0101);
-						ADDVERTEX(x+8, y,     coord+0x0100);
 						ADDVERTEX(x+8, y+8,   coord);
-						ADDVERTEX(x,   y,     coord+0x0101);
-						ADDVERTEX(x+8, y+8,   coord);
-						ADDVERTEX(x,   y+8,   coord+0x0001);
 						break;
 				}
 				
@@ -1003,7 +971,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart,
 			vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
 			vertexPtr = vptr;
 			
-			bglDrawArrays(GPU_TRIANGLES, ntiles*2*3);
+			bglDrawArrays(GPU_UNKPRIM, ntiles*2);
 		}
 		
 		if (syend >= yend) break;
@@ -1085,15 +1053,11 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystar
 				u32 coord2 = PPU_StoreTileInCache(type, palid, addr+(0x10<<tileaddrshift));
 				u32 coord3 = PPU_StoreTileInCache(type, palid, addr+(0x11<<tileaddrshift));
 				
-#define DO_SUBTILE(sx, sy, coord, t0, t1, t2, t3) \
+#define DO_SUBTILE(sx, sy, coord, t0, t3) \
 					if (coord != 0xC000) \
 					{ \
 						ADDVERTEX(x+sx,   y+sy,     coord+t0); \
-						ADDVERTEX(x+sx+8, y+sy,     coord+t1); \
 						ADDVERTEX(x+sx+8, y+sy+8,   coord+t3); \
-						ADDVERTEX(x+sx,   y+sy,     coord+t0); \
-						ADDVERTEX(x+sx+8, y+sy+8,   coord+t3); \
-						ADDVERTEX(x+sx,   y+sy+8,   coord+t2); \
 						ntiles++; \
 					}
 				
@@ -1102,52 +1066,52 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystar
 					case 0x0000:
 						if ((y - systart) > -8)
 						{
-							if (x > -8)  DO_SUBTILE(0, 0,  coord0, 0x0000, 0x0001, 0x0100, 0x0101);
-							if (x < 248) DO_SUBTILE(8, 0,  coord1, 0x0000, 0x0001, 0x0100, 0x0101);
+							if (x > -8)  DO_SUBTILE(0, 0,  coord0, 0x0000, 0x0101);
+							if (x < 248) DO_SUBTILE(8, 0,  coord1, 0x0000, 0x0101);
 						}
 						if (y < (syend - 8))
 						{
-							if (x > -8)  DO_SUBTILE(0, 8,  coord2, 0x0000, 0x0001, 0x0100, 0x0101);
-							if (x < 248) DO_SUBTILE(8, 8,  coord3, 0x0000, 0x0001, 0x0100, 0x0101);
+							if (x > -8)  DO_SUBTILE(0, 8,  coord2, 0x0000, 0x0101);
+							if (x < 248) DO_SUBTILE(8, 8,  coord3, 0x0000, 0x0101);
 						}
 						break;
 						
 					case 0x4000: // hflip
 						if ((y - systart) > -8)
 						{
-							if (x > -8)  DO_SUBTILE(0, 0,  coord1, 0x0001, 0x0000, 0x0101, 0x0100);
-							if (x < 248) DO_SUBTILE(8, 0,  coord0, 0x0001, 0x0000, 0x0101, 0x0100);
+							if (x > -8)  DO_SUBTILE(0, 0,  coord1, 0x0001, 0x0100);
+							if (x < 248) DO_SUBTILE(8, 0,  coord0, 0x0001, 0x0100);
 						}
 						if (y < (syend - 8))
 						{
-							if (x > -8)  DO_SUBTILE(0, 8,  coord3, 0x0001, 0x0000, 0x0101, 0x0100);
-							if (x < 248) DO_SUBTILE(8, 8,  coord2, 0x0001, 0x0000, 0x0101, 0x0100);
+							if (x > -8)  DO_SUBTILE(0, 8,  coord3, 0x0001, 0x0100);
+							if (x < 248) DO_SUBTILE(8, 8,  coord2, 0x0001, 0x0100);
 						}
 						break;
 						
 					case 0x8000: // vflip
 						if ((y - systart) > -8)
 						{
-							if (x > -8)  DO_SUBTILE(0, 0,  coord2, 0x0100, 0x0101, 0x0000, 0x0001);
-							if (x < 248) DO_SUBTILE(8, 0,  coord3, 0x0100, 0x0101, 0x0000, 0x0001);
+							if (x > -8)  DO_SUBTILE(0, 0,  coord2, 0x0100, 0x0001);
+							if (x < 248) DO_SUBTILE(8, 0,  coord3, 0x0100, 0x0001);
 						}
 						if (y < (syend - 8))
 						{
-							if (x > -8)  DO_SUBTILE(0, 8,  coord0, 0x0100, 0x0101, 0x0000, 0x0001);
-							if (x < 248) DO_SUBTILE(8, 8,  coord1, 0x0100, 0x0101, 0x0000, 0x0001);
+							if (x > -8)  DO_SUBTILE(0, 8,  coord0, 0x0100, 0x0001);
+							if (x < 248) DO_SUBTILE(8, 8,  coord1, 0x0100, 0x0001);
 						}
 						break;
 						
 					case 0xC000: // hflip+vflip
 						if ((y - systart) > -8)
 						{
-							if (x > -8)  DO_SUBTILE(0, 0,  coord3, 0x0101, 0x0100, 0x0001, 0x0000);
-							if (x < 248) DO_SUBTILE(8, 0,  coord2, 0x0101, 0x0100, 0x0001, 0x0000);
+							if (x > -8)  DO_SUBTILE(0, 0,  coord3, 0x0101, 0x0000);
+							if (x < 248) DO_SUBTILE(8, 0,  coord2, 0x0101, 0x0000);
 						}
 						if (y < (syend - 8))
 						{
-							if (x > -8)  DO_SUBTILE(0, 8,  coord1, 0x0101, 0x0100, 0x0001, 0x0000);
-							if (x < 248) DO_SUBTILE(8, 8,  coord0, 0x0101, 0x0100, 0x0001, 0x0000);
+							if (x > -8)  DO_SUBTILE(0, 8,  coord1, 0x0101, 0x0000);
+							if (x < 248) DO_SUBTILE(8, 8,  coord0, 0x0101, 0x0000);
 						}
 						break;
 				}
@@ -1179,7 +1143,7 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystar
 			vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
 			vertexPtr = vptr;
 			
-			bglDrawArrays(GPU_TRIANGLES, ntiles*2*3);
+			bglDrawArrays(GPU_UNKPRIM, ntiles*2);
 		}
 		
 		if (syend >= yend) break;
@@ -1301,7 +1265,7 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend)
 	
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	
-	SET_UNIFORM(0x24, 1.0f/256.0f, 1.0f/256.0f, 1.0f, 1.0f);
+	SET_UNIFORM(4, 1.0f/256.0f, 1.0f/256.0f, 1.0f, 1.0f);
 	
 	bglEnableTextures(GPU_TEXUNIT0);
 	
@@ -1327,15 +1291,11 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend)
 	bglAttribBuffer(vptr);
 		
 	ADDVERTEX(0, ystart,     0, 256-ystart);
-	ADDVERTEX(256, ystart,   256, 256-ystart);
 	ADDVERTEX(256, yend,     256, 256-yend);
-	ADDVERTEX(0, ystart,     0, 256-ystart);
-	ADDVERTEX(256, yend,     256, 256-yend);
-	ADDVERTEX(0, yend,       0, 256-yend);
 	vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
 	vertexPtr = vptr;
 	
-	bglDrawArrays(GPU_TRIANGLES, 2*3);
+	bglDrawArrays(GPU_UNKPRIM, 2);
 	
 #undef ADDVERTEX
 }
@@ -1424,38 +1384,22 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 			{
 				case 0x0000:
 					ADDVERTEX(x,   y,     prio, coord);
-					ADDVERTEX(x+8, y,     prio, coord+0x0001);
 					ADDVERTEX(x+8, y+8,   prio, coord+0x0101);
-					ADDVERTEX(x,   y,     prio, coord);
-					ADDVERTEX(x+8, y+8,   prio, coord+0x0101);
-					ADDVERTEX(x,   y+8,   prio, coord+0x0100);
 					break;
 					
 				case 0x4000: // hflip
 					ADDVERTEX(x,   y,     prio, coord+0x0001);
-					ADDVERTEX(x+8, y,     prio, coord);
 					ADDVERTEX(x+8, y+8,   prio, coord+0x0100);
-					ADDVERTEX(x,   y,     prio, coord+0x0001);
-					ADDVERTEX(x+8, y+8,   prio, coord+0x0100);
-					ADDVERTEX(x,   y+8,   prio, coord+0x0101);
 					break;
 					
 				case 0x8000: // vflip
 					ADDVERTEX(x,   y,     prio, coord+0x0100);
-					ADDVERTEX(x+8, y,     prio, coord+0x0101);
 					ADDVERTEX(x+8, y+8,   prio, coord+0x0001);
-					ADDVERTEX(x,   y,     prio, coord+0x0100);
-					ADDVERTEX(x+8, y+8,   prio, coord+0x0001);
-					ADDVERTEX(x,   y+8,   prio, coord);
 					break;
 					
 				case 0xC000: // hflip+vflip
 					ADDVERTEX(x,   y,     prio, coord+0x0101);
-					ADDVERTEX(x+8, y,     prio, coord+0x0100);
 					ADDVERTEX(x+8, y+8,   prio, coord);
-					ADDVERTEX(x,   y,     prio, coord+0x0101);
-					ADDVERTEX(x+8, y+8,   prio, coord);
-					ADDVERTEX(x,   y+8,   prio, coord+0x0001);
 					break;
 			}
 			
@@ -1527,9 +1471,9 @@ void PPU_HardRenderOBJs()
 	
 	bglColorDepthMask(GPU_WRITE_ALL);
 	
-	bglUniformMatrix(0x20, snesProjMatrix);
-	SET_UNIFORM(0x24, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
-	SET_UNIFORM(0x25, 1.0f, 0.0f, 0.0f, 0.0f);
+	bglUniformMatrix(0, snesProjMatrix);
+	SET_UNIFORM(4, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
+	//SET_UNIFORM(5, 1.0f, 0.0f, 0.0f, 0.0f);
 	
 	bglEnableTextures(GPU_TEXUNIT0);
 	
@@ -1557,7 +1501,7 @@ void PPU_HardRenderOBJs()
 	bglAttribType(1, GPU_UNSIGNED_BYTE, 2);	// texcoord
 	bglAttribBuffer(vstart);
 	
-	bglDrawArrays(GPU_TRIANGLES, ntiles*2*3);
+	bglDrawArrays(GPU_UNKPRIM, ntiles*2);
 }
 
 void PPU_HardRenderOBJLayer(u32 setalpha, u32 prio, int ystart, int yend)
@@ -1589,8 +1533,8 @@ void PPU_HardRenderOBJLayer(u32 setalpha, u32 prio, int ystart, int yend)
 	
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	
-	SET_UNIFORM(0x24, 1.0f/256.0f, 1.0f/256.0f, 1.0f, 1.0f);
-	SET_UNIFORM(0x25, 1.0f, 0.0f, 0.0f, 0.0f);
+	SET_UNIFORM(4, 1.0f/256.0f, 1.0f/256.0f, 1.0f, 1.0f);
+	//SET_UNIFORM(5, 1.0f, 0.0f, 0.0f, 0.0f);
 	
 	bglEnableTextures(GPU_TEXUNIT0);
 	
@@ -1616,14 +1560,10 @@ void PPU_HardRenderOBJLayer(u32 setalpha, u32 prio, int ystart, int yend)
 	bglAttribBuffer(vptr);
 		
 	ADDVERTEX(0, ystart,   prio,  0, ystart);
-	ADDVERTEX(256, ystart, prio,  256, ystart);
 	ADDVERTEX(256, yend,   prio,  256, yend);
-	ADDVERTEX(0, ystart,   prio,  0, ystart);
-	ADDVERTEX(256, yend,   prio,  256, yend);
-	ADDVERTEX(0, yend,     prio,  0, yend);
 	vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
 	
-	bglDrawArrays(GPU_TRIANGLES, 2*3);
+	bglDrawArrays(GPU_UNKPRIM, 2);
 	
 	// sprites with no color math
 	
@@ -1638,15 +1578,11 @@ void PPU_HardRenderOBJLayer(u32 setalpha, u32 prio, int ystart, int yend)
 	
 	prio += 0x40;
 	ADDVERTEX(0, ystart,   prio,  0, ystart);
-	ADDVERTEX(256, ystart, prio,  256, ystart);
 	ADDVERTEX(256, yend,   prio,  256, yend);
-	ADDVERTEX(0, ystart,   prio,  0, ystart);
-	ADDVERTEX(256, yend,   prio,  256, yend);
-	ADDVERTEX(0, yend,     prio,  0, yend);
 	vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
 	vertexPtr = vptr;
 	
-	bglDrawArrays(GPU_TRIANGLES, 2*3);
+	bglDrawArrays(GPU_UNKPRIM, 2);
 	
 #undef ADDVERTEX
 }
@@ -2032,7 +1968,7 @@ void PPU_HardRender(u32 snum)
 void PPU_VBlank_Hard()
 {
 	int i;
-	
+
 	PPU.CurModeSection->EndOffset = 240;
 	
 	for (i = 0; i < 4; i++)
@@ -2052,11 +1988,12 @@ void PPU_VBlank_Hard()
 	vertexPtr = vertexBuf;
 	
 	bglViewport(0, 0, 256, 256);
-	
+
 	//memcpy(TempPalette, PPU.Palette, 512);
 	PPU_ClearMainScreen();
 	PPU_DrawWindowMask(0);
 	
+	bglGeometryShaderParams(4, 0x3);
 	bglUseShader(hardRenderShader);
 	
 	// OBJ LAYER
@@ -2076,17 +2013,18 @@ void PPU_VBlank_Hard()
 	PPU_ClearSubScreen();
 	PPU_DrawWindowMask(1);
 	
+	bglGeometryShaderParams(4, 0x3);
 	bglUseShader(hardRenderShader);
 	
 	doingBG = 0;
 	bglOutputBuffers(SubScreenTex, OBJDepthBuffer);
 	PPU_HardRender(1);
 	PPU_ClearAlpha(1);
-	
+
 	// reuse the color math system used by the soft renderer
 	bglScissorMode(GPU_SCISSOR_DISABLE);
 	PPU_BlendScreens(GPU_RGBA8);
-	
+
 	u32 taken = ((u32)vertexPtr - (u32)vertexBuf);
 	GSPGPU_FlushDataCache(NULL, vertexBuf, taken);
 	if (taken > 0x80000)

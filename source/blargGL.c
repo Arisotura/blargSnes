@@ -36,6 +36,8 @@ typedef union
 
 struct
 {
+	u32 GeometryStride;
+	u32 ShaderAttrMask; // for vertex->geometry shaders
 	DVLB_s* Shader;
 	
 	
@@ -242,6 +244,172 @@ void blarg_GPU_SetViewport()
 	GPUCMD_Add(0x800F0112, param, 0x00000004);
 }
 
+// type: 0=vsh, 1=gsh
+void blarg_DVLP_SendCode(DVLP_s* dvlp, int type)
+{
+	if(!dvlp)return;
+	
+	u32 offset = type ? 0 : 0x30;
+
+	GPUCMD_AddSingleParam(0x000F029B+offset, 0x00000000);
+
+	int i;
+	for(i=0;i<dvlp->codeSize;i+=0x80)
+		GPUCMD_Add(0x000F029C+offset, &dvlp->codeData[i], ((dvlp->codeSize-i)<0x80)?(dvlp->codeSize-i):0x80);
+
+	GPUCMD_AddSingleParam(0x000F028F+offset, 0x00000001);
+}
+
+void blarg_DVLP_SendOpDesc(DVLP_s* dvlp, int type)
+{
+	if(!dvlp)return;
+	
+	u32 offset = type ? 0 : 0x30;
+
+	GPUCMD_AddSingleParam(0x000F02A5+offset, 0x00000000);
+
+	u32 param[0x20];
+
+	int i;
+	//TODO : should probably preprocess this
+	for(i=0;i<dvlp->opdescSize;i++)
+		param[i]=dvlp->opcdescData[i*2];
+
+	GPUCMD_Add(0x000F02A6+offset, param, dvlp->opdescSize);
+}
+
+void blarg_DVLE_SendOutmap(DVLE_s* dvle)
+{
+	if(!dvle)return;
+	
+	u32 offset = dvle->type ? 0 : 0x30;
+
+	u32 param[0x7]={0x1F1F1F1F,0x1F1F1F1F,0x1F1F1F1F,0x1F1F1F1F,
+					0x1F1F1F1F,0x1F1F1F1F,0x1F1F1F1F};
+
+	int i;
+	u8 numAttr=0;
+	u8 maxAttr=0;
+	u8 attrMask=0;
+	//TODO : should probably preprocess this
+	for(i=0;i<dvle->outTableSize;i++)
+	{
+		u32* out=&param[dvle->outTableData[i].regID];
+		
+		if(*out==0x1F1F1F1F)numAttr++;
+
+		//desc could include masking/swizzling info not currently taken into account
+		//also TODO : map out other output register values
+		switch(dvle->outTableData[i].type)
+		{
+			case RESULT_POSITION: *out=0x03020100; break;
+			case RESULT_COLOR: *out=0x0B0A0908; break;
+			case RESULT_TEXCOORD0: *out=0x1F1F0D0C; break;
+			case RESULT_TEXCOORD1: *out=0x1F1F0F0E; break;
+			case RESULT_TEXCOORD2: *out=0x1F1F1716; break;
+		}
+
+		attrMask|=1<<dvle->outTableData[i].regID;
+		if(dvle->outTableData[i].regID+1>maxAttr)maxAttr=dvle->outTableData[i].regID+1;
+	}
+
+	//GPUCMD_AddSingleParam(0x000F0251, numAttr-1); //?
+	//GPUCMD_AddSingleParam(0x000F024A, numAttr-1); //?
+	GPUCMD_AddSingleParam(0x000F028D+offset, attrMask); //?
+	GPUCMD_AddSingleParam(0x0001025E, numAttr-1); //?
+	GPUCMD_AddSingleParam(0x000F004F, numAttr); //?
+	GPUCMD_Add(0x800F0050, param, 0x00000007);
+}
+
+void blarg_DVLE_SendConstants(DVLE_s* dvle)
+{
+	if(!dvle)return;
+	
+	u32 offset = dvle->type ? 0 : 0x30;
+
+	u32 param[4];
+	u32 rev[3];
+	u8* rev8=(u8*)rev;
+
+	int i;
+	DVLE_constEntry_s* cnst=dvle->constTableData;
+	for(i=0;i<dvle->constTableSize;i++,cnst++)
+	{
+		memcpy(&rev8[0], &cnst->data[0], 3);
+		memcpy(&rev8[3], &cnst->data[1], 3);
+		memcpy(&rev8[6], &cnst->data[2], 3);
+		memcpy(&rev8[9], &cnst->data[3], 3);
+
+		param[0x0]=(cnst->header>>16)&0xFF;
+		param[0x1]=rev[2];
+		param[0x2]=rev[1];
+		param[0x3]=rev[0];
+
+		GPUCMD_Add(0x800F0290+offset, param, 0x00000004);
+	}
+}
+
+// omg geometry shader
+// thanks to smealum :D
+void blarg_SHDR_UseProgram(DVLB_s* dvlb, u32 vsh_id, u32 gsh_id, u32 geo_stride, u32 attr_mask)
+{
+	// vertex shader
+	
+	DVLE_s* dvle = &dvlb->DVLE[vsh_id];
+	int i;
+
+	//?
+	GPUCMD_AddSingleParam(0x00010229, 0x00000000);
+	GPUCMD_AddSingleParam(0x00010244, 0x00000000);
+
+	blarg_DVLP_SendCode(&dvlb->DVLP, dvle->type);
+	blarg_DVLP_SendOpDesc(&dvlb->DVLP, dvle->type);
+	blarg_DVLE_SendConstants(dvle);
+
+	GPUCMD_AddSingleParam(0x00080229, 0x00000000);
+	GPUCMD_AddSingleParam(0x000F02BA, 0x7FFF0000|(dvle->mainOffset&0xFFFF)); //set entrypoint
+
+	GPUCMD_AddSingleParam(0x000F0252, 0x00000000); // should all be part of DVLE_SendOutmap ?
+
+	//blarg_DVLE_SendOutmap(dvle);
+	u32 num_attr = 0; u32 temp = attr_mask;
+	for (i = 0; i < 16; i++)
+	{
+		if (!temp) break;
+		if (temp & 1) num_attr++;
+		temp >>= 1;
+	}
+	GPUCMD_AddSingleParam(0x000F0251, num_attr-1);
+	GPUCMD_AddSingleParam(0x000F024A, num_attr-1);
+	GPUCMD_AddSingleParam(0x000F02BD, attr_mask);
+
+	//?
+	GPUCMD_AddSingleParam(0x000F0064, 0x00000001);
+	GPUCMD_AddSingleParam(0x000F006F, 0x00000703);
+	
+	// geometry shader
+	
+	dvle = &dvlb->DVLE[gsh_id];
+
+	blarg_DVLP_SendCode(&dvlb->DVLP, dvle->type);
+	blarg_DVLP_SendOpDesc(&dvlb->DVLP, dvle->type);
+	blarg_DVLE_SendConstants(dvle);
+
+	blarg_DVLE_SendOutmap(dvle);
+
+	GPUCMD_AddSingleParam(0x00010229, 0x00000002);
+	GPUCMD_AddSingleParam(0x00010244, 0x00000001); //not necessary ?
+
+	GPUCMD_AddSingleParam(0x00090289, 0x08000000|(geo_stride-1));
+	GPUCMD_AddSingleParam(0x000F028A, 0x7FFF0000|(dvle->mainOffset&0xFFFF)); //set entrypoint
+
+	// GPUCMD_AddSingleParam(0x000F0064, 0x00000001); //not necessary ?
+	// GPUCMD_AddSingleParam(0x000F006F, 0x01030703); //not necessary ?
+
+	u32 param[] = {0x76543210, 0xFEDCBA98};
+	GPUCMD_Add(0x800F028B, param, 0x00000002);
+}
+
 // update PICA200 state as needed before drawing shit
 void _bglUpdateState()
 {
@@ -263,7 +431,7 @@ void _bglUpdateState()
 		dirty |= 0x2;
 			
 		if (dirty & 0x1)
-			SHDR_UseProgram(bglState.Shader, 0);
+			blarg_SHDR_UseProgram(bglState.Shader, 0, 1, bglState.GeometryStride, bglState.ShaderAttrMask);
 		
 		if (dirty & 0x4)
 			blarg_GPU_SetViewport();
@@ -345,6 +513,16 @@ void _bglUpdateState()
 	}
 }
 
+
+void bglGeometryShaderParams(u32 stride, u32 attrmask)
+{
+	// those depend on the shader used
+	// TODO eventually embed this information in the shader?
+	
+	bglState.GeometryStride = stride;
+	bglState.ShaderAttrMask = attrmask;
+	bglState.DirtyFlags |= 0x5;
+}
 
 void bglUseShader(DVLB_s* shader)
 {

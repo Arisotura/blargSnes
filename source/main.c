@@ -256,21 +256,11 @@ float vertexList[] =
 {
 	// border
 	0.0, 0.0, 0.9,      0.78125, 0.0625,
-	240.0, 0.0, 0.9,    0.78125, 1.0,
 	240.0, 400.0, 0.9,  0.0, 1.0,
-	
-	0.0, 0.0, 0.9,      0.78125, 0.0625,
-	240.0, 400.0, 0.9,  0.0, 1.0,
-	0.0, 400.0, 0.9,    0.0, 0.0625,
 	
 	// screen
-	8.0, 72.0, 0.9,      1.0, 0.87890625,
-	232.0, 72.0, 0.9,    1.0, 0.00390625,
+	8.0, 72.0, 0.9,     1.0, 0.87890625,
 	232.0, 328.0, 0.9,  0.0, 0.00390625,
-	
-	8.0, 72.0, 0.9,      1.0, 0.87890625,
-	232.0, 328.0, 0.9,  0.0, 0.00390625,
-	8.0, 328.0, 0.9,    0.0, 0.87890625,
 };
 float* borderVertices;
 float* screenVertices;
@@ -315,13 +305,9 @@ void ApplyScaling()
 	}
 	
 	screenVertices[5*0 + 0] = x1; screenVertices[5*0 + 1] = y1; screenVertices[5*0 + 4] = texy; 
-	screenVertices[5*1 + 0] = x2; screenVertices[5*1 + 1] = y1; 
-	screenVertices[5*2 + 0] = x2; screenVertices[5*2 + 1] = y2; 
-	screenVertices[5*3 + 0] = x1; screenVertices[5*3 + 1] = y1; screenVertices[5*3 + 4] = texy; 
-	screenVertices[5*4 + 0] = x2; screenVertices[5*4 + 1] = y2; 
-	screenVertices[5*5 + 0] = x1; screenVertices[5*5 + 1] = y2; screenVertices[5*5 + 4] = texy; 
+	screenVertices[5*1 + 0] = x2; screenVertices[5*1 + 1] = y2; 
 	
-	GSPGPU_FlushDataCache(NULL, (u32*)screenVertices, 5*6*sizeof(float));
+	GSPGPU_FlushDataCache(NULL, (u32*)screenVertices, 5*2*sizeof(float));
 }
 
 
@@ -355,6 +341,7 @@ void SafeWait(Handle evt)
 
 void RenderTopScreen()
 {
+	bglGeometryShaderParams(4, 0x3);
 	bglUseShader(finalShader);
 	
 	bglOutputBuffers(gpuOut, gpuDOut);
@@ -380,23 +367,23 @@ void RenderTopScreen()
 	
 	bglTexImage(GPU_TEXUNIT0, BorderTex,512,256,0,GPU_RGBA8);
 	
-	bglUniformMatrix(0x20, screenProjMatrix);
+	bglUniformMatrix(0, screenProjMatrix);
 	
 	bglNumAttribs(2);
 	bglAttribType(0, GPU_FLOAT, 3);	// vertex
 	bglAttribType(1, GPU_FLOAT, 2);	// texcoord
 	bglAttribBuffer(borderVertices);
 	
-	bglDrawArrays(GPU_TRIANGLES, 2*3); // border
-	
+	bglDrawArrays(GPU_UNKPRIM, 2); // border
+
 	// filtering enabled only when scaling
 	// filtering at 1:1 causes output to not be pixel-perfect, but not filtering at higher res looks like total shit
 	bglTexImage(GPU_TEXUNIT0, SNESFrame,256,256, Config.ScaleMode?0x6:0 ,GPU_RGBA8);
 	
 	bglAttribBuffer(screenVertices);
 	
-	bglDrawArrays(GPU_TRIANGLES, 2*3); // screen
-	
+	bglDrawArrays(GPU_UNKPRIM, 2); // screen
+
 	if (!RenderState)
 	{
 		bglFlush();
@@ -841,12 +828,12 @@ int main()
 	BorderTex = (u32*)linearAlloc(512*256*4);
 	
 	// copy some fixed vertices to linear memory
-	borderVertices = (float*)linearAlloc(5*3 * 2 * sizeof(float));
-	screenVertices = (float*)linearAlloc(5*3 * 2 * sizeof(float));
+	borderVertices = (float*)linearAlloc(5*2 * sizeof(float));
+	screenVertices = (float*)linearAlloc(5*2 * sizeof(float));
 	
 	float* fptr = &vertexList[0];
-	for (i = 0; i < 5*3*2; i++) borderVertices[i] = *fptr++;
-	for (i = 0; i < 5*3*2; i++) screenVertices[i] = *fptr++;
+	for (i = 0; i < 5*2; i++) borderVertices[i] = *fptr++;
+	for (i = 0; i < 5*2; i++) screenVertices[i] = *fptr++;
 	ApplyScaling();
 	
 	

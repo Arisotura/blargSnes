@@ -1395,6 +1395,7 @@ void PPU_BlendScreens(u32 colorformat)
 	
 	u16* vptr = (u16*)vertexPtr;
 	
+	bglGeometryShaderParams(4, 0x3);
 	bglUseShader(softRenderShader);
 	
 	bglOutputBuffers(SNESFrame, gpuDOut); // depth buffer doesn't matter
@@ -1404,7 +1405,7 @@ void PPU_BlendScreens(u32 colorformat)
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	bglEnableAlphaTest(false);
 
-	bglUniformMatrix(0x20, snesProjMatrix);
+	bglUniformMatrix(0, snesProjMatrix);
 	
 	bglEnableTextures(GPU_TEXUNIT0|GPU_TEXUNIT1);
 	bglTexImage(GPU_TEXUNIT0, MainScreenTex,256,256,0,colorformat);
@@ -1512,16 +1513,12 @@ void PPU_BlendScreens(u32 colorformat)
 		bglAttribBuffer(vptr);
 		
 		ADDVERTEX(0, startoffset,       0, startoffset);
-		ADDVERTEX(256, startoffset,     256, startoffset);
 		ADDVERTEX(256, s->EndOffset,    256, s->EndOffset);
-		ADDVERTEX(0, startoffset,       0, startoffset);
-		ADDVERTEX(256, s->EndOffset,    256, s->EndOffset);
-		ADDVERTEX(0, s->EndOffset,      0, s->EndOffset);
 		
 		vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
 		vertexPtr = vptr;
 		
-		bglDrawArrays(GPU_TRIANGLES, 2*3);
+		bglDrawArrays(GPU_UNKPRIM, 2);
 		
 		if (s->EndOffset == 240) break;
 		

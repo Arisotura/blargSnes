@@ -25,6 +25,7 @@
 void bglInit();
 void bglDeInit();
 
+void bglGeometryShaderParams(u32 stride, u32 attrmask);
 void bglUseShader(DVLB_s* shader);
 void bglUniform(u32 id, float* val);
 void bglUniformMatrix(u32 id, float* val);
