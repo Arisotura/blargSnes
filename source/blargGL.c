@@ -421,8 +421,9 @@ void _bglUpdateState()
 	
 	if (bglState.DrawnSomething)
 	{
-		if ((dirty & 0x5) != 0x4)
-			GPU_FinishDrawing();
+		// not needed, probably doesn't help performance
+		//if ((dirty & 0x5) != 0x4)
+		//	GPU_FinishDrawing();
 		bglState.DrawnSomething = false;
 	}
 	

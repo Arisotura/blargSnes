@@ -53,8 +53,10 @@ void Config_Render(bool force)
 	DrawText(10, y+1, RGB(255,255,255), "Scaling:");
 	x = 10 + MeasureText("Scaling:") + 6;
 	
-	char* scalemodes[] = {"1:1", "Fullscreen", "Cropped"};
-	DrawButton(x, y-3, 140, RGB(255,255,255), scalemodes[Config.ScaleMode]);
+	char* scalemodes[] = {"1:1", "Fullscreen", "Cropped", "4:3", "Cropped 4:3"};
+	int themode = Config.ScaleMode;
+	if (themode < 0 || themode > 4) themode = 0;
+	DrawButton(x, y-3, 140, RGB(255,255,255), scalemodes[themode]);
 	
 	
 	DrawButton(10, 212, 0, RGB(255,128,128), "Cancel");
@@ -80,7 +82,7 @@ void Config_Touch(int touch, u32 x, u32 y)
 	else if (y >= 50 && y < 70)
 	{
 		Config.ScaleMode++;
-		if (Config.ScaleMode >= 3) Config.ScaleMode = 0;
+		if (Config.ScaleMode > 4) Config.ScaleMode = 0;
 		configdirty = 2;
 	}
 	else if (x < 106 && y >= 200)

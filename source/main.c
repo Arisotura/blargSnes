@@ -274,6 +274,7 @@ void ApplyScaling()
 	
 	int scalemode = Config.ScaleMode;
 	if (!running && scalemode == 2) scalemode = 1;
+	else if (!running && scalemode == 4) scalemode = 3;
 	
 	switch (scalemode)
 	{
@@ -282,12 +283,26 @@ void ApplyScaling()
 			y1 = 0.0f; y2 = 400.0f;
 			break;
 			
-		case 2: // overscan
+		case 2: // cropped
 			{
 				float bigy = ((float)SNES_Status->ScreenHeight * 240.0f) / (float)(SNES_Status->ScreenHeight-16);
 				float margin = (bigy - 240.0f) / 2.0f;
 				x1 = -margin; x2 = 240.0f+margin;
 				y1 = 0.0f; y2 = 400.0f;
+			}
+			break;
+			
+		case 3: // 4:3
+			x1 = 0.0f; x2 = 240.0f;
+			y1 = 40.0f; y2 = 360.0f;
+			break;
+			
+		case 4: // cropped 4:3
+			{
+				float bigy = ((float)SNES_Status->ScreenHeight * 240.0f) / (float)(SNES_Status->ScreenHeight-16);
+				float margin = (bigy - 240.0f) / 2.0f;
+				x1 = -margin; x2 = 240.0f+margin;
+				y1 = 29.0f; y2 = 371.0f;
 			}
 			break;
 			
