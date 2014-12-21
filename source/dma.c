@@ -22,6 +22,8 @@
 
 u8 DMA_Chans[8*16];
 u8 DMA_HDMAFlag;
+u8 DMA_HDMACurFlag;
+u8 DMA_HDMAEnded;
 
 u8 HDMA_Pause[8];
 
@@ -264,7 +266,9 @@ void DMA_Enable(u8 flag)
 
 void DMA_ReloadHDMA()
 {
-	register u8 flag = DMA_HDMAFlag;
+	register u8 flag = DMA_HDMACurFlag;
+	register u8 ended = DMA_HDMAEnded;
+	flag = DMA_HDMAFlag;
 	if (flag)
 	{
 		int c;
@@ -281,7 +285,23 @@ void DMA_ReloadHDMA()
 			
 			// load first repeatflag
 			chan[10] = SNES_Read8(tablebank|tableaddr);
+			if(!chan[10])
+			{
+				if(chan[0] & 0x40)
+				{
+					u16 memaddr = SNES_Read16(tableaddr|tablebank);
+					*(u16*)&chan[5] = memaddr;
+					tableaddr++;
+				}
+				*(u16*)&chan[8] = tableaddr + 1;
+				flag &= ~(1 << c);
+				ended |= (1 << c);
+				HDMA_Pause[c] = 1;
+				continue;
+			}
+
 			tableaddr++;
+			HDMA_Pause[c] = 0;
 
 			if (chan[0] & 0x40)
 			{
@@ -292,8 +312,6 @@ void DMA_ReloadHDMA()
 			}
 			
 			*(u16*)&chan[8] = tableaddr;
-			
-			HDMA_Pause[c] = 0;
 		}
 	}
 }
@@ -302,7 +320,9 @@ const u8 hdma_sizes[8] = {1, 2, 2, 4, 4, 4, 2, 4};
 
 void DMA_DoHDMA()
 {	
-	register u8 flag = DMA_HDMAFlag;
+	register u8 flag = DMA_HDMACurFlag;
+	register u8 ended = DMA_HDMAEnded;
+	flag &= ~ended;
 	if (flag)
 	{
 		int c;
@@ -317,12 +337,11 @@ void DMA_DoHDMA()
 			u32 tablebank = chan[4] << 16;
 			
 			u8 repeatflag = chan[10];
+			if (repeatflag == 0)
+					continue;
 			
 			if (!HDMA_Pause[c])
 			{
-				if (repeatflag == 0)
-					continue;
-				
 				u8 params = chan[0];
 				
 				u8 paddrinc = params & 0x07;
@@ -397,7 +416,6 @@ void DMA_DoHDMA()
 					{
 						case 0:
 							PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
-							memaddr++;
 							break;
 						case 1:
 							PPU_Write8(ppuaddr, SNES_Read8(membank|memaddr));
@@ -456,17 +474,31 @@ void DMA_DoHDMA()
 				if (!repeatflag)
 				{
 					chan[10] = SNES_Read8(tablebank|tableaddr);
+					if(!chan[10])
+					{
+						if(chan[0] & 0x40)
+						{
+							u16 memaddr = SNES_Read16(tableaddr|tablebank);
+							*(u16*)&chan[5] = memaddr;
+							tableaddr++;
+						}
+						*(u16*)&chan[8] = tableaddr + 1;
+						
+						flag &= ~(1 << c);
+						ended |= (1 << c);
+						HDMA_Pause[c] = 1;
+						continue;
+					}
+
 					tableaddr++;
+					HDMA_Pause[c] = 0;
 					
 					if (chan[0] & 0x40)
 					{
 						u16 maddr = SNES_Read16(tableaddr|tablebank);
 						*(u16*)&chan[5] = maddr;
-						
 						tableaddr += 2;
 					}
-					
-					HDMA_Pause[c] = 0;
 				}
 				else
 				{
@@ -479,15 +511,32 @@ void DMA_DoHDMA()
 				if (repeatflag == 0x80)
 				{
 					chan[10] = SNES_Read8(tablebank|tableaddr);
+					if(!chan[10])
+					{
+						if(chan[0] & 0x40)
+						{
+							u16 memaddr = SNES_Read16(tableaddr|tablebank);
+							*(u16*)&chan[5] = memaddr;
+							tableaddr++;
+						}
+						*(u16*)&chan[8] = tableaddr + 1;
+						
+						flag &= ~(1 << c);
+						ended |= (1 << c);
+						HDMA_Pause[c] = 1;
+						continue;
+					}
+
 					tableaddr++;
+					HDMA_Pause[c] = 0;
 					
 					if (chan[0] & 0x40)
 					{
 						u16 maddr = SNES_Read16(tableaddr|tablebank);
 						*(u16*)&chan[5] = maddr;
-						
 						tableaddr += 2;
 					}
+					
 				}
 				else
 					chan[10] = repeatflag;

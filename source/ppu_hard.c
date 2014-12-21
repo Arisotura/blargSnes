@@ -50,6 +50,8 @@ u32* OBJColorBuffer;
 u32* OBJDepthBuffer;
 
 u16* Mode7ColorBuffer;
+u16* Mode7ColorBufferU;
+u16* Mode7ColorBufferL;
 
 u32 YOffset256[256];
 
@@ -128,6 +130,8 @@ void PPU_Init_Hard()
 	OBJDepthBuffer = (u32*)VRAM_Alloc(256*256*4);
 	
 	Mode7ColorBuffer = (u16*)linearAlloc(256*256*2);
+	Mode7ColorBufferU = (u16*)linearAlloc(256*256*2);
+	Mode7ColorBufferL = (u16*)linearAlloc(256*256*2);
 	
 	PPU_TileCache = (u16*)linearAlloc(1024*1024*sizeof(u16));
 	PPU_TileCacheIndex = 0;
@@ -163,6 +167,8 @@ void PPU_DeInit_Hard()
 	VRAM_Free(MainScreenTex);
 	VRAM_Free(OBJColorBuffer);
 	VRAM_Free(OBJDepthBuffer);
+	linearFree(Mode7ColorBufferL);
+	linearFree(Mode7ColorBufferU);
 	linearFree(Mode7ColorBuffer);
 }
 
@@ -486,7 +492,7 @@ void PPU_ApplyPaletteChanges(u32 num, PPU_PaletteChange* changes)
 }
 
 
-void PPU_StartBG()
+void PPU_StartBG(u32 hi)
 {
 	if (doingBG) return;
 	doingBG = 1;
@@ -517,7 +523,7 @@ void PPU_StartBG()
 	bglDummyTexEnv(4);
 	bglDummyTexEnv(5);
 		
-	bglTexImage(GPU_TEXUNIT0, PPU_TileCache,1024,1024,0,GPU_RGBA5551);
+	bglTexImage(GPU_TEXUNIT0, PPU_TileCache,1024,1024,(hi ? 0x6: 0),GPU_RGBA5551);
 	
 	bglNumAttribs(2);
 	bglAttribType(0, GPU_SHORT, 2);	// vertex
@@ -852,18 +858,35 @@ void PPU_ClearAlpha(u32 snum)
 }
 
 
-void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart, int yend)
+void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart, int yend, u32 opt, u32 hi)
 {
 	PPU_Background* bg = &PPU.BG[num];
+	PPU_Background* obg = &PPU.BG[2];
 	u16* tilemap;
+	u16* tilemapx;
+	u16* tilemapy;
 	int tileaddrshift = ((int[]){4, 5, 6})[type];
-	u32 xoff, yoff;
+	u32 xoff, yoff, oxoff, oyoff;
 	u16 curtile;
-	int x, y;
+	int x, y, ox, oy, yf;
 	u32 idx;
-	int systart = 1, syend;
+	int systart = 1, syend, syend1, oyend;
 	int ntiles = 0;
 	u16* vptr = (u16*)vertexPtr;
+	u32 validBit = (num + 1) * 0x2000;
+	int xmax = 256, xsize = 8, yincr = 8, ysize = 8, yshift = 0;
+
+	if(hi)
+	{
+		xmax = 512;
+		xsize = 4;
+		if(PPU.Interlace)
+		{
+			yincr = 4;
+			ysize = 4;
+			yshift = 1;
+		}
+	}
 	
 #define ADDVERTEX(x, y, coord) \
 	*vptr++ = x; \
@@ -871,6 +894,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart,
 	*vptr++ = coord;
 	
 	PPU_BGSection* s = &bg->Sections[0];
+	PPU_BGSection* o;
 	for (;;)
 	{
 		syend = s->EndOffset;
@@ -885,11 +909,43 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart,
 		if (systart < ystart) systart = ystart;
 		if (syend > yend) syend = yend;
 		
-		yoff = s->YScroll + systart;
+		yoff = (s->YScroll + systart) >> yshift;
 		ntiles = 0;
-		
-		for (y = systart - (yoff&7); y < syend; y += 8, yoff += 8)
+
+		if(opt)
 		{
+			o = &obg->Sections[0];
+			oyend = o->EndOffset;
+			while(systart >= oyend)
+			{
+				o++;
+				oyend = o->EndOffset;
+			}
+			oxoff = o->XScroll & 0xF8;
+			oyoff = o->YScroll >> yshift;
+			tilemapx = PPU.VRAM + o->TilemapOffset + ((oyoff & 0xF8) << 3);
+			tilemapy = PPU.VRAM + o->TilemapOffset + (((oyoff + 8) & 0xF8) << 3);
+			if (oyoff & 0x100) if (obg->Size & 0x2) tilemapx += (obg->Size & 0x1) ? 2048 : 1024;
+			if ((oyoff+8) & 0x100) if (obg->Size & 0x2) tilemapy += (obg->Size & 0x1) ? 2048 : 1024;
+			syend1 = syend + (hi && PPU.Interlace ? 3 : 7);
+			y = systart;
+			oy = y - (yoff & 7);
+		}
+		else
+		{
+			y = systart - (yoff & 7);
+			oy = y;
+			syend1 = syend;
+		}
+		
+		for (; y < syend1; y += yincr, oy += yincr, yoff += 8)
+		{
+			if(oy >= syend)
+			{
+				yoff -= (y - syend + 1) << yshift;
+				y = syend - 1;
+			}
+
 			tilemap = PPU.VRAM + s->TilemapOffset + ((yoff & 0xF8) << 3);
 			if (yoff & 0x100)
 			{
@@ -898,18 +954,50 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart,
 			}
 			
 			xoff = s->XScroll;
-			x = -(xoff & 7);
-		
-			for (; x < 256; x += 8, xoff += 8)
+			ox = xoff & 7;
+			for (x = -ox; x < xmax; x += 8, xoff += 8, ox += 8)
 			{
-				idx = (xoff & 0xF8) >> 3;
-				if (xoff & 0x100)
+				if(ox < 8 || !opt)
 				{
-					if (bg->Size & 0x1)
-						idx += 1024;
+					idx = (xoff & 0xF8) >> 3;
+					if (xoff & 0x100)
+					{
+						if (bg->Size & 0x1)
+							idx += 1024;
+					}
+					yf = oy;
+				}
+				else
+				{
+					u32 hofs = xoff;
+					int vofs = yoff;
+					idx = (ox - 8 + oxoff) >> 3;
+					if ((ox - 8 + oxoff) & 0x100) if (obg->Size & 0x1) idx += 1024;
+					u16 hval = tilemapx[idx], vval;
+					if(opt==4)
+					{
+						if(hval & 0x8000)
+						{
+							vval = hval;
+							hval = 0;
+						}
+						else
+							vval = 0;
+					}
+					else
+						vval = tilemapy[idx];
+					if (hval & validBit) hofs = ox + (hval & 0x1F8) - (hval & 0x200);
+					if (vval & validBit) vofs = y + (vval & 0x1FF) - (vval & 0x200);
+					tilemap = PPU.VRAM + s->TilemapOffset + ((vofs & 0xF8) << 3);
+					if(vofs & 0x100) if(bg->Size & 0x2) tilemap += (bg->Size & 0x1) ? 2048 : 1024;
+					idx = (hofs & 0xF8) >> 3;
+					if (hofs & 0x100) if (bg->Size & 0x1) idx += 1024;
+					yf = y - (vofs & 7);
 				}
 
 				curtile = tilemap[idx];
+				
+
 				if ((curtile ^ prio) & 0x2000)
 					continue;
 
@@ -918,39 +1006,65 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart,
 				u32 addr = s->TilesetOffset + ((curtile & 0x03FF) << tileaddrshift);
 				u32 palid = (curtile & 0x1C00) >> 10;
 				
-				u32 coord = PPU_StoreTileInCache(type, palid, addr);
-				if (coord == 0xC000) continue;
-				
-				switch (curtile & 0xC000)
+				u32 coord0 = PPU_StoreTileInCache(type, palid, addr);
+#define DO_SUBTILE(sx, sy, coord, t0, t3) \
+						if (coord != 0xC000) \
+						{ \
+							ADDVERTEX(x+sx,       yf+sy,       coord+t0); \
+							ADDVERTEX(x+sx+xsize, yf+sy+ysize, coord+t3); \
+							ntiles++; \
+						}				
+				if(hi)
 				{
-					case 0x0000:
-						ADDVERTEX(x,   y,     coord);
-						ADDVERTEX(x+8, y+8,   coord+0x0101);
-						break;
+					u32 coord1 = PPU_StoreTileInCache(type, palid, addr+(0x01<<tileaddrshift));
+					switch (curtile & 0xC000)
+					{
+						case 0x0000:
+							if (x > -4)  DO_SUBTILE(0, 0,  coord0, 0x0000, 0x0101);
+							if (x < 508) DO_SUBTILE(4, 0,  coord1, 0x0000, 0x0101);
+							break;
+						case 0x4000: // hflip
+							if (x > -4)  DO_SUBTILE(0, 0,  coord1, 0x0001, 0x0100);
+							if (x < 508) DO_SUBTILE(4, 0,  coord0, 0x0001, 0x0100);
+							break;
 						
-					case 0x4000: // hflip
-						ADDVERTEX(x,   y,     coord+0x0001);
-						ADDVERTEX(x+8, y+8,   coord+0x0100);
-						break;
+						case 0x8000: // vflip
+							if (x > -4)  DO_SUBTILE(0, 0,  coord0, 0x0100, 0x0001);
+							if (x < 508) DO_SUBTILE(4, 0,  coord1, 0x0100, 0x0001);
+							break;
 						
-					case 0x8000: // vflip
-						ADDVERTEX(x,   y,     coord+0x0100);
-						ADDVERTEX(x+8, y+8,   coord+0x0001);
-						break;
-						
-					case 0xC000: // hflip+vflip
-						ADDVERTEX(x,   y,     coord+0x0101);
-						ADDVERTEX(x+8, y+8,   coord);
-						break;
+						case 0xC000: // hflip+vflip
+							if (x > -4)  DO_SUBTILE(0, 0,  coord1, 0x0101, 0x0000);
+							if (x < 508) DO_SUBTILE(4, 0,  coord0, 0x0101, 0x0000);
+							break;
+					}
 				}
-				
-				ntiles++;
+				else
+				{
+					if (coord0 == 0xC000) continue;
+					switch (curtile & 0xC000)
+					{
+						case 0x0000:
+							DO_SUBTILE(0, 0,  coord0, 0x0000, 0x0101);
+							break;
+						case 0x4000:
+							DO_SUBTILE(0, 0,  coord0, 0x0001, 0x0100);
+							break;
+						case 0x8000:
+							DO_SUBTILE(0, 0,  coord0, 0x0100, 0x0001);
+							break;
+						case 0xC000:
+							DO_SUBTILE(0, 0,  coord0, 0x0101, 0x0000);
+							break;
+					}
+				}
+#undef DO_SUBTILE
 			}
 		}
-		
+				
 		if (ntiles)
 		{
-			PPU_StartBG();
+			PPU_StartBG(hi);
 			
 			bglScissor(0, systart, 256, syend);
 			
@@ -982,7 +1096,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart,
 #undef ADDVERTEX
 }
 
-void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystart, int yend)
+void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystart, int yend, u32 hi)
 {
 	PPU_Background* bg = &PPU.BG[num];
 	u16* tilemap;
@@ -994,6 +1108,19 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystar
 	int systart = 1, syend;
 	int ntiles = 0;
 	u16* vptr = (u16*)vertexPtr;
+	int xincr = 16, xsize = 8, yincr = 16, ysize = 8, yshift = 0;
+
+	if(hi)
+	{
+		xincr = 8;
+		xsize = 4;
+		if(PPU.Interlace)
+		{
+			yincr = 8;
+			ysize = 4;
+			yshift = 1;
+		}
+	}
 	
 #define ADDVERTEX(x, y, coord) \
 	*vptr++ = x; \
@@ -1015,10 +1142,10 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystar
 		if (systart < ystart) systart = ystart;
 		if (syend > yend) syend = yend;
 		
-		yoff = s->YScroll + systart;
+		yoff = (s->YScroll + systart) >> yshift;
 		ntiles = 0;
 		
-		for (y = systart - (yoff&15); y < syend; y += 16, yoff += 16)
+		for (y = systart - (yoff&15); y < syend; y += yincr, yoff += 16)
 		{
 			tilemap = PPU.VRAM + s->TilemapOffset + ((yoff & 0x1F0) << 2);
 			if (yoff & 0x200)
@@ -1030,7 +1157,7 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystar
 			xoff = s->XScroll;
 			x = -(xoff & 15);
 		
-			for (; x < 256; x += 16, xoff += 16)
+			for (; x < 256; x += xincr, xoff += 16)
 			{
 				idx = (xoff & 0x1F0) >> 4;
 				if (xoff & 0x200)
@@ -1057,61 +1184,61 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystar
 					if (coord != 0xC000) \
 					{ \
 						ADDVERTEX(x+sx,   y+sy,     coord+t0); \
-						ADDVERTEX(x+sx+8, y+sy+8,   coord+t3); \
+						ADDVERTEX(x+sx+xsize, y+sy+ysize,   coord+t3); \
 						ntiles++; \
 					}
 				
 				switch (curtile & 0xC000)
 				{
 					case 0x0000:
-						if ((y - systart) > -8)
+						if ((y - systart) > -ysize)
 						{
-							if (x > -8)  DO_SUBTILE(0, 0,  coord0, 0x0000, 0x0101);
-							if (x < 248) DO_SUBTILE(8, 0,  coord1, 0x0000, 0x0101);
+							if (x > -xsize)      DO_SUBTILE(0, 0,  coord0, 0x0000, 0x0101);
+							if (x < 256 - xsize) DO_SUBTILE(xsize, 0,  coord1, 0x0000, 0x0101);
 						}
-						if (y < (syend - 8))
+						if (y < (syend - ysize))
 						{
-							if (x > -8)  DO_SUBTILE(0, 8,  coord2, 0x0000, 0x0101);
-							if (x < 248) DO_SUBTILE(8, 8,  coord3, 0x0000, 0x0101);
+							if (x > -xsize)      DO_SUBTILE(0, ysize,  coord2, 0x0000, 0x0101);
+							if (x < 256 - xsize) DO_SUBTILE(xsize, ysize,  coord3, 0x0000, 0x0101);
 						}
 						break;
 						
 					case 0x4000: // hflip
-						if ((y - systart) > -8)
+						if ((y - systart) > -ysize)
 						{
-							if (x > -8)  DO_SUBTILE(0, 0,  coord1, 0x0001, 0x0100);
-							if (x < 248) DO_SUBTILE(8, 0,  coord0, 0x0001, 0x0100);
+							if (x > -xsize)      DO_SUBTILE(0, 0,  coord1, 0x0001, 0x0100);
+							if (x < 256 - xsize) DO_SUBTILE(xsize, 0,  coord0, 0x0001, 0x0100);
 						}
-						if (y < (syend - 8))
+						if (y < (syend - ysize))
 						{
-							if (x > -8)  DO_SUBTILE(0, 8,  coord3, 0x0001, 0x0100);
-							if (x < 248) DO_SUBTILE(8, 8,  coord2, 0x0001, 0x0100);
+							if (x > -xsize)      DO_SUBTILE(0, ysize,  coord3, 0x0001, 0x0100);
+							if (x < 256 - xsize) DO_SUBTILE(xsize, ysize,  coord2, 0x0001, 0x0100);
 						}
 						break;
 						
 					case 0x8000: // vflip
-						if ((y - systart) > -8)
+						if ((y - systart) > -ysize)
 						{
-							if (x > -8)  DO_SUBTILE(0, 0,  coord2, 0x0100, 0x0001);
-							if (x < 248) DO_SUBTILE(8, 0,  coord3, 0x0100, 0x0001);
+							if (x > -xsize)      DO_SUBTILE(0, 0,  coord2, 0x0100, 0x0001);
+							if (x < 256 - xsize) DO_SUBTILE(xsize, 0,  coord3, 0x0100, 0x0001);
 						}
-						if (y < (syend - 8))
+						if (y < (syend - ysize))
 						{
-							if (x > -8)  DO_SUBTILE(0, 8,  coord0, 0x0100, 0x0001);
-							if (x < 248) DO_SUBTILE(8, 8,  coord1, 0x0100, 0x0001);
+							if (x > -xsize)      DO_SUBTILE(0, ysize,  coord0, 0x0100, 0x0001);
+							if (x < 256 - xsize) DO_SUBTILE(xsize, ysize,  coord1, 0x0100, 0x0001);
 						}
 						break;
 						
 					case 0xC000: // hflip+vflip
-						if ((y - systart) > -8)
+						if ((y - systart) > -ysize)
 						{
-							if (x > -8)  DO_SUBTILE(0, 0,  coord3, 0x0101, 0x0000);
-							if (x < 248) DO_SUBTILE(8, 0,  coord2, 0x0101, 0x0000);
+							if (x > -xsize)      DO_SUBTILE(0, 0,  coord3, 0x0101, 0x0000);
+							if (x < 256 - xsize) DO_SUBTILE(xsize, 0,  coord2, 0x0101, 0x0000);
 						}
-						if (y < (syend - 8))
+						if (y < (syend - ysize))
 						{
-							if (x > -8)  DO_SUBTILE(0, 8,  coord1, 0x0101, 0x0000);
-							if (x < 248) DO_SUBTILE(8, 8,  coord0, 0x0101, 0x0000);
+							if (x > -xsize)      DO_SUBTILE(0, ysize,  coord1, 0x0101, 0x0000);
+							if (x < 256 - xsize) DO_SUBTILE(xsize, ysize,  coord0, 0x0101, 0x0000);
 						}
 						break;
 				}
@@ -1122,7 +1249,7 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystar
 		
 		if (ntiles)
 		{
-			PPU_StartBG();
+			PPU_StartBG(hi);
 			
 			bglScissor(0, systart, 256, syend);
 			
@@ -1154,12 +1281,14 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystar
 #undef ADDVERTEX
 }
 
-void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend)
+void PPU_HardRenderBG_PlotMode7N(int ystart, int yend)
 {
 	int systart = 1, syend;
-	s32 x, y;
+	s32 x, y, lx, ly;
+	s16 A, B, C, D;
 	int i, j;
-	u32 tileidx;
+	u32 tileidx, transp, tile0;
+	u32 hflip, vflip;
 	u8 colorval;
 	u16* buffer;
 	const u32 xincr[8] = {1, 3, 1, 11, 1, 3, 1, 43};
@@ -1183,10 +1312,16 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend)
 		if (systart < ystart) systart = ystart;
 		if (syend > yend) syend = yend;
 		
+		hflip = s->Sel & 0x1 ? 0xFF : 0x0;
+		vflip = s->Sel & 0x2 ? 0xFF : 0x0;
+		A = s->A * (hflip ? -1 : 1); B = s->B * (vflip ? -1 : 1); C = s->C * (hflip ? -1 : 1); D = s->D * (vflip ? -1 : 1);
+		lx = (s->A * (hflip+s->XScroll-s->RefX)) + (s->B * ((systart^vflip)+s->YScroll-s->RefY)) + (s->RefX << 8);
+		ly = (s->C * (hflip+s->XScroll-s->RefX)) + (s->D * ((systart^vflip)+s->YScroll-s->RefY)) + (s->RefY << 8);
+		transp = (s->Sel & 0xC0) == 0x80; tile0 = (s->Sel & 0xC0) == 0xC0;
+
 		for (j = systart; j < syend; j++)
 		{
-			x = (s->A * (s->XScroll-s->RefX)) + (s->B * (j+s->YScroll-s->RefY)) + (s->RefX << 8);
-			y = (s->C * (s->XScroll-s->RefX)) + (s->D * (j+s->YScroll-s->RefY)) + (s->RefY << 8);
+			x = lx; y = ly;
 			buffer = &Mode7ColorBuffer[YOffset256[j]];
 			
 			for (i = 0; i < 256; i++)
@@ -1196,17 +1331,17 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend)
 				if ((x|y) & 0xFFFC0000)
 				{
 					// wraparound
-					if ((s->Sel & 0xC0) == 0x80)
+					if (transp)
 					{
 						// transparent
 						*buffer = 0;
 						buffer += xincr[i&7];
 						
-						x += s->A;
-						y += s->C;
+						x += A;
+						y += C;
 						continue;
 					}
-					else if ((s->Sel & 0xC0) == 0xC0)
+					else if (tile0)
 					{
 						// use tile 0
 						tileidx = 0;
@@ -1230,9 +1365,11 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend)
 				*buffer = TempPalette[colorval];
 				buffer += xincr[i&7];
 				
-				x += s->A;
-				y += s->C;
+				x += A;
+				y += C;
 			}
+			lx += B;
+			ly += D;
 		}
 		
 		if (syend >= yend) break;
@@ -1241,7 +1378,124 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend)
 	}
 	
 	TempPalette[0] = oldcolor0;
+}
+
+void PPU_HardRenderBG_PlotMode7E(int ystart, int yend)
+{
+	int systart = 1, syend;
+	s32 x, y, lx, ly;
+	s16 A, B, C, D;
+	int i, j;
+	u32 tileidx, transp, tile0;
+	u32 hflip, vflip;
+	u8 colorval;
+	u16* bufferU;
+	u16* bufferL;
+	const u32 xincr[8] = {1, 3, 1, 11, 1, 3, 1, 43};
 	
+	u16 oldcolor0 = TempPalette[0];
+	TempPalette[0] = 0;
+	
+	PPU_Mode7Section* s = &PPU.Mode7Sections[0];
+	for (;;)
+	{
+		syend = s->EndOffset;
+		
+		if (syend <= ystart)
+		{
+			systart = syend;
+			s++;
+			continue;
+		}
+
+		if (systart < ystart) systart = ystart;
+		if (syend > yend) syend = yend;
+		
+		hflip = s->Sel & 0x1 ? 0xFF : 0x0;
+		vflip = s->Sel & 0x2 ? 0xFF : 0x0;
+		A = s->A * (hflip ? -1 : 1); B = s->B * (vflip ? -1 : 1); C = s->C * (hflip ? -1 : 1); D = s->D * (vflip ? -1 : 1);
+		lx = (s->A * (hflip+s->XScroll-s->RefX)) + (s->B * ((systart^vflip)+s->YScroll-s->RefY)) + (s->RefX << 8);
+		ly = (s->C * (hflip+s->XScroll-s->RefX)) + (s->D * ((systart^vflip)+s->YScroll-s->RefY)) + (s->RefY << 8);
+		transp = (s->Sel & 0xC0) == 0x80; tile0 = (s->Sel & 0xC0) == 0xC0;
+
+		for (j = systart; j < syend; j++)
+		{
+			x = lx; y = ly;
+			bufferU = &Mode7ColorBufferU[YOffset256[j]];
+			bufferL = &Mode7ColorBufferL[YOffset256[j]];
+			
+			for (i = 0; i < 256; i++)
+			{
+				// TODO screen h/v flip
+				
+				if ((x|y) & 0xFFFC0000)
+				{
+					// wraparound
+					if (transp)
+					{
+						// transparent
+						*bufferU = 0;
+						*bufferL = 0;
+						bufferU += xincr[i&7];
+						bufferL += xincr[i&7];
+						
+						x += A;
+						y += C;
+						continue;
+					}
+					else if (tile0)
+					{
+						// use tile 0
+						tileidx = 0;
+					}
+					else
+					{
+						// ignore wraparound
+						tileidx = ((x & 0x3F800) >> 10) + ((y & 0x3F800) >> 3);
+						tileidx = PPU.VRAM[tileidx] << 7;
+					}
+				}
+				else
+				{
+					tileidx = ((x & 0x3F800) >> 10) + ((y & 0x3F800) >> 3);
+					tileidx = PPU.VRAM[tileidx] << 7;
+				}
+				
+				tileidx += ((x & 0x700) >> 7) + ((y & 0x700) >> 4) + 1;
+				colorval = PPU.VRAM[tileidx];
+				
+				if(colorval & 0x80)
+				{
+					*bufferU = TempPalette[colorval & 0x7F];
+					*bufferL = 0;
+				}
+				else
+				{
+					*bufferU = 0;
+					*bufferL = TempPalette[colorval];
+				}
+				bufferU += xincr[i&7];
+				bufferL += xincr[i&7];
+				
+				x += A;
+				y += C;
+			}
+			lx += B;
+			ly += D;
+		}
+		
+		if (syend >= yend) break;
+		systart = syend;
+		s++;
+	}
+	
+	TempPalette[0] = oldcolor0;
+}
+
+void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend, u32 prio)
+{
+	u16* vptr = (u16*)vertexPtr;
+
 #define ADDVERTEX(x, y, s, t) \
 	*vptr++ = x; \
 	*vptr++ = y; \
@@ -1283,8 +1537,7 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend)
 	bglDummyTexEnv(4);
 	bglDummyTexEnv(5);
 		
-	bglTexImage(GPU_TEXUNIT0, Mode7ColorBuffer,256,256,0,GPU_RGBA5551);
-	
+	bglTexImage(GPU_TEXUNIT0, (prio ? (prio > 1 ? Mode7ColorBufferU : Mode7ColorBuffer) : Mode7ColorBufferL),256,256,0,GPU_RGBA5551);	
 	bglNumAttribs(2);
 	bglAttribType(0, GPU_SHORT, 2);	// vertex
 	bglAttribType(1, GPU_SHORT, 2);	// texcoord
@@ -1310,6 +1563,7 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 	s32 x;
 	s32 width = (s32)PPU.OBJWidth[(oamextra & 0x2) >> 1];
 	u32 palid, prio;
+	int yincr = 8;
 	int ntiles = 0;
 	u16* vptr = (u16*)vertexPtr;
 	
@@ -1332,6 +1586,8 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 	attrib = *(u16*)&oam[2];
 	
 	idx = (attrib & 0x01FF) << 5;
+	if(attrib & 0x100)
+		idx += PPU.OBJGap;
 	
 	if (attrib & 0x4000)
 		idx += ((width-1) & 0x38) << 2;
@@ -1340,6 +1596,11 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 		
 	width += x;
 	if (width > 256) width = 256;
+	if(PPU.OBJVDir)
+	{
+		height >>= 1;
+		yincr = 4;
+	}
 	height += y;
 	if (height > yend) height = yend;
 	ystart -= 8;
@@ -1349,7 +1610,7 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 	prio = (oam[3] & 0x30);
 	if (palid < 12) prio += 0x40;
 	
-	for (; y < height; y += 8)
+	for (; y < height; y += yincr)
 	{
 		if (y <= ystart)
 		{
@@ -1384,22 +1645,22 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 			{
 				case 0x0000:
 					ADDVERTEX(x,   y,     prio, coord);
-					ADDVERTEX(x+8, y+8,   prio, coord+0x0101);
+					ADDVERTEX(x+8, y+yincr,   prio, coord+0x0101);
 					break;
 					
 				case 0x4000: // hflip
 					ADDVERTEX(x,   y,     prio, coord+0x0001);
-					ADDVERTEX(x+8, y+8,   prio, coord+0x0100);
+					ADDVERTEX(x+8, y+yincr,   prio, coord+0x0100);
 					break;
 					
 				case 0x8000: // vflip
 					ADDVERTEX(x,   y,     prio, coord+0x0100);
-					ADDVERTEX(x+8, y+8,   prio, coord+0x0001);
+					ADDVERTEX(x+8, y+yincr,   prio, coord+0x0001);
 					break;
 					
 				case 0xC000: // hflip+vflip
 					ADDVERTEX(x,   y,     prio, coord+0x0101);
-					ADDVERTEX(x+8, y+8,   prio, coord);
+					ADDVERTEX(x+8, y+yincr,   prio, coord);
 					break;
 			}
 			
@@ -1631,7 +1892,7 @@ void PPU_RenderScanline_Hard(u32 line)
 	if (!line)
 	{
 		// initialize stuff upon line 0
-		
+
 		//memset(PPU.NumPaletteChanges, 0, 240);
 		
 		PPU.CurModeSection = &PPU.ModeSections[0];
@@ -1692,15 +1953,26 @@ void PPU_RenderScanline_Hard(u32 line)
 			PPU.CurModeSection->SubScreen = PPU.SubScreen;
 			PPU.CurModeSection->ColorMath1 = PPU.ColorMath1;
 			PPU.CurModeSection->ColorMath2 = PPU.ColorMath2;
-			PPU.ModeDirty = 0;
 		}
 		
-		for (i = 0; i < 4; i++)
+		u32 optChange = 0;
+		for (i = 3; i >= 0; i--)
 		{
 			PPU_Background* bg = &PPU.BG[i];
 			
-			if (bg->ScrollParams == bg->LastScrollParams && bg->GraphicsParams == bg->LastGraphicsParams)
-				continue;
+			if(!PPU.ModeDirty && !optChange)
+			{
+				if(i==2 && (PPU.CurModeSection->Mode & 0x7) > 0 && !(PPU.CurModeSection->Mode & 0x1))
+				{
+					if(bg->ScrollParams == bg->LastScrollParams && bg->GraphicsParams == bg->LastGraphicsParams)
+						continue;
+					else
+						optChange = 1;
+				}
+				else
+					if (bg->ScrollParams == bg->LastScrollParams && bg->GraphicsParams == bg->LastGraphicsParams)
+						continue;
+			}
 				
 			bg->CurSection->EndOffset = line;
 			bg->CurSection++;
@@ -1711,6 +1983,8 @@ void PPU_RenderScanline_Hard(u32 line)
 			bg->LastScrollParams = bg->ScrollParams;
 			bg->LastGraphicsParams = bg->GraphicsParams;
 		}
+
+		PPU.ModeDirty = 0;
 		
 		if (PPU.Mode7Dirty && (PPU.Mode & 0x07) == 7)
 		{
@@ -1763,134 +2037,193 @@ void PPU_RenderScanline_Hard(u32 line)
 
 
 
-#define RENDERBG(num, type, prio) \
+#define RENDERBG(num, type, prio, opt, hi) \
 	{ \
-		if (mode & (0x10<<num)) \
-			PPU_HardRenderBG_16x16(colormath&(1<<num), num, type, prio?0x2000:0, ystart, yend); \
+		if ((mode & (0x10<<num)) && (mode!=6)) \
+			PPU_HardRenderBG_16x16(colormath&(1<<num), num, type, prio?0x2000:0, ystart, yend, hi); \
 		else \
-			PPU_HardRenderBG_8x8(colormath&(1<<num), num, type, prio?0x2000:0, ystart, yend); \
+			PPU_HardRenderBG_8x8(colormath&(1<<num), num, type, prio?0x2000:0, ystart, yend, opt, hi); \
 	}
+
 
 void PPU_HardRender_Mode0(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
 {
-	if (screen & 0x08) RENDERBG(3, TILE_2BPP, 0);
-	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 0);
+	if (screen & 0x08) RENDERBG(3, TILE_2BPP, 0, 0, 0);
+	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 0, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
 	
-	if (screen & 0x08) RENDERBG(3, TILE_2BPP, 1);
-	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 1);
+	if (screen & 0x08) RENDERBG(3, TILE_2BPP, 1, 0, 0);
+	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 1, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
 	
-	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 0);
-	if (screen & 0x01) RENDERBG(0, TILE_2BPP, 0);
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 0, 0, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_2BPP, 0, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
 	
-	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 1);
-	if (screen & 0x01) RENDERBG(0, TILE_2BPP, 1);
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 1, 0, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_2BPP, 1, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
 }
 
 void PPU_HardRender_Mode1(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
 {
-	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 0);
+	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 0, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
 	
 	if (screen & 0x04) 
 	{
 		if (!(mode & 0x08))
-			RENDERBG(2, TILE_2BPP, 1);
+			RENDERBG(2, TILE_2BPP, 1, 0, 0);
 	}
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
 	
-	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0);
-	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0);
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0, 0, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
 	
-	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 1);
-	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 1);
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 1, 0, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 1, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
 	
 	if (screen & 0x04) 
 	{
 		if (mode & 0x08)
-			RENDERBG(2, TILE_2BPP, 1);
+			RENDERBG(2, TILE_2BPP, 1, 0, 0);
 	}
 }
 
 void PPU_HardRender_Mode2(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
 {
-	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0);
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0, 2, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
 	
-	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0, 2, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
 	
-	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 1);
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 1, 2, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
 	
-	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 1);
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 1, 2, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
 }
 
 void PPU_HardRender_Mode3(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
 {
-	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0);
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
 	
-	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 0, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
 	
-	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 1);
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 1, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
 	
-	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 1);
+	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 1, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
 }
 
 void PPU_HardRender_Mode4(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
 {
-	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 0);
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 0, 4, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
 	
-	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 0, 4, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
 	
-	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 1);
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 1, 4, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
 	
-	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 1);
+	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 1, 4, 0);
 	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
+}
+
+void PPU_HardRender_Mode5(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
+{
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 0, 0, 1);
+
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
+
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0, 0, 1);
+
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
+
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 1, 0, 1);
+
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
+
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 1, 0, 1);
+
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
+
+}
+
+void PPU_HardRender_Mode6(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
+{
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
+
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0, 6, 1);
+
+	if (screen & 0x10)
+	{
+		PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
+		PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
+	}
+
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 6, 1, 1);
+
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
 }
 
 void PPU_HardRender_Mode7(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
 {
+	if(PPU.M7ExtBG)
+	{
+		if (screen & 0x02)
+		{
+			PPU_HardRenderBG_PlotMode7E(ystart, yend);
+			PPU_HardRenderBG_Mode7(colormath&0x02, ystart, yend, 0);
+		}
+	}
+	else
+		if (screen & 0x01) 
+
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
+
+	if (!PPU.M7ExtBG)
+		if (screen & 0x01)
+		{
+			PPU_HardRenderBG_PlotMode7N(ystart, yend);
+			PPU_HardRenderBG_Mode7(colormath&0x01, ystart, yend, 1);
+		}
 	
-	if (screen & 0x01) PPU_HardRenderBG_Mode7(colormath&0x01, ystart, yend);
-	
+	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
+
+	if(PPU.M7ExtBG)
+		if(screen & 0x02)
+			PPU_HardRenderBG_Mode7(colormath&0x02, ystart, yend, 2);
+
 	if (screen & 0x10)
 	{
-		PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
 		PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
 		PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
 	}
@@ -1950,9 +2283,15 @@ void PPU_HardRender(u32 snum)
 			case 4:
 				PPU_HardRender_Mode4(ystart, s->EndOffset, screen, s->Mode, colormath);
 				break;
-				
-			// TODO: modes 5/6
-			
+
+			case 5:
+				PPU_HardRender_Mode5(ystart, s->EndOffset, screen, s->Mode, colormath);
+				break;
+
+			case 6:
+				PPU_HardRender_Mode6(ystart, s->EndOffset, screen, s->Mode, colormath);
+				break;
+
 			case 7:
 				PPU_HardRender_Mode7(ystart, s->EndOffset, screen, s->Mode, colormath);
 				break;
