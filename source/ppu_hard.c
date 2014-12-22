@@ -51,7 +51,6 @@ u32* OBJDepthBuffer;
 
 u16* Mode7ColorBuffer;
 u16* Mode7ColorBufferU;
-u16* Mode7ColorBufferL;
 
 u32 YOffset256[256];
 
@@ -131,7 +130,6 @@ void PPU_Init_Hard()
 	
 	Mode7ColorBuffer = (u16*)linearAlloc(256*256*2);
 	Mode7ColorBufferU = (u16*)linearAlloc(256*256*2);
-	Mode7ColorBufferL = (u16*)linearAlloc(256*256*2);
 	
 	PPU_TileCache = (u16*)linearAlloc(1024*1024*sizeof(u16));
 	PPU_TileCacheIndex = 0;
@@ -167,7 +165,6 @@ void PPU_DeInit_Hard()
 	VRAM_Free(MainScreenTex);
 	VRAM_Free(OBJColorBuffer);
 	VRAM_Free(OBJDepthBuffer);
-	linearFree(Mode7ColorBufferL);
 	linearFree(Mode7ColorBufferU);
 	linearFree(Mode7ColorBuffer);
 }
@@ -1281,7 +1278,7 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystar
 #undef ADDVERTEX
 }
 
-void PPU_HardRenderBG_PlotMode7N(int ystart, int yend)
+void PPU_HardRenderBG_PlotMode7(int ystart, int yend)
 {
 	int systart = 1, syend;
 	s32 x, y, lx, ly;
@@ -1326,8 +1323,6 @@ void PPU_HardRenderBG_PlotMode7N(int ystart, int yend)
 			
 			for (i = 0; i < 256; i++)
 			{
-				// TODO screen h/v flip
-				
 				if ((x|y) & 0xFFFC0000)
 				{
 					// wraparound
@@ -1390,7 +1385,7 @@ void PPU_HardRenderBG_PlotMode7E(int ystart, int yend)
 	u32 hflip, vflip;
 	u8 colorval;
 	u16* bufferU;
-	u16* bufferL;
+	u16* buffer;
 	const u32 xincr[8] = {1, 3, 1, 11, 1, 3, 1, 43};
 	
 	u16 oldcolor0 = TempPalette[0];
@@ -1422,12 +1417,10 @@ void PPU_HardRenderBG_PlotMode7E(int ystart, int yend)
 		{
 			x = lx; y = ly;
 			bufferU = &Mode7ColorBufferU[YOffset256[j]];
-			bufferL = &Mode7ColorBufferL[YOffset256[j]];
+			buffer = &Mode7ColorBuffer[YOffset256[j]];
 			
 			for (i = 0; i < 256; i++)
 			{
-				// TODO screen h/v flip
-				
 				if ((x|y) & 0xFFFC0000)
 				{
 					// wraparound
@@ -1435,9 +1428,9 @@ void PPU_HardRenderBG_PlotMode7E(int ystart, int yend)
 					{
 						// transparent
 						*bufferU = 0;
-						*bufferL = 0;
+						*buffer = 0;
 						bufferU += xincr[i&7];
-						bufferL += xincr[i&7];
+						buffer += xincr[i&7];
 						
 						x += A;
 						y += C;
@@ -1464,18 +1457,13 @@ void PPU_HardRenderBG_PlotMode7E(int ystart, int yend)
 				tileidx += ((x & 0x700) >> 7) + ((y & 0x700) >> 4) + 1;
 				colorval = PPU.VRAM[tileidx];
 				
+				*buffer = TempPalette[colorval];
 				if(colorval & 0x80)
-				{
 					*bufferU = TempPalette[colorval & 0x7F];
-					*bufferL = 0;
-				}
 				else
-				{
 					*bufferU = 0;
-					*bufferL = TempPalette[colorval];
-				}
 				bufferU += xincr[i&7];
-				bufferL += xincr[i&7];
+				buffer += xincr[i&7];
 				
 				x += A;
 				y += C;
@@ -1537,7 +1525,7 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend, u32 prio)
 	bglDummyTexEnv(4);
 	bglDummyTexEnv(5);
 		
-	bglTexImage(GPU_TEXUNIT0, (prio ? (prio > 1 ? Mode7ColorBufferU : Mode7ColorBuffer) : Mode7ColorBufferL),256,256,0,GPU_RGBA5551);	
+	bglTexImage(GPU_TEXUNIT0, (prio ? Mode7ColorBufferU : Mode7ColorBuffer),256,256,0,GPU_RGBA5551);	
 	bglNumAttribs(2);
 	bglAttribType(0, GPU_SHORT, 2);	// vertex
 	bglAttribType(1, GPU_SHORT, 2);	// texcoord
@@ -2196,31 +2184,22 @@ void PPU_HardRender_Mode6(int ystart, int yend, u32 screen, u32 mode, u32 colorm
 
 void PPU_HardRender_Mode7(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
 {
-	if(PPU.M7ExtBG)
+	if(PPU.M7ExtBG && (screen & 0x02))
 	{
-		if (screen & 0x02)
-		{
-			PPU_HardRenderBG_PlotMode7E(ystart, yend);
+		PPU_HardRenderBG_PlotMode7E(ystart, yend);
+		if(!(screen & 0x01))
 			PPU_HardRenderBG_Mode7(colormath&0x02, ystart, yend, 0);
-		}
 	}
-	else
-		if (screen & 0x01) 
+	else if (screen & 0x01)
+		PPU_HardRenderBG_PlotMode7(ystart, yend);
 
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
 
-	if (!PPU.M7ExtBG)
-		if (screen & 0x01)
-		{
-			PPU_HardRenderBG_PlotMode7N(ystart, yend);
-			PPU_HardRenderBG_Mode7(colormath&0x01, ystart, yend, 1);
-		}
+	if (screen & 0x01) PPU_HardRenderBG_Mode7(colormath&0x01, ystart, yend, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
 
-	if(PPU.M7ExtBG)
-		if(screen & 0x02)
-			PPU_HardRenderBG_Mode7(colormath&0x02, ystart, yend, 2);
+	if(PPU.M7ExtBG && (screen & 0x02)) PPU_HardRenderBG_Mode7(colormath&0x02, ystart, yend, 1);
 
 	if (screen & 0x10)
 	{
