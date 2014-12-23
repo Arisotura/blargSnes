@@ -516,9 +516,9 @@ void PPU_Write8(u32 addr, u8 val)
 				PPU.OBJWidth = &PPU_OBJWidths[(val & 0xE0) >> 4];
 				PPU.OBJHeight = &PPU_OBJHeights[(val & 0xE0) >> 4];
 				
-				PPU.OBJTilesetAddr = (val & 0x03) << 14;
+				PPU.OBJTilesetAddr = (val & 0x07) << 14;
 				PPU.OBJTileset = (u16*)&PPU.VRAM[PPU.OBJTilesetAddr];
-				PPU.OBJGap = (val & 0x1C) << 9;
+				PPU.OBJGap = (val & 0x18) << 10;
 			}
 			break;
 			
@@ -552,8 +552,11 @@ void PPU_Write8(u32 addr, u8 val)
 			break;
 			
 		case 0x05:
-			PPU.Mode = val;
-			PPU.ModeDirty = 1;
+			if(PPU.Mode != val)
+			{
+				PPU.Mode = val;
+				PPU.ModeDirty = 1;
+			}
 			break;
 			
 		case 0x06: // mosaic
@@ -635,8 +638,11 @@ void PPU_Write8(u32 addr, u8 val)
 			break;
 			
 		case 0x1A:
-			PPU.M7Sel = val;
-			PPU.Mode7Dirty = 1;
+			if(PPU.M7Sel != val)
+			{
+				PPU.M7Sel = val;
+				PPU.Mode7Dirty = 1;
+			}
 			break;
 			
 		case 0x1B: // multiply/mode7 shiz
@@ -693,35 +699,82 @@ void PPU_Write8(u32 addr, u8 val)
 			break;
 			
 		case 0x23:
-			PPU.BG[0].WindowMask = val & 0x0F;
-			PPU.BG[1].WindowMask = val >> 4;
+			if (PPU.WinMask[0] != val)
+			{
+				PPU.WinMask[0] = val;
+				PPU.BG[0].WindowMask = val & 0x0F;
+				PPU.BG[1].WindowMask = val >> 4;
+				PPU.WindowDirty = 2;
+			}
 			break;
 		case 0x24:
-			PPU.BG[2].WindowMask = val & 0x0F;
-			PPU.BG[3].WindowMask = val >> 4;
+			if(PPU.WinMask[1] != val)
+			{
+				PPU.WinMask[1] = val;
+				PPU.BG[2].WindowMask = val & 0x0F;
+				PPU.BG[3].WindowMask = val >> 4;
+				PPU.WindowDirty = 2;
+			}
 			break;
 		case 0x25:
-			PPU.OBJWindowMask = val & 0x0F;
-			PPU.ColorMathWindowMask = val >> 4;
-			PPU.WindowDirty = 2;
+			if(PPU.WinMask[2] != val)
+			{
+				PPU.WinMask[2] = val;
+				PPU.OBJWindowMask = val & 0x0F;
+				PPU.ColorMathWindowMask = val >> 4;
+				PPU.WindowDirty = 2;
+			}
 			break;
 		
-		case 0x26: PPU.WinX[0] = val;   PPU.WindowDirty = 1; break;
-		case 0x27: PPU.WinX[1] = val+1; PPU.WindowDirty = 1; break;
-		case 0x28: PPU.WinX[2] = val;   PPU.WindowDirty = 1; break;
-		case 0x29: PPU.WinX[3] = val+1; PPU.WindowDirty = 1; break;
+		case 0x26:
+			if(PPU.WinX[0] != val)
+			{
+				PPU.WinX[0] = val;
+				PPU.WindowDirty = 1;
+			}
+			break;
+		case 0x27:
+			if(PPU.WinX[1] != val + 1)
+			{
+				PPU.WinX[1] = val + 1;
+				PPU.WindowDirty = 1;
+			}
+			break;
+		case 0x28:
+			if(PPU.WinX[2] != val)
+			{
+				PPU.WinX[2] = val;
+				PPU.WindowDirty = 1;
+			}
+			break;
+		case 0x29:
+			if(PPU.WinX[3] != val + 1)
+			{
+				PPU.WinX[3] = val + 1;
+				PPU.WindowDirty = 1;
+			}
+			break;
 		
 		case 0x2A:
-			PPU.BG[0].WindowCombine = PPU_WindowCombine[(val & 0x03)];
-			PPU.BG[1].WindowCombine = PPU_WindowCombine[(val & 0x0C) >> 2];
-			PPU.BG[2].WindowCombine = PPU_WindowCombine[(val & 0x30) >> 4];
-			PPU.BG[3].WindowCombine = PPU_WindowCombine[(val & 0xC0) >> 6];
+			if(PPU.WinCombine[0] != val)
+			{
+				PPU.WinCombine[0] = val;
+				PPU.BG[0].WindowCombine = PPU_WindowCombine[(val & 0x03)];
+				PPU.BG[1].WindowCombine = PPU_WindowCombine[(val & 0x0C) >> 2];
+				PPU.BG[2].WindowCombine = PPU_WindowCombine[(val & 0x30) >> 4];
+				PPU.BG[3].WindowCombine = PPU_WindowCombine[(val & 0xC0) >> 6];
+				PPU.WindowDirty = 2;
+			}
 			break;
 			
 		case 0x2B:
-			PPU.OBJWindowCombine = PPU_WindowCombine[(val & 0x03)];
-			PPU.ColorMathWindowCombine = PPU_WindowCombine[(val & 0x0C) >> 2];
-			PPU.WindowDirty = 2;
+			if(PPU.WinCombine[1] != val & 0xF)
+			{
+				PPU.WinCombine[1] = val & 0xF;
+				PPU.OBJWindowCombine = PPU_WindowCombine[(val & 0x03)];
+				PPU.ColorMathWindowCombine = PPU_WindowCombine[(val & 0x0C) >> 2];
+				PPU.WindowDirty = 2;
+			}
 			break;
 			
 		case 0x2C:
@@ -756,14 +809,20 @@ void PPU_Write8(u32 addr, u8 val)
 		
 		case 0x30:
 			if ((PPU.ColorMath1 ^ val) & 0x03)
+			{
 				PPU.ModeDirty = 1;
+				PPU.WindowDirty = 1;
+			}
 			PPU.ColorMath1 = val;
 			break;
 		case 0x31:
 			if ((PPU.ColorMath2 ^ val) & 0x80)
 				PPU.ColorEffectDirty = 1;
 			if ((PPU.ColorMath2 ^ val) & 0x7F)
+			{
 				PPU.ModeDirty = 1;
+				PPU.WindowDirty = 1;
+			}
 			PPU.ColorMath2 = val;
 			break;
 			
@@ -785,10 +844,11 @@ void PPU_Write8(u32 addr, u8 val)
 					SNES_Status->ScreenHeight = height;
 					ApplyScaling();
 				}
+				PPU.M7ExtBG = val & 0x40;
+				PPU.OBJVDir = val & 0x02;
+				PPU.Interlace = val & 0x1;
 				if (val & 0x80) bprintf("!! PPU EXT SYNC\n");
-				if (val & 0x40) bprintf("!! MODE7 EXTBG\n");
 				if (val & 0x08) bprintf("!! PSEUDO HIRES\n");
-				if (val & 0x02) bprintf("!! SMALL SPRITES\n");
 			}
 			break;
 			
@@ -871,14 +931,155 @@ inline void PPU_ComputeSingleWindow(PPU_WindowSegment* s, u32 x1, u32 x2, u32 ma
 	s->WindowMask = WINMASK_OUT;
 }
 
+void PPU_ComputerDoubleWindow(PPU_WindowSegment* s)
+{
+	if (PPU.WinX[0] < PPU.WinX[2])
+	{
+		// window 1 first
+		
+		// border to win1 x1
+		s->EndOffset = PPU.WinX[0];
+		s->WindowMask = WINMASK_OUT;
+		s++;
+		
+		if (PPU.WinX[2] < PPU.WinX[1])
+		{
+			// windows overlapped
+			
+			// win1 x1 to win2 x1
+			s->EndOffset = PPU.WinX[2];
+			s->WindowMask = WINMASK_1;
+			s++;
+
+			if(PPU.WinX[3] <= PPU.WinX[1])
+			{
+				// win2 fully in win1
+
+				// close win2
+				s->EndOffset = PPU.WinX[3];
+				s->WindowMask = WINMASK_12;
+				s++;
+
+				// close win1
+				s->EndOffset = PPU.WinX[1];
+				s->WindowMask = WINMASK_1;
+				s++;
+
+				// finish
+				s->EndOffset = 256;
+				s->WindowMask = WINMASK_OUT;
+				return;
+			}
+			
+			// windows intersect
+
+			// win2 x1 to win1 x2
+			s->EndOffset = PPU.WinX[1];
+			s->WindowMask = WINMASK_12;
+			s++;
+		}
+		else
+		{
+			// windows separate
+				
+			// win1 x1 to win1 x2
+			s->EndOffset = PPU.WinX[1];
+			s->WindowMask = WINMASK_1;
+			s++;
+				
+			// win1 x2 to win2 x1
+			s->EndOffset = PPU.WinX[2];
+			s->WindowMask = WINMASK_OUT;
+			s++;
+		}
+			
+		// to win2 x2
+		s->EndOffset = PPU.WinX[3];
+		s->WindowMask = WINMASK_2;
+		s++;
+			
+		// win2 x2 to border
+		s->EndOffset = 256;
+		s->WindowMask = WINMASK_OUT;
+	}
+	else
+	{
+		// window 2 first
+		
+		// border to win2 x1
+		s->EndOffset = PPU.WinX[2];
+		s->WindowMask = WINMASK_OUT;
+		s++;
+			
+		if (PPU.WinX[0] < PPU.WinX[3])
+		{
+			// windows overlapped
+			
+			// win2 x1 to win1 x1
+			s->EndOffset = PPU.WinX[0];
+			s->WindowMask = WINMASK_2;
+			s++;
+
+			if(PPU.WinX[1] <= PPU.WinX[3])
+			{
+				// win1 fully in win2
+				
+				// close win1
+				s->EndOffset = PPU.WinX[1];
+				s->WindowMask = WINMASK_12;
+				s++;
+
+				// close win2
+				s->EndOffset = PPU.WinX[3];
+				s->WindowMask = WINMASK_2;
+				s++;
+
+				// finish
+				s->EndOffset = 256;
+				s->WindowMask = WINMASK_OUT;
+				return;
+			}
+
+			// win1 x1 to win2 x2
+			s->EndOffset = PPU.WinX[3];
+			s->WindowMask = WINMASK_12;
+			s++;
+		}
+		else
+		{
+			// windows separate
+				
+			// win2 x1 to win2 x2
+			s->EndOffset = PPU.WinX[3];
+			s->WindowMask = WINMASK_2;
+			s++;
+				
+			// win2 x2 to win1 x1
+			s->EndOffset = PPU.WinX[0];
+			s->WindowMask = WINMASK_OUT;
+			s++;
+		}
+			
+		// to win1 x2
+		s->EndOffset = PPU.WinX[1];
+		s->WindowMask = WINMASK_1;
+		s++;
+			
+		// win1 x2 to border
+		s->EndOffset = 256;
+		s->WindowMask = WINMASK_OUT;
+	}
+}
+
 void PPU_ComputeWindows(PPU_WindowSegment* s)
 {
 	PPU_WindowSegment* first_s = s;
-	
+	//bprintf("-0- (%d,%d), -1- (%d,%d)\n", PPU.WinX[0], PPU.WinX[1], PPU.WinX[2], PPU.WinX[3]);
 	// check for cases that would disable windows fully
 	if ((!((PPU.MainScreen|PPU.SubScreen) & 0x1F00)) && 
 		(((PPU.ColorMath1 & 0x30) == 0x00) || ((PPU.ColorMath1 & 0x30) == 0x30)))
 	{
+		//bprintf("Disabled\n");
 		s->EndOffset = 256;
 		s->WindowMask = 0x0F;
 		s->ColorMath = 0x10;
@@ -898,101 +1099,7 @@ void PPU_ComputeWindows(PPU_WindowSegment* s)
 	else
 	{
 		// okay, we have two windows
-
-		if (PPU.WinX[0] < PPU.WinX[2])
-		{
-			// window 1 first
-			
-			// border to win1 x1
-			s->EndOffset = PPU.WinX[0];
-			s->WindowMask = WINMASK_OUT;
-			s++;
-			
-			if (PPU.WinX[2] < PPU.WinX[1])
-			{
-				// windows overlapped
-				
-				// win1 x1 to win2 x1
-				s->EndOffset = PPU.WinX[2];
-				s->WindowMask = WINMASK_1;
-				s++;
-				
-				// win2 x1 to win1 x2
-				s->EndOffset = PPU.WinX[1];
-				s->WindowMask = WINMASK_12;
-				s++;
-			}
-			else
-			{
-				// windows separate
-				
-				// win1 x1 to win1 x2
-				s->EndOffset = PPU.WinX[1];
-				s->WindowMask = WINMASK_1;
-				s++;
-				
-				// win1 x2 to win2 x1
-				s->EndOffset = PPU.WinX[2];
-				s->WindowMask = WINMASK_OUT;
-				s++;
-			}
-			
-			// to win2 x2
-			s->EndOffset = PPU.WinX[3];
-			s->WindowMask = WINMASK_2;
-			s++;
-			
-			// win2 x2 to border
-			s->EndOffset = 256;
-			s->WindowMask = WINMASK_OUT;
-		}
-		else
-		{
-			// window 2 first
-			
-			// border to win2 x1
-			s->EndOffset = PPU.WinX[2];
-			s->WindowMask = WINMASK_OUT;
-			s++;
-			
-			if (PPU.WinX[0] < PPU.WinX[3])
-			{
-				// windows overlapped
-				
-				// win2 x1 to win1 x1
-				s->EndOffset = PPU.WinX[0];
-				s->WindowMask = WINMASK_2;
-				s++;
-				
-				// win1 x1 to win2 x2
-				s->EndOffset = PPU.WinX[3];
-				s->WindowMask = WINMASK_12;
-				s++;
-			}
-			else
-			{
-				// windows separate
-				
-				// win2 x1 to win2 x2
-				s->EndOffset = PPU.WinX[3];
-				s->WindowMask = WINMASK_2;
-				s++;
-				
-				// win2 x2 to win1 x1
-				s->EndOffset = PPU.WinX[0];
-				s->WindowMask = WINMASK_OUT;
-				s++;
-			}
-			
-			// to win1 x2
-			s->EndOffset = PPU.WinX[1];
-			s->WindowMask = WINMASK_1;
-			s++;
-			
-			// win1 x2 to border
-			s->EndOffset = 256;
-			s->WindowMask = WINMASK_OUT;
-		}
+		PPU_ComputerDoubleWindow(s);
 	}
 	
 	// precompute the final window for color math

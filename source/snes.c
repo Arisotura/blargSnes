@@ -75,6 +75,8 @@ u16 SNES_DivRes = 0;
 bool SNES_FastROM = false;
 
 extern u8 DMA_HDMAFlag;
+extern u8 DMA_HDMACurFlag;
+extern u8 DMA_HDMAEnded;
 
 // execution trap
 // I/O regions are mapped to this buffer, so that when an accidental jump to those regions occurs,
@@ -531,6 +533,7 @@ void SNES_GIOWrite8(u32 addr, u8 val)
 			break;
 		case 0x0C:
 			DMA_HDMAFlag = val;
+			DMA_HDMACurFlag = val & ~DMA_HDMAEnded;
 			break;
 			
 		case 0x0D:
@@ -573,6 +576,7 @@ void SNES_GIOWrite16(u32 addr, u16 val)
 		case 0x0B:
 			DMA_Enable(val & 0xFF);
 			DMA_HDMAFlag = val >> 8;
+			DMA_HDMACurFlag = DMA_HDMAFlag & ~DMA_HDMAEnded;
 			break;
 			
 		default:
