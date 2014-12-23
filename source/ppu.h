@@ -227,6 +227,7 @@ typedef struct
 
 	u8 CurBrightness;
 	u8 ForcedBlank;
+	u8 Interlace;
 
 	u8 Mode;
 	
@@ -269,6 +270,9 @@ typedef struct
 	u8 WinSel[4] __attribute__((aligned(4)));
 	u8 WinLogic[2] __attribute__((aligned(2)));
 
+	u8 WinMask[3];
+	u8 WinCombine[2];
+
 	u8 BGOld;
 	u8 M7Old;
 
@@ -285,6 +289,7 @@ typedef struct
 	s16 M7RefY;
 	s16 M7XScroll;
 	s16 M7YScroll;
+	u8 M7ExtBG;
 	
 	PPU_Mode7Section Mode7Sections[240];
 	PPU_Mode7Section* CurMode7Section;
@@ -295,6 +300,7 @@ typedef struct
 	u16 OBJTilesetAddr;
 	u16* OBJTileset;
 	u32 OBJGap;
+	u8 OBJVDir;
 
 	u8 OBJWindowMask;
 	u16 OBJWindowCombine;

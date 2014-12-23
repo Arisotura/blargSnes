@@ -25,4 +25,7 @@ Credits
  * anyone who helped make lolSnes work
  * Bond697 and Normmatt for how to use the 3DS syscore
  * smealum for ctrulib and for paving the way to the PICA200
+ * Martin Korth for Fullsnes and no$sns's debugger
+ * the SNemulDS authors for their DSP emulation code
+ * DiscostewSM for his fixes and additions
  * if you feel I forgot your name here, let me know
