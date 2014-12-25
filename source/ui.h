@@ -60,6 +60,6 @@ void UI_ButtonPress(u32 btn);
 void UI_Touch(int touch, u32 x, u32 y);
 
 
-bool StartROM(char* path);
+bool StartROM(char* path, char* dir);
 
 #endif

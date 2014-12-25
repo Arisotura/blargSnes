@@ -516,7 +516,7 @@ void PPU_Write8(u32 addr, u8 val)
 				PPU.OBJWidth = &PPU_OBJWidths[(val & 0xE0) >> 4];
 				PPU.OBJHeight = &PPU_OBJHeights[(val & 0xE0) >> 4];
 				
-				PPU.OBJTilesetAddr = (val & 0x07) << 14;
+				PPU.OBJTilesetAddr = (val & 0x03) << 14;	// 3rd bit would make it outside of VRAM? Then why reserve 3 bits for this?
 				PPU.OBJTileset = (u16*)&PPU.VRAM[PPU.OBJTilesetAddr];
 				PPU.OBJGap = (val & 0x18) << 10;
 			}

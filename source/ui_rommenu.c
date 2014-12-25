@@ -18,11 +18,11 @@
 
 #include <3ds.h>
 #include "ui.h"
+#include "config.h"
 
 
 extern FS_archive sdmcArchive;
 
-char* filelist;
 int nfiles;
 int menusel = 0;
 int menuscroll = 0;
@@ -34,6 +34,24 @@ int scrolling = 0;
 
 int marquee_pos = 0;
 int marquee_dir = 0;
+
+struct LIST
+{
+	struct LIST * pNext;
+	void * item;
+};
+
+struct LISTITEM
+{
+	char * name;
+	int type;
+};
+
+struct LIST * head = NULL;
+struct LIST * curr = NULL;
+struct LISTITEM ** fileIdx;
+
+char dirshort[0x40];
 
 
 void strncpy_u2a(char* dst, u16* src, int n)
@@ -52,10 +70,105 @@ void strncpy_u2a(char* dst, u16* src, int n)
 	dst[i] = '\0';
 }
 
+int itemcmp(void * first, void * second)
+{
+	struct LISTITEM * firstli = (struct LISTITEM *)first;
+	struct LISTITEM * secondli = (struct LISTITEM *)second;
+	if(firstli->type != secondli->type)
+	{
+		if(firstli->type > secondli->type)
+			return -1;
+		else
+			return 1;
+	}
+	return strncasecmp(firstli->name, secondli->name, 0x105);
+}
+
+struct LIST * CreateList(void * item)
+{
+	struct LIST * ptr = (struct LIST*)MemAlloc(sizeof(struct LIST));
+	if(ptr == NULL)
+		return NULL;
+	ptr->item = item;
+	ptr->pNext = NULL;
+	head = curr = ptr;
+	return ptr;
+}
+
+struct LIST * AddToList(void * item)
+{
+	if(head == NULL)
+		return CreateList(item);
+	struct LIST * ptr = (struct LIST*)MemAlloc(sizeof(struct LIST));
+	if(ptr == NULL)
+		return NULL;
+	ptr->item = item;
+	ptr->pNext = NULL;
+
+	curr->pNext = ptr;
+	curr = ptr;
+
+	return ptr;
+}
+
+void DeleteItem(void * item)
+{
+	struct LISTITEM * thisitem = (struct LISTITEM *)(item);
+	MemFree(thisitem->name);
+	MemFree(item);
+}
+
+void DeleteList()
+{
+	while(head != NULL)
+	{
+		curr = head;
+		DeleteItem(curr->item);
+		head = head->pNext;
+		MemFree(curr);
+	}
+}
+
+
+struct LIST * SortList(struct LIST * pList) {
+    // zero or one element in list
+    if(pList == NULL || pList->pNext == NULL)
+        return pList;
+    // head is the first element of resulting sorted list
+    struct LIST * head = NULL;
+    while(pList != NULL) {
+        struct LIST * current = pList;
+        pList = pList->pNext;
+        if(head == NULL || (itemcmp(current->item, head->item) < 0)) {
+			//current->iValue < head->iValue) {
+            // insert into the head of the sorted list
+            // or as the first element into an empty sorted list
+            current->pNext = head;
+            head = current;
+        } else {
+            // insert current element into proper position in non-empty sorted list
+            struct LIST * p = head;
+            while(p != NULL) {
+                if(p->pNext == NULL || // last element of the sorted list
+					(itemcmp(current->item, p->pNext->item) < 0))
+                   //current->iValue < p->pNext->iValue) // middle of the list
+                {
+                    // insert into middle of the sorted list or as the last element
+                    current->pNext = p->pNext;
+                    p->pNext = current;
+                    break; // done
+                }
+                p = p->pNext;
+            }
+        }
+    }
+    return head;
+}
+
 
 bool IsGoodFile(FS_dirent* entry)
 {
-	if (entry->isDirectory) return false;
+	if (entry->isDirectory) return true;
 	
 	char* ext = (char*)entry->shortExt;
 	if (strncmp(ext, "SMC", 3) && strncmp(ext, "SFC", 3)) return false;
@@ -69,14 +182,14 @@ void DrawROMList()
 	int maxfile;
 	int menuy;
 	
-	DrawToolbar();
+	DrawToolbar(dirshort);
 	
 	menuy = 26;
 	y = menuy;
 	
 	if (nfiles < 1)
 	{
-		DrawText(3, y, RGB(255,64,64), "No ROMs found in /snes");
+		DrawText(3, y, RGB(255,64,64), "No ROMs found.");
 		return;
 	}
 	
@@ -92,7 +205,7 @@ void DrawROMList()
 		{
 			FillRect(0, 319, y, y+11, RGB(0,0,255));
 			
-			int textwidth = MeasureText(&filelist[0x106 * (menuscroll+i)]);
+			int textwidth = MeasureText(fileIdx[(menuscroll+i)]->name);
 			int maxwidth = (nfiles>MENU_MAX) ? 308:320;
 			if (textwidth > maxwidth)
 			{
@@ -128,7 +241,7 @@ void DrawROMList()
 			xoffset += marquee_pos;
 		}
 		
-		DrawText(xoffset, y, RGB(255,255,255), &filelist[0x106 * (menuscroll+i)]);
+		DrawText(xoffset, y, (fileIdx[(menuscroll+i)]->type ? RGB(255,255,64) : RGB(255,255,255)), fileIdx[(menuscroll+i)]->name);
 		y += 12;
 	}
 	
@@ -154,48 +267,101 @@ void DrawROMList()
 void ROMMenu_Init()
 {
 	Handle dirHandle;
-	FS_path dirPath = (FS_path){PATH_CHAR, 6, (u8*)"/snes"};
+	FS_path dirPath = (FS_path){PATH_CHAR, strlen(Config.DirPath)+1, (u8*)Config.DirPath};
 	FS_dirent entry;
 	int i;
 	
 	FSUSER_OpenDirectory(NULL, &dirHandle, sdmcArchive, dirPath);
-	nfiles = 0;
+	
+	
+	head = NULL;
+	curr = NULL;
+
+	if(strcmp(Config.DirPath,"/") == 0)
+	{
+		nfiles = 0;
+	}
+	else
+	{
+		struct LISTITEM * newItem= (struct LISTITEM *)MemAlloc(sizeof(struct LISTITEM));
+		newItem->name = (char*)MemAlloc(0x106);
+		strncpy(newItem->name, "/..", 0x105);
+		newItem->type = 2;
+		AddToList((void *)(newItem));
+		nfiles = 1;
+	}
+
 	for (;;)
 	{
 		u32 nread = 0;
 		FSDIR_Read(dirHandle, &nread, 1, &entry);
 		if (!nread) break;
 		if (!IsGoodFile(&entry)) continue;
+
+		struct LISTITEM * newItem = (struct LISTITEM *)MemAlloc(sizeof(struct LISTITEM));
+		newItem->name = (char*)MemAlloc(0x106);
+		newItem->type = (entry.isDirectory ? 1 : 0);
+		if(newItem->type)
+		{
+			newItem->name[0] = '/';
+			strncpy_u2a(&(newItem->name[1]), entry.name, 0x104);
+		}
+		else
+			strncpy_u2a(newItem->name, entry.name, 0x105);
+		AddToList((void *)(newItem));
 		nfiles++;
 	}
 	FSDIR_Close(dirHandle);
 
-	filelist = (char*)MemAlloc(0x106 * nfiles);
-	
-	// TODO: find out how to rewind it rather than reopening it?
-	FSUSER_OpenDirectory(NULL, &dirHandle, sdmcArchive, dirPath);
-	i = 0;
-	for (;;)
+	head = SortList(head);
+
+	fileIdx = (char**)MemAlloc(nfiles * sizeof(char*));
+
+	curr = head;
+	for(i = 0; i < nfiles; i++)
 	{
-		u32 nread = 0;
-		FSDIR_Read(dirHandle, &nread, 1, &entry);
-		if (!nread) break;
-		if (!IsGoodFile(&entry)) continue;
-		
-		// dirty way to copy an Unicode string
-		strncpy_u2a(&filelist[0x106 * i], entry.name, 0x105);
-		i++;
+		fileIdx[i] = (struct LISTITEM *)(curr->item);
+		curr = curr->pNext;
 	}
-	FSDIR_Close(dirHandle);
-	
-	// TODO: alphabetical sorting maybe
-	
+
+	char * dirname = Config.DirPath;
+	char * dirend = strrchr(dirname, '/');
+	char dirdeep = 0;	
+	strcpy(dirshort, "/\0");
+	if(dirname < dirend)
+	{
+		char * curdir = dirname;
+		while(MeasureText(dirname) > (256 - (dirdeep ? 22 : 0)))
+		{
+			if((curdir = strchr(&(dirname[1]), '/')) == dirend)
+				break;
+			dirdeep = 1;
+			dirname = curdir;
+		}
+		if(dirdeep)
+			strcat(dirshort, "../");
+		if(MeasureText(dirname) > (256 - (dirdeep ? 22 : 0)))
+		{
+			strncat(dirshort, &(dirname[1]), 62 - (dirdeep ? 3 : 0));
+			dirend = dirshort + strlen(dirshort) - 1;
+			while(MeasureText(dirshort) > (241 - (dirdeep ? 22 : 0)))
+			{
+				dirend[0] = '\0';
+				dirend--;
+			}
+			strcat(dirshort,"...");
+		}
+		else
+			strcat(dirshort, &(dirname[1]));
+	}
+		
 	menudirty = 2;
 }
 
 void ROMMenu_DeInit()
 {
-	MemFree(filelist);
+	MemFree(fileIdx);
+	DeleteList();
 }
 
 void ROMMenu_Render(bool force)
@@ -208,15 +374,44 @@ void ROMMenu_Render(bool force)
 	DrawROMList();
 }
 
+void ROMMenu_ExamineExec()
+{
+	if(!fileIdx[menusel]->type)
+	{
+		if (!StartROM(fileIdx[menusel]->name, Config.DirPath))
+			bprintf("Failed to load this ROM\nPress A to return to menu\n");
+	
+		UI_Switch(&UI_Console);
+	}
+	else
+	{
+		
+		if(fileIdx[menusel]->type == 2)
+		{
+			char* findpath = strrchr(Config.DirPath,'/');
+			if(findpath != Config.DirPath)
+			{
+				findpath[0] = '\0';
+				findpath = strrchr(Config.DirPath,'/');
+				findpath[1] = '\0';
+			}
+		}
+		else
+		{
+			strcat(Config.DirPath,&(fileIdx[menusel]->name[1]));
+			strcat(Config.DirPath,"/");
+		}
+		menusel = 0;
+		ROMMenu_DeInit();
+		ROMMenu_Init();
+		ROMMenu_Render(2);
+	}
+}
+
 void ROMMenu_ButtonPress(u32 btn)
 {
 	if (btn & (KEY_A|KEY_B))
-	{
-		if (!StartROM(&filelist[0x106*menusel]))
-			bprintf("Failed to load this ROM\nPress A to return to menu\n");
-			
-		UI_Switch(&UI_Console);
-	}
+		ROMMenu_ExamineExec();
 	else if (btn & KEY_UP) // up
 	{
 		menusel--;
@@ -281,10 +476,10 @@ void ROMMenu_Touch(int touch, u32 x, u32 y)
 			if (y >= nfiles) return;
 			
 			menusel = y;
-			if (!StartROM(&filelist[0x106*menusel]))
-				bprintf("Failed to load this ROM\nPress A to return to menu\n");
-				
-			UI_Switch(&UI_Console);
+			ROMMenu_ExamineExec();
+
+			marquee_pos = 0;
+			marquee_dir = 0;
 		}
 		/*else
 		{

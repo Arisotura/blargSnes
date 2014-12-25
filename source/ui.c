@@ -259,13 +259,14 @@ void DrawText(int x, int y, u32 color, char* str)
 #define TOOLBAR_HEIGHT 22
 #define BTN_WIDTH 26
 
-void DrawToolbar()
+void DrawToolbar(char * dir)
 {
 	u32 x;
 	u32 basey = (TOOLBAR_HEIGHT-12)/2;
-	
-	DrawText(basey, basey, RGB(255,255,255), "blargSNES 1.2+ Git");
-	
+
+	DrawText(basey, basey, RGB(255,255,255), dir);
+	//DrawText(basey, basey, RGB(255,255,255), "blargSNES 1.2+ Git");
+		
 	FillRect(0, 319, TOOLBAR_HEIGHT, TOOLBAR_HEIGHT, RGB(0,255,255));
 	FillRect(0, 319, TOOLBAR_HEIGHT+1, TOOLBAR_HEIGHT+1, RGB(0,128,255));
 	

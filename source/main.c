@@ -695,9 +695,9 @@ bool LoadBorder(char* path)
 }
 
 
-bool StartROM(char* path)
+bool StartROM(char* path, char* dir)
 {
-	char temppath[300];
+	char temppath[0x210];
 	Result res;
 	
 	if (spcthread)
@@ -718,13 +718,15 @@ bool StartROM(char* path)
 	bprintf("http://blargsnes.kuribo64.net/\n");
 	
 	// load the ROM
-	strncpy(temppath, "/snes/", 6);
-	strncpy(&temppath[6], path, 0x106);
-	temppath[6+0x106] = '\0';
-	bprintf("Loading %s...\n", temppath);
+	strcpy(temppath, dir);
+	strcpy(&temppath[strlen(dir)], path);
+	temppath[strlen(dir)+strlen(path)] = '\0';
+	bprintf("Loading %s...\n", path);
 	
 	if (!SNES_LoadROM(temppath))
 		return false;
+
+	SaveConfig(1);
 	
 	CPU_Reset();
 	SPC_Reset();
@@ -808,7 +810,7 @@ int main()
 	sdmcArchive = (FS_archive){0x9, (FS_path){PATH_EMPTY, 1, (u8*)""}};
 	FSUSER_OpenArchive(NULL, &sdmcArchive);
 	
-	LoadConfig();
+	LoadConfig(1);
 	
 	VRAM_Init();
 	SNES_Init();
