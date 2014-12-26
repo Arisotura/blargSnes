@@ -284,10 +284,12 @@ s8 keyWait;             76
 bool active;            77
 u8 brrHeader;           78
 bool echoEnabled;       79
+bool noiseEnabled;		80
+u8 empty[3];			81
 };
 */
 
-#define DSPCHANNEL_SIZE 80
+#define DSPCHANNEL_SIZE 84
 
 #define SAMPLESPEED_OFFSET 0
 #define SAMPLEPOS_OFFSET 4
@@ -308,6 +310,7 @@ bool echoEnabled;       79
 #define KEYWAIT_OFFSET 76
 #define ACTIVE_OFFSET 77
 #define ECHOENABLED_OFFSET 79
+#define NOISEENABLED_OFFSET 80
 
 @ r0 - channel structure base
 @ r1 - mix buffer
@@ -553,6 +556,13 @@ noSampleUpdate:
     @ This is really a >> 12 then << 1, but since samplePos bit 0 will never be set, it's safe.
     @ Must ensure that sampleSpeed bit 0 is never set, and samplePos is never set to anything but 0
     @ TODO - The speed up hack doesn't work.  Find out why
+
+	@ First, heck if this channel uses noise
+	ldrsb r9, [r0, #NOISEENABLED_OFFSET]
+	cmp  r9, #1
+	beq useNoise
+
+	@ not noise
     mov r12, SAMPLE_POS, lsr #12
     add r12, r0, r12, lsl #1
     ldrsh r8, [r12, #DECODED_OFFSET]
@@ -566,10 +576,16 @@ noSampleUpdate:
 	rsb r9, r9, #0xFF0
 	mla r14, r12, r9, r14
 	mov r8, r14, asr #12
+	b mixEchoDisabled
+		
+useNoise:
+	@ Noise is already computed, so grab from the noise table
+
+	ldr r12, =DSP_NoiseSamples
+	mov r9, r3, lsl #1
+	ldrsh r8, [r12, r9]
 	
-
-
-
+	
 mixEchoDisabled:
     ldr r9, [r1]
     mla r9, r8, LEFT_CALC_VOL, r9
@@ -712,6 +728,7 @@ channelNum:
 .byte 0
 echoEnabled:
 .byte 0
+
 
 .align
 .pool

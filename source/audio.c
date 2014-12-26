@@ -96,6 +96,7 @@ void Audio_Pause()
 
 void Audio_Mix()
 {
+	DspGenerateNoise();
 	DspMixSamplesStereo(DSPMIXBUFSIZE, &Audio_Buffer[cursample]);
 	cursample += DSPMIXBUFSIZE;
 	cursample &= ((MIXBUFSIZE << 1) - 1);
