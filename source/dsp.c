@@ -369,6 +369,10 @@ void DspKeyOnChannel(u32 i) {
     channels[i].prevSamp1 = 0;
     channels[i].prevSamp2 = 0;
 
+	channels[i].decoded[13] = 0;
+	channels[i].decoded[14] = 0;
+	channels[i].decoded[15] = 0;
+
     channels[i].envCount = ENVCNT_START;
     channels[i].active = true;
 	

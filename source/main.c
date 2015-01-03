@@ -97,11 +97,15 @@ int exitspc = 0;
 // +1 sample every 32 second
 void SPCThread(u32 blarg)
 {
+	//const double samplerate = 67027964.0 / (double)((u32)(67027964.0 / 32000.0));
+	const double samplerate = 67030870.0 / (double)((u32)(67030870.0 / 32000.0));
+	const double SAMPLE512TICK = 268123480.0 / (double)(samplerate / 512.0);
+	const double SAMPLE16TICK = 268123480.0 / (double)(samplerate / 16.0);
+	int audCnt = 32;
+	int audExt = 0;
+	u64 lastmixtime = svcGetSystemTick();
+	double mixtimediff = 0.0f;
 	int i;
-			/*u64 lastmixtime = svcGetSystemTick();
-			u32 mixtimes[2048];
-			memset(mixtimes, 0, 2048*4);
-			int k = 0;*/
 	while (!exitspc)
 	{
 		svcWaitSynchronization(SPCSync, U64_MAX);
@@ -109,39 +113,52 @@ void SPCThread(u32 blarg)
 		
 		if (!pause)
 		{
-			for (i = 0; i < 32; i++)
+			bool started = Audio_Begin();
+			if(started)
+			{
+				audCnt = 32;
+				audExt = 0;
+				mixtimediff = 0.0f;
+			}
+			for (i = 0; i < audCnt; i++)
 			{
 				DSP_ReplayWrites(i);
 				Audio_Mix();
 			}
-			
-			Audio_MixFinish();
-			/*if (k < 2048)
+			for(i = audCnt; i < 32; i++)
+				DSP_ReplayWrites(i);
+			audCnt = 32;
+			for(i = 0; i < audExt; i++)
+				Audio_Mix();
+			audExt = 0;
+ 
+			u64 curmixtime = svcGetSystemTick();
+			double diff = (double)(curmixtime - lastmixtime);
+			lastmixtime = curmixtime;
+			if(!started)
 			{
-				u64 t = svcGetSystemTick();
-				u32 diff = (u32)(t-lastmixtime);
-				lastmixtime = t;
-				mixtimes[k] = diff;
-				k++;
-				if (k >= 2048)
+				mixtimediff += diff - SAMPLE512TICK;
+				if(mixtimediff >= SAMPLE16TICK)
 				{
-					double avg = 0;
-					int m;
-					for (m = 0; m < 2048; m++) avg += (double)mixtimes[m];
-					avg /= 2048.0f;
-					avg = (avg * 1000.0f) / 268123480.0f;
-					// avg = time in ms for 512 samples
-					double freq = (1000.0f * 512.0f) / avg;
-					bprintf("time: %f | freq: %f\n", avg, freq);
-					
-					k = 0;
+					while(mixtimediff >= SAMPLE16TICK)
+					{
+						mixtimediff -= SAMPLE16TICK;
+						audExt++;
+					}
 				}
-			}*/
+				else
+				{
+					while(mixtimediff < 0)
+					{
+						mixtimediff += SAMPLE16TICK;
+						audCnt--;
+					}
+				}
+			}
 		}
 		else
 			Audio_Pause();
-	}
-	
+	}	
 	svcExitThread();
 }
 

@@ -24,7 +24,8 @@ void Audio_DeInit();
 
 void Audio_Pause();
 
+bool Audio_Begin();
+
 void Audio_Mix();
-void Audio_MixFinish();
 
 #endif

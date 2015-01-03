@@ -48,7 +48,8 @@ DecodeSampleBlockAsm:
 	ldrh r4, [r14, #52]
 	strh r4, [r14, #20]
 	ldrh r4, [r14, #54]
-	strh r4, [r14, #22]
+	strh r4, [r14, #22]	
+	
 	
     @ Load prev0 and prev1
     ldrsh PREV0, [r14, #62]
@@ -61,8 +62,8 @@ DecodeSampleBlockAsm:
     add r8, r8, r9, lsl #5 @ brrTabPtr = brrTab + (r4 * 32)
 
     mov CONST_F, #0xf << 1
-    ldr r11, =0xffff8000
-    ldr r12, =0x7fff
+    ldr r11, =0xffff800c
+    ldr r12, =0x7ff0
 
     @ 16 samples to decode, but do two at a time
     mov ITER_LEFT, #8
@@ -588,21 +589,21 @@ gaussianInterpolation:
 	@ out = out + ((gauss[000h+i] * new)    SAR 10) ;-with 16bit overflow handling
 	@ out = out SAR 1                               ;-convert 16bit result to 15bit
 
-	ldrh r9, [r14, #-6]		/* 0FFh */
+	ldr r9, =0x1FE			/* 0FFh ( << 1) */
 	rsb r9, r6, r9			/* 0FFh-i */
 	ldrh r7, [r14, r9]		/* gauss[0FFh-i] */
 	ldrsh r11, [r12], #2	/* oldest */
 	mul r8, r11, r7			/* gauss[0FFh-i] * oldest */
 	asr r8, #10				/* (gauss[0FFh-i] * oldest) SAR 10 */
 
-	ldrh r9, [r14, #-4]
+	ldr r9, =0x3FE
 	rsb r9, r6, r9
 	ldrh r7, [r14, r9]
 	ldrsh r11, [r12], #2
 	mul r9, r11, r7
 	add r8, r9, asr #10
 
-	ldrh r9, [r14, #-2]
+	ldrh r9, =0x200
 	add r9, r6
 	ldrh r7, [r14, r9]
 	ldrsh r11, [r12], #2
@@ -620,25 +621,7 @@ gaussianInterpolation:
 	ldmfd sp!, {r6-r7,r9-r12,r14}
 
 	b mixEchoDisabled
-
-	/*
-linearIntpolation:
-    mov r12, SAMPLE_POS, lsr #12
-    add r12, r0, r12, lsl #1
-    ldrsh r8, [r12, #DECODED_OFFSET]
 	
-	@ interpolate
-	@ final = ((final * pos4-11) + (finalprev * (255 - pos4-11))) >> 8
-	and r9, SAMPLE_POS, #0xFF0
-	sub r12, r12, #2
-	ldrsh r12, [r12, #DECODED_OFFSET]
-	mul r14, r8, r9
-	rsb r9, r9, #0xFF0
-	mla r14, r12, r9, r14
-	mov r8, r14, asr #12
-	b mixEchoDisabled
-	*/
-		
 useNoise:
 	@ Noise is already computed, so grab from the noise table
 
@@ -789,8 +772,6 @@ channelNum:
 .byte 0
 echoEnabled:
 .byte 0
-gaussianext:
-.hword 0x01FE,0x03FE,0x0200
 gaussian:
 .hword 0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000
 .hword 0x001,0x001,0x001,0x001,0x001,0x001,0x001,0x001,0x001,0x001,0x001,0x002,0x002,0x002,0x002,0x002
