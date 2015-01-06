@@ -709,8 +709,8 @@ clipAndMix:
     @ r6 - right volume
     @ r7 - TMP
     @ r8 - preamp
-    @ r9 - 
-    @ r10 - 
+    @ r9 - const -0x8000
+    @ r10 - const 0x7FFF
     @ r11 - 
     @ r12 - 
     @ r14 - 
@@ -718,8 +718,13 @@ clipAndMix:
     @ Do volume multiplication, mix in echo buffer and clipping here
     ldr r0, =numSamples
 	ldr r0, [r0]
+	
+	ldr r9,  =0xFFFF8000
+	ldr r10, =0x00007FFF
 
 mixClipLoop:
+	@ TODO: all that junk could take advantage of ARMv6 SIMD?
+	
     @ Load and scale by volume (LEFT)
     ldr r5, [r1], #4
     mov r5, r5, asr #15
@@ -729,10 +734,10 @@ mixClipLoop:
     mov r5, r5, asr #7
 
     @ Clip and store
-    cmp r5, #0x7f00
-    movgt r5, #0x7f00
-    cmn r5, #0x7f00
-    movlt r5, #0x8100
+    cmp r5, r10
+    movgt r5, r10
+    cmp r5, r9
+    movlt r5, r9
     strh r5, [r3]
     add r3, r3, #MIXBUFSIZE * 4
 
@@ -745,10 +750,10 @@ mixClipLoop:
     mov r5, r5, asr #7
 
     @ Clip and store
-    cmp r5, #0x7f00
-    movgt r5, #0x7f00
-    cmn r5, #0x7f00
-    movlt r5, #0x8100
+    cmp r5, r10
+    movgt r5, r10
+    cmp r5, r9
+    movlt r5, r9
     strh r5, [r3], #2
     sub r3, r3, #MIXBUFSIZE * 4
 
