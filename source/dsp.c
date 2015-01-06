@@ -1,11 +1,9 @@
 // This code has been taken from SNemulDS which is licensed under GPLv2.
 // Credits go to Archeide and whoever else participated in this.
 
-#include <3ds.h>
 
-#include "spc700.h"
 #include "dsp.h"
-#include "mixrate.h"
+
 
 // DSP write buffers
 // * 32 16-sample periods
@@ -46,18 +44,19 @@ DspChannel channels[8];
 u8 DSP_MEM[0x100];
 
 s32 mixBuffer[DSPMIXBUFSIZE * 2];
-//s32 echoBuffer[DSPMIXBUFSIZE * 2];
+s32 echoBuffer[DSPMIXBUFSIZE * 2];
+s8 firFilter[16];
 s16 brrTab[16 * 16];
-//u32 firTable[8 * 2 * 2];
-u8 *echoBase;
+u32 echoBase;
+u32 echoDelay ALIGNED;
 u16 dspPreamp ALIGNED = 0x140;
-u16 echoDelay ALIGNED;
-u16 echoCursor ALIGNED;
-//u8 firOffset ALIGNED;
+u16 echoRemain ALIGNED;
+
 
 // externs from dspmixer.S
 u32 DecodeSampleBlockAsm(u8 *blockPos, s16 *samplePos, DspChannel *channel);
 extern u8 channelNum;
+extern u16 firOffset;
 
 u32 DecodeSampleBlock(DspChannel *channel) {
     u8 *cur = (u8*)&(APU_MEM[channel->blockPos]);
@@ -95,7 +94,6 @@ u32 DecodeSampleBlock(DspChannel *channel) {
     return 0;
 }
 
-
 void DspGenerateNoise()
 {
 	int i = DSPMIXBUFSIZE;
@@ -120,8 +118,8 @@ void DspGenerateNoise()
 void DspReset() {
     // Delay for 1 sample
     echoDelay = 4;
-    echoCursor = 0;
-    echoBase = APU_MEM;
+	echoRemain = 1;
+    echoBase = 0;
 	int i=0,c=0;
 	
 	memset(DSP_WriteBuffer, 0, sizeof(DSP_WriteBuffer));
@@ -129,26 +127,21 @@ void DspReset() {
 	DSP_WritingWriteBuffer = DSP_WriteBuffer[0];
 	DSP_PlayingWriteBuffer = DSP_WriteBuffer[1];
 
-/*    firOffset = 0;
-    for (i = 0; i < 8*2*2; i++) {
-        firTable[i] = 0;
-    }*/
+    firOffset = 0;
+	for(i = 0; i > 8; i++)
+		firFilter[i] = 0;
+
  
     memset(DSP_MEM, 0, 0x100);
     // Disable echo emulation
-    //DSP_MEM[DSP_FLAG] = 0x20;
 	DSP_MEM[DSP_FLAG] = 0x60;
 
 	DSP_NoiseSample = 0x4000;
 	DSP_NoiseStep = 1;
 
-	for (i = 0; i < 8; i++) {
+	for (i = 0; i < 8; i++)
 		memset(&channels[i], 0, sizeof(DspChannel));
-        /*channels[i].samplePos = 0;
-        channels[i].envCount = 0;
-        channels[i].active = false;
-        channels[i].echoEnabled = false;*/
-	}
+
 
     // Build a lookup table for the range values (thanks to trac)
     for (i = 0; i < 13; i++) {
@@ -163,6 +156,10 @@ void DspReset() {
 			brrTab[(i << 4) + c] = 0xF800;
 	}
 
+}
+
+void DspSetFIRCoefficient(u32 index) {
+	firFilter[index] = DSP_MEM[(index << 4) + DSP_FIR];
 }
 
 void DspSetChannelVolume(u32 channel) {
@@ -387,8 +384,8 @@ void DspPrepareStateAfterReload() {
     // Set up echo delay
     DspWriteByte(DSP_MEM[DSP_EDL], DSP_EDL);
 
-    echoBase = APU_MEM + (DSP_MEM[DSP_ESA] << 8);
-    memset(echoBase, 0, echoDelay);
+    echoBase = ((u32)DSP_MEM[DSP_ESA] << 8);
+    //memset(&APU_MEM[echoBase], 0, echoDelay);
 
 	u32 i=0;
 	for (i = 0; i < 8; i++) {
@@ -476,7 +473,11 @@ void DspReplayWriteByte(u8 val, u8 address)
 			DspChangeChannelEnvelopeGain(address >> 4);
 			break;
 
-        case 0xC:
+		case DSP_FIR:
+			DspSetFIRCoefficient(address >> 4);
+			break;
+
+		case 0xC:
             switch (address >> 4) {
             case (DSP_KON >> 4):
 //                val &= ~DSP_MEM[DSP_KOF];
@@ -523,6 +524,10 @@ void DspReplayWriteByte(u8 val, u8 address)
 
         case 0xD:
             switch (address >> 4) {
+			case (DSP_EFB >> 4):
+				//bprintf("EFB - %d\n", (s8)val);
+				break;
+
             case (DSP_EDL >> 4):
                 val &= 0xf;
                 if (val == 0) {
@@ -530,6 +535,7 @@ void DspReplayWriteByte(u8 val, u8 address)
                 } else {
                     echoDelay = ((u32)(val << 4) * 32) << 2;
                 }
+				//bprintf("EDL - %x, %x, %d\n", val, echoDelay, echoDelay);
                 break;
 
             case (DSP_NON >> 4):
@@ -541,7 +547,8 @@ void DspReplayWriteByte(u8 val, u8 address)
                 break;
 
             case (DSP_ESA >> 4):
-                echoBase = APU_MEM + (DSP_MEM[DSP_ESA] << 8);
+                echoBase = (u32)val << 8;
+				//bprintf("ESA - %x, %x, %d\n", val, echoBase, echoBase);
                 break;
 
             case (DSP_EON >> 4):{
@@ -550,7 +557,7 @@ void DspReplayWriteByte(u8 val, u8 address)
                     channels[i].echoEnabled = (val >> i) & 1;
                 }}
                 break;
-            }
+            }			
     }
 
 /*

@@ -359,7 +359,7 @@ DspMixSamplesStereo:
 
     @ Clear the left and right mix buffers, saving their initial positions
     ldr r1, =mixBuffer
-@    ldr r2, =echoBuffer
+	ldr r2, =echoBuffer
     mov r3, #0
     mov r4, #0
     mov r5, #0
@@ -367,14 +367,14 @@ DspMixSamplesStereo:
 clearLoop:
     stmia r1!, {r3-r6}
     stmia r1!, {r3-r6}
-/*    stmia r2!, {r3-r6}
-    stmia r2!, {r3-r6}*/
+	stmia r2!, {r3-r6}
+    stmia r2!, {r3-r6}
     subs r0, r0, #4
     bne clearLoop
 
     @ Load the initial mix buffer and echo position
     ldr r1, =mixBuffer
-@    ldr r2, =echoBuffer
+	ldr r2, =echoBuffer
 
     ldr r0, =channels
 channelLoopback:
@@ -393,6 +393,8 @@ channelLoopback:
     ldmia r0, {r4-r7}
     ldrsh LEFT_CALC_VOL, [r0, #LEFTCALCVOL_OFFSET]
     ldrsh RIGHT_CALC_VOL, [r0, #RIGHTCALCVOL_OFFSET]
+
+	ldrb r14, [r0, #ECHOENABLED_OFFSET]
 
 mixLoopback:
 
@@ -564,24 +566,24 @@ noSampleUpdate:
     @ TODO - The speed up hack doesn't work.  Find out why
 
 	@ First, check if this channel uses noise
-	ldrsb r9, [r0, #NOISEENABLED_OFFSET]
+	ldrb r9, [r0, #NOISEENABLED_OFFSET]
 	cmp  r9, #1
 	beq useNoise
 
 gaussianInterpolation:
 	 
-	stmfd sp!, {r6-r7,r9-r12,r14}
+	stmfd sp!, {r6-r7,r9-r12}
     
 	mov r12, SAMPLE_POS, lsr #12
-	ldr r14, =gaussian
+	ldr r10, =gaussian
 	add r12, r0, r12, lsl #1
 	and r6, SAMPLE_POS, #0xFF0
 	add r12, #DECODED_OFFSET
 	lsr r6, #3				/* originally "lsr r6, #4", but at #3 and using pre-defined gaussian masks one shift up allows for use when loading half-words from gaussian table */
 	sub r12, #6
 	
-	@ r6 = interpolation index, r7 interpolation data, r8 = out sample, r9 = tmp, r11 = current sample
-	@ r12 = sample pointer, r14 = gaussian pointer
+	@ r6 = interpolation index, r7 interpolation data, r8 = out sample, r9 = tmp, r10 = gaussian pointer, r11 = current sample
+	@ r12 = sample pointer
 	
 	@ out =       ((gauss[0FFh-i] * oldest) SAR 10) ;-initial 16bit value
 	@ out = out + ((gauss[1FFh-i] * older)  SAR 10) ;-no 16bit overflow handling
@@ -591,36 +593,36 @@ gaussianInterpolation:
 
 	ldr r9, =0x1FE			/* 0FFh ( << 1) */
 	rsb r9, r6, r9			/* 0FFh-i */
-	ldrh r7, [r14, r9]		/* gauss[0FFh-i] */
+	ldrh r7, [r10, r9]		/* gauss[0FFh-i] */
 	ldrsh r11, [r12], #2	/* oldest */
 	mul r8, r11, r7			/* gauss[0FFh-i] * oldest */
 	asr r8, #10				/* (gauss[0FFh-i] * oldest) SAR 10 */
 
 	ldr r9, =0x3FE
 	rsb r9, r6, r9
-	ldrh r7, [r14, r9]
+	ldrh r7, [r10, r9]
 	ldrsh r11, [r12], #2
 	mul r9, r11, r7
 	add r8, r9, asr #10
 
 	ldrh r9, =0x200
 	add r9, r6
-	ldrh r7, [r14, r9]
+	ldrh r7, [r10, r9]
 	ldrsh r11, [r12], #2
 	mul r9, r11, r7
 	add r8, r9, asr #10
 	
 	mov r9, r6
-	ldrh r7, [r14, r9]
+	ldrh r7, [r10, r9]
 	ldrsh r11, [r12]
 	mul r9, r11, r7
 	add r8, r9, asr #10
 
 	asr r8, #1
 
-	ldmfd sp!, {r6-r7,r9-r12,r14}
+	ldmfd sp!, {r6-r7,r9-r12}
 
-	b mixEchoDisabled
+	b finishSample
 	
 useNoise:
 	@ Noise is already computed, so grab from the noise table
@@ -629,8 +631,8 @@ useNoise:
 	mov r9, r3, lsl #1
 	ldrsh r8, [r12, r9]
 	
-	
-mixEchoDisabled:
+finishSample:
+
     ldr r9, [r1]
     mla r9, r8, LEFT_CALC_VOL, r9
     str r9, [r1], #4
@@ -639,6 +641,18 @@ mixEchoDisabled:
     mla r9, r8, RIGHT_CALC_VOL, r9
     str r9, [r1], #4
 
+	cmp r14, #1
+	mov r12, #0
+	moveq r12, r8
+
+	ldr r9, [r2]
+	mla r9, r12, LEFT_CALC_VOL, r9
+	str r9, [r2], #4
+
+	ldr r9, [r2]
+	mla r9, r12, RIGHT_CALC_VOL, r9
+	str r9, [r2], #4
+	
     subs r3, r3, #1
     bne mixLoopback
 
@@ -681,9 +695,186 @@ nextChannelNothingDone:
     cmp r3, #8
     blt channelLoopback
 
+	
 @ This is the end of normal mixing
+@ Onto the echo mixing
+
+processEcho:
+
+@ r0	Sample count
+@ r1	FIR Left/Right Sample & Normal Echo Sample
+@ r2	Echo Buffer
+@ r3	Left Sample
+@ r4	Right Sample
+@ r5	const -0x8000
+@ r6	const  0x7FFF
+@ r7	FIR 8Tap Count
+@ r8	FIR value / DSP_MEM
+@ r9	FIR Filter / tmp
+@ r10	FIR Offset
+@ r11	FIR Buffer
+@ r12	Echo Base / Echo Delay
+@ r14	APU_MEM
+
+	@ Save the start position of the mix buffer & echo buffer
+    stmfd sp!, {r1,r2}
+
+    ldr r0, =numSamples
+	ldr r0, [r0]
+
+	@ addr = (ESA*100h+ram_index*4) AND FFFFh 
+
+	ldr r14, =SPC_RAM
+	ldr r12, =echoBase
+	ldr r12, [r12]
+	add r12, r14, r12
+
+	ldr r11, =firBuffer
+	ldr r10, =firOffset
+	ldrh r10, [r10]
+
+	ldr r5, =0xFFFF8000
+	ldr r6, =0x00007FFF
+	
+
+processEchoLoop:
+
+	@ buf[(i-0) AND 7] = EchoRAM[addr] SAR 1
+
+	ldrsh r3, [r12]
+	mov r3, r3, asr #1
+	ldrsh r4, [r12, #2]
+	mov r4, r4, asr #1
+
+	strh r3, [r11, r10]
+	add r10, r10, #2
+	strh r4, [r11, r10]
+	add r10, r10, #2
+
+
+	@ sum = sum + buf[(i - %7->%0) AND 7]*FIR%0->%7 SAR 6
+	mov r3, #0
+	mov r4, #0
+	ldr r9, =firFilter
+	mov r7, #8
+
+echo8TapLoop:
+	and r10, r10, #0x1F
+	ldrsb r8, [r9], #1
+
+	ldrsh r1, [r11, r10]
+	mul r1, r8, r1
+	add r3, r3, r1, asr #6
+	add r10, r10, #2
+
+	ldrsh r1, [r11, r10]
+	mul r1, r8, r1
+	add r4, r4, r1, asr #6
+	add r10, r10, #2
+
+	subs r7, r7, #1
+	bne echo8TapLoop
+
+echo8TapEnd:
+
+	@ Wrap FIR Offset
+
+	and r10, r10, #0x1F
+
+	@ I'ma give these samples....THE CLAMPS!!!
+
+	cmp r3, r6
+    movgt r3, r6
+    cmp r3, r5
+    movlt r3, r5
+
+	cmp r4, r6
+    movgt r4, r6
+    cmp r4, r5
+    movlt r4, r5
+
+	ldr r8, =DSP_MEM
+
+	@ echo_input=EchoVoices+((sum*EFB) SAR 7)
+	@ echo_input=echo_input AND FFFEh
+	@ if echo write enabled: EchoRAM[addr]=echo_input
+
+	ldrb r9, [r8, #0x6C]
+	and r9, r9, #0x20
+	cmp r9, #0x20
+	beq echoSkipWrite
+
+echoWrite:
+	ldrsb r7, [r8, #0x0D]
+
+	ldr r1, [r2]
+	mov r1, r1, asr #15
+	mul r9, r7, r3
+	add r1, r1, r9, asr #7
+	bic r1, r1, #1
+	strh r1, [r12]
+
+	ldr r1, [r2, #4]
+	mov r1, r1, asr #15
+	mul r9, r7, r4
+	add r1, r1, r9, asr #7
+	bic r1, r1, #1
+	strh r1, [r12, #2]
+
+echoSkipWrite:
+
+	@ audio_output=NormalVoices+((sum*EVOLx) SAR 7)
+	@ mixing will be done when normal audio is adjusted by master volume
+	
+	str r3, [r2], #4
+	str r4, [r2], #4
+
+	@ Wrap Echo Base
+
+	add r12, r12, #4
+	sub r9, r12, r14
+	cmp r9, #0x10000
+	subge r12, r12, #0x10000
+
+	@ Reload Echo Base and Remain if needed
+
+	ldr r4, =echoRemain
+	ldrh r3, [r4]
+	subs r3, r3, #1
+	bne echoSkipReset
+
+echoResetBase:
+
+	ldr r12, =echoDelay
+	ldrh r3, [r12]
+	mov r3, r3, lsr #2
+
+	ldrb r12, [r8, #0x6D]
+	add r12, r14, r12, lsl #8
+
+echoSkipReset:
+
+	strh r3, [r4]
+
+	subs r0, r0, #1
+	bne processEchoLoop
+	
+	@ Save various stuff, and continue to mixing
+
+	ldr r11, =firOffset
+	strh r10, [r11]
+
+	sub r12, r12, r14
+	ldr r14, =echoBase
+	str r12, [r14]
+
+	@ Reload mix&echo buffer position
+    ldmfd sp!, {r1,r2}
+
     
 clipAndMix:
+	
+
     @ Put the original output buffer into r3
     ldmfd sp!, {r3}
     
@@ -694,11 +885,18 @@ clipAndMix:
     ldr r9, =DSP_MEM
     ldrsb r4, [r9, #0x0C] @ Main left volume
     ldrsb r6, [r9, #0x1C] @ Main right volume
+	ldrsb r11, [r9, #0x2C] @ Main left echo volume
+	ldrsb r12, [r9, #0x3C] @ Main right echo volume
     
     mul r4, r8, r4
     mov r4, r4, asr #7
     mul r6, r8, r6
     mov r6, r6, asr #7
+	
+	mul r11, r8, r11
+	mov r11, r11, asr #7
+	mul r12, r8, r12
+	mov r12, r12, asr #7
 
     @ r0 - numSamples
     @ r1 - mix buffer
@@ -707,33 +905,34 @@ clipAndMix:
     @ r4 - left volume
     @ r5 - TMP (assigned to sample value)
     @ r6 - right volume
-    @ r7 - TMP
+    @ r7 - TMP (assigned to echo sample value)
     @ r8 - preamp
     @ r9 - const -0x8000
     @ r10 - const 0x7FFF
-    @ r11 - 
-    @ r12 - 
+    @ r11 - echo left volume
+    @ r12 - echo right volume
     @ r14 - 
 
     @ Do volume multiplication, mix in echo buffer and clipping here
     ldr r0, =numSamples
 	ldr r0, [r0]
-	
+
 	ldr r9,  =0xFFFF8000
 	ldr r10, =0x00007FFF
 
 mixClipLoop:
 	@ TODO: all that junk could take advantage of ARMv6 SIMD?
-	
+
     @ Load and scale by volume (LEFT)
     ldr r5, [r1], #4
     mov r5, r5, asr #15
     mul r5, r4, r5
-/*    ldr r7, [r2], #4
-    add r5, r5, r7, asr #7*/
-    mov r5, r5, asr #7
-
-    @ Clip and store
+	mov r5, r5, asr #7
+	ldr r7, [r2], #4
+	mul r7, r11, r7
+	add r5, r5, r7, asr #7	
+	
+	@ Clip and store
     cmp r5, r10
     movgt r5, r10
     cmp r5, r9
@@ -745,9 +944,11 @@ mixClipLoop:
     ldr r5, [r1], #4
     mov r5, r5, asr #15
     mul r5, r6, r5
-/*    ldr r7, [r2], #4
-    add r5, r5, r7, asr #7*/
-    mov r5, r5, asr #7
+	mov r5, r5, asr #7
+    ldr r7, [r2], #4
+	mul r7, r12, r7
+	add r5, r5, r7, asr #7
+		
 
     @ Clip and store
     cmp r5, r10
@@ -766,6 +967,7 @@ doneMix:
 .ENDFUNC
 
 .GLOBAL channelNum
+.GLOBAL firOffset
 
 .data
 
@@ -777,6 +979,10 @@ channelNum:
 .byte 0
 echoEnabled:
 .byte 0
+firOffset:
+.hword 0
+firBuffer:
+.hword 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 gaussian:
 .hword 0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000
 .hword 0x001,0x001,0x001,0x001,0x001,0x001,0x001,0x001,0x001,0x001,0x001,0x002,0x002,0x002,0x002,0x002

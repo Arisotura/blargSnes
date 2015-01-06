@@ -1,6 +1,11 @@
 // This code has been taken from SNemulDS which is licensed under GPLv2.
 // Credits go to Archeide and whoever else participated in this.
 
+#include <3ds.h>
+
+#include "spc700.h"
+#include "mixrate.h"
+
 #define ALIGNED __attribute__ ((aligned(4)))
 
 void DspReset();
@@ -10,6 +15,10 @@ extern u8 DSP_MEM[0x100];
 extern u16 dspPreamp;
 
 extern s16 DSP_NoiseSamples[17];
+
+extern u32 echoBase;
+extern u16 echoRemain;
+extern s8 firFilter[16];
 
 void DspMixSamplesStereo(u32 samples, s16 *mixBuf);
 void DspWriteByte(u8 val, u8 address);
@@ -40,7 +49,7 @@ struct _DspChannel {
     u8 brrHeader;
     bool echoEnabled;
 	bool noiseEnabled;
-	u8 empty[3];
+	u8 emptyend[3];
 } ALIGNED;
 typedef struct _DspChannel DspChannel;
 
@@ -77,6 +86,8 @@ extern DspChannel channels[8];
 #define DSP_DIR			0x5D
 #define DSP_ESA			0x6D
 #define DSP_EDL			0x7D
+
+#define DSP_FIR			0x0F
 
 // Envelope state definitions
 #define ENVSTATE_NONE       0
