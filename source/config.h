@@ -23,12 +23,12 @@ typedef struct
 {
 	int HardwareRenderer;
 	int ScaleMode;
-	
+	char DirPath[0x106]
 } Config_t;
 
 extern Config_t Config;
 
-void LoadConfig();
-void SaveConfig();
+void LoadConfig(u8 init);
+void SaveConfig(u8 saveCurDir);
 
 #endif

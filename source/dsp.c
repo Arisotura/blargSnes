@@ -28,6 +28,16 @@ static const s16 ENVCNT[0x20] = {
 	0x0C00,0x0F00,0x1400,0x1800,0x1E00,0x2800,0x3C00,0x7800
 };
 
+s16 DSP_NoiseSample;
+s16 DSP_NoiseSamples[17];
+u16 DSP_NoiseStep;
+static const u16 NOISESTEP[0x20] = {
+	0xFFFF,0x0800,0x0600,0x0500,0x0400,0x0300,0x0280,0x0200,
+	0x0180,0x0140,0x0100,0x00C0,0x00A0,0x0080,0x0060,0x0050,
+	0x0040,0x0030,0x0028,0x0020,0x0018,0x0014,0x0010,0x000C,
+	0x000A,0x0008,0x0006,0x0005,0x0004,0x0003,0x0002,0x0001
+};
+
 void DspSetEndOfSample(u32 channel);
 
 #define APU_MEM SPC_RAM
@@ -85,6 +95,28 @@ u32 DecodeSampleBlock(DspChannel *channel) {
     return 0;
 }
 
+
+void DspGenerateNoise()
+{
+	int i = DSPMIXBUFSIZE;
+	if(DSP_MEM[DSP_FLAG] & 0x1F)
+	{
+		for(; i > 0; i--)
+		{
+			DSP_NoiseSamples[i] = DSP_NoiseSample << 1;
+			DSP_NoiseStep--;
+			if(!DSP_NoiseStep)
+			{
+				DSP_NoiseSample = ((DSP_NoiseSample >> 1) & 0x3FFF) | (((DSP_NoiseSample ^ (DSP_NoiseSample >> 1)) & 0x1) << 14);
+				DSP_NoiseStep = NOISESTEP[DSP_MEM[DSP_FLAG] & 0x1F];
+			}
+		}
+	}
+	else
+		for(; i > 0; i--)
+			DSP_NoiseSamples[i] = DSP_NoiseSample << 1;
+}
+
 void DspReset() {
     // Delay for 1 sample
     echoDelay = 4;
@@ -104,7 +136,11 @@ void DspReset() {
  
     memset(DSP_MEM, 0, 0x100);
     // Disable echo emulation
-    DSP_MEM[DSP_FLAG] = 0x20;
+    //DSP_MEM[DSP_FLAG] = 0x20;
+	DSP_MEM[DSP_FLAG] = 0x60;
+
+	DSP_NoiseSample = 0x4000;
+	DSP_NoiseStep = 1;
 
 	for (i = 0; i < 8; i++) {
 		memset(&channels[i], 0, sizeof(DspChannel));
@@ -126,6 +162,7 @@ void DspReset() {
 		for(c = 8; c < 16; c++)
 			brrTab[(i << 4) + c] = 0xF800;
 	}
+
 }
 
 void DspSetChannelVolume(u32 channel) {
@@ -332,17 +369,16 @@ void DspKeyOnChannel(u32 i) {
     channels[i].prevSamp1 = 0;
     channels[i].prevSamp2 = 0;
 
+	channels[i].decoded[13] = 0;
+	channels[i].decoded[14] = 0;
+	channels[i].decoded[15] = 0;
+
     channels[i].envCount = ENVCNT_START;
     channels[i].active = true;
 	
 	/*bprintf("%d -> %04X %04X\n", 
 		i, 
 		channels[i].blockPos, channels[i].sampleSpeed);*/
-
-    if ((DSP_MEM[DSP_NOV]>>i)&1) {
-        channels[i].active = false;
-        // Noise sample
-    }
 
     DSP_MEM[DSP_ENDX] &= ~(1 << i);
 }
@@ -449,7 +485,7 @@ void DspReplayWriteByte(u8 val, u8 address)
                 if (val) {
                     DSP_MEM[DSP_KON] = val & DSP_MEM[DSP_KOF];
                     val &= ~DSP_MEM[DSP_KOF];
-			u32 i=0;
+					u32 i=0;
                     for (; i<8; i++)
                         if ((val>>i)&1) {
                             DspKeyOnChannel(i);
@@ -467,7 +503,18 @@ void DspReplayWriteByte(u8 val, u8 address)
                         channels[i].envSpeed = ENVCNT[0x1C];
                     }}
     			break;
-
+			case (DSP_FLAG >> 4):{
+					if(val & 0x80)
+					{
+						DSP_MEM[DSP_FLAG] = 0x60;
+						DSP_NoiseSample = 0x4000;
+						DSP_NoiseStep = 1;
+					}
+					else
+						DSP_MEM[DSP_FLAG] = val;
+				}
+				break;
+				
             case (DSP_ENDX >> 4):
 	    		DSP_MEM[DSP_ENDX] = 0;
 		    	break;
@@ -485,13 +532,12 @@ void DspReplayWriteByte(u8 val, u8 address)
                 }
                 break;
 
-            case (DSP_NOV >> 4):{
-			int i=0;
-                for (; i<8; i++)
-                if ((val>>i)&1) {
-                    // TODO: Need to implement noise channels
-                    channels[i].active = false;
-                }}
+            case (DSP_NON >> 4):
+				{
+					int i=0;
+					for (; i<8; i++)
+						channels[i].noiseEnabled = (val >> i ) & 0x1;
+				}
                 break;
 
             case (DSP_ESA >> 4):

@@ -9,6 +9,8 @@ void DspPrepareStateAfterReload();
 extern u8 DSP_MEM[0x100];
 extern u16 dspPreamp;
 
+extern s16 DSP_NoiseSamples[17];
+
 void DspMixSamplesStereo(u32 samples, s16 *mixBuf);
 void DspWriteByte(u8 val, u8 address);
 
@@ -37,6 +39,8 @@ struct _DspChannel {
     bool active;
     u8 brrHeader;
     bool echoEnabled;
+	bool noiseEnabled;
+	u8 empty[3];
 } ALIGNED;
 typedef struct _DspChannel DspChannel;
 
@@ -68,7 +72,7 @@ extern DspChannel channels[8];
 
 #define DSP_EFB			0x0D
 #define DSP_PMOD		0x2D
-#define DSP_NOV			0x3D
+#define DSP_NON			0x3D
 #define DSP_EON			0x4D
 #define DSP_DIR			0x5D
 #define DSP_ESA			0x6D

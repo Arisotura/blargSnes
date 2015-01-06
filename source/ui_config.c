@@ -87,12 +87,12 @@ void Config_Touch(int touch, u32 x, u32 y)
 	}
 	else if (x < 106 && y >= 200)
 	{
-		LoadConfig();
+		LoadConfig(0);
 		UI_Restore();
 	}
 	else if (x > 212 && y >= 200)
 	{
-		SaveConfig();
+		SaveConfig(0);
 		UI_Restore();
 	}
 	

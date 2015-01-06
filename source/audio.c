@@ -25,14 +25,11 @@
 // 0 = none, 1 = CSND, 2 = DSP
 int Audio_Type;
 
-s16* Audio_Buffer0;
-s16* Audio_Buffer1;
-
 s16* Audio_Buffer;
 
-u8 curbuffer = 0;
 u32 cursample = 0;
-u32 curpos = 0;
+
+bool isPlaying = false;
 
 
 void Audio_Init()
@@ -41,16 +38,10 @@ void Audio_Init()
 	
 	Audio_Type = 0;
 	
-	Audio_Buffer0 = (s16*)linearAlloc(MIXBUFSIZE*4*4);
-	Audio_Buffer1 = &Audio_Buffer0[MIXBUFSIZE*4];
-	
-	memset(Audio_Buffer0, 0, MIXBUFSIZE*4*4);
-	
-	curbuffer = 0;
-	Audio_Buffer = Audio_Buffer0;
+	Audio_Buffer = (s16*)linearAlloc(MIXBUFSIZE*4*2);
+	memset(Audio_Buffer, 0, MIXBUFSIZE*4*2);
 	
 	cursample = 0;
-	curpos = 0;
 	
 	// try using CSND
 	res = CSND_initialize(NULL);
@@ -58,6 +49,8 @@ void Audio_Init()
 	{
 		Audio_Type = 1;
 	}
+
+	isPlaying = false;
 	
 	// TODO: DSP black magic
 }
@@ -75,27 +68,33 @@ void Audio_DeInit()
 		
 		CSND_shutdown();
 	}
+	isPlaying = false;
 }
 
 void Audio_Pause()
 {
-	// stop
-	if (Audio_Type == 1)
+	if(isPlaying)
 	{
-		CSND_setchannel_playbackstate(8, 0);
-		CSND_setchannel_playbackstate(9, 0);
-		CSND_setchannel_playbackstate(10, 0);
-		CSND_setchannel_playbackstate(11, 0);
+		// stop
+		if (Audio_Type == 1)
+		{
+			CSND_setchannel_playbackstate(8, 0);
+			CSND_setchannel_playbackstate(9, 0);
+			CSND_setchannel_playbackstate(10, 0);
+			CSND_setchannel_playbackstate(11, 0);
 				
-		CSND_sharedmemtype0_cmdupdatestate(0);
-	}
+			CSND_sharedmemtype0_cmdupdatestate(0);
+		}
 	
-	memset(Audio_Buffer0, 0, MIXBUFSIZE*4*4);
-	GSPGPU_FlushDataCache(NULL, Audio_Buffer0, MIXBUFSIZE*4*4);
+		memset(Audio_Buffer, 0, MIXBUFSIZE*4*2);
+		GSPGPU_FlushDataCache(NULL, Audio_Buffer, MIXBUFSIZE*4*2);
+		isPlaying = false;
+	}
 }
 
 void Audio_Mix()
 {
+	DspGenerateNoise();
 	DspMixSamplesStereo(DSPMIXBUFSIZE, &Audio_Buffer[cursample]);
 	cursample += DSPMIXBUFSIZE;
 	cursample &= ((MIXBUFSIZE << 1) - 1);
@@ -136,28 +135,20 @@ void myCSND_playsound(u32 channel, u32 looping, u32 encoding, u32 samplerate, u3
 	CSND_setchannel_playbackstate(channel, 1);
 }
 
-void Audio_MixFinish()
+bool Audio_Begin()
 {
-	GSPGPU_FlushDataCache(NULL, Audio_Buffer, MIXBUFSIZE*4*4);
-	
-	curpos++;
-	if (curpos >= (MIXBUFSIZE/256))
-	{
-		if (Audio_Type == 1)
-		{
-			int newbuffer = curbuffer^1;
-			
-			myCSND_playsound(8+newbuffer,  1, CSND_ENCODING_PCM16, 32000, (u32*)&Audio_Buffer[0],            (u32*)&Audio_Buffer[(MIXBUFSIZE*2)-1], MIXBUFSIZE*4, 0xFFFF, 0);
-			myCSND_playsound(10+newbuffer, 1, CSND_ENCODING_PCM16, 32000, (u32*)&Audio_Buffer[MIXBUFSIZE*2], (u32*)&Audio_Buffer[(MIXBUFSIZE*4)-1], MIXBUFSIZE*4, 0, 0xFFFF);
-			
-			CSND_setchannel_playbackstate(8+curbuffer,  0);
-			CSND_setchannel_playbackstate(10+curbuffer, 0);
-			
-			CSND_sharedmemtype0_cmdupdatestate(0);
-		}
-		
-		curbuffer ^= 1;
-		Audio_Buffer = curbuffer ? Audio_Buffer1 : Audio_Buffer0;
-		curpos = 0;
-	}
+	if(isPlaying)
+	    return 0;
+ 
+	memset(Audio_Buffer, 0, MIXBUFSIZE*4*2);
+	GSPGPU_FlushDataCache(NULL, Audio_Buffer, MIXBUFSIZE*4*2);
+ 
+	myCSND_playsound(8, 1, CSND_ENCODING_PCM16, 32000, (u32*)&Audio_Buffer[0],            (u32*)&Audio_Buffer[0],            MIXBUFSIZE*4, 0xFFFF, 0);
+	myCSND_playsound(9, 1, CSND_ENCODING_PCM16, 32000, (u32*)&Audio_Buffer[MIXBUFSIZE*2], (u32*)&Audio_Buffer[MIXBUFSIZE*2], MIXBUFSIZE*4, 0, 0xFFFF);
+ 
+	CSND_sharedmemtype0_cmdupdatestate(0);
+ 
+	cursample = MIXBUFSIZE;//(MIXBUFSIZE * 3) >> 1;
+	isPlaying = true;
+	return 1;
 }

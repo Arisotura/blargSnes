@@ -29,17 +29,29 @@ Config_t Config;
 extern FS_archive sdmcArchive;
 const char* configFilePath = "/blargSnes.ini";
 
-const char* configFile = 
+const char* configFileL = 
 	"HardwareRenderer=%d\n"
-	"ScaleMode=%d\n";
+	"ScaleMode=%d\n"
+	"DirPath=%[^\t\n]\n";
+
+const char* configFileS = 
+	"HardwareRenderer=%d\n"
+	"ScaleMode=%d\n"
+	"DirPath=%s\n";
+
+char * lastDir[0x106];
 
 
-void LoadConfig()
+void LoadConfig(u8 init)
 {
+	char tempDir[0x106];
 	Config.HardwareRenderer = 1;
 	Config.ScaleMode = 0;
-	
-	
+	if(init) {
+		strncpy(Config.DirPath,"/\0",2);
+		strncpy(lastDir,"/\0",2);
+	}
+		
 	Handle file;
 	FS_path filePath;
 	filePath.type = PATH_CHAR;
@@ -59,21 +71,39 @@ void LoadConfig()
 	FSFILE_Read(file, &bytesread, 0, (u32*)tempbuf, size);
 	tempbuf[size] = '\0';
 	
-	sscanf(tempbuf, configFile, 
+	sscanf(tempbuf, configFileL, 
 		&Config.HardwareRenderer,
-		&Config.ScaleMode);
+		&Config.ScaleMode,
+		tempDir);
+	if(init && strlen(tempDir) > 0 && tempDir[0] == '/')
+	{
+		Handle dirHandle;
+		FS_path dirPath = (FS_path){PATH_CHAR, strlen(tempDir)+1, (u8*)tempDir};
+		Result resDir = FSUSER_OpenDirectory(NULL, &dirHandle, sdmcArchive, dirPath);
+		if (!resDir)
+		{
+			strncpy(Config.DirPath, tempDir, 0x106);
+			strncpy(lastDir, tempDir, 0x106);
+			FSDIR_Close(dirHandle);
+		}
+	}
 	
 	FSFILE_Close(file);
 	free(tempbuf);
 }
 
-void SaveConfig()
+void SaveConfig(u8 saveCurDir)
 {
 	Handle file;
 	FS_path filePath;
 	filePath.type = PATH_CHAR;
 	filePath.size = strlen(configFilePath) + 1;
 	filePath.data = (u8*)configFilePath;
+	char tempDir[0x106];
+	if(!saveCurDir)
+		strncpy(tempDir,lastDir,0x106);
+	else
+		strncpy(tempDir,Config.DirPath,0x106);
 	
 	Result res = FSUSER_OpenFile(NULL, &file, sdmcArchive, filePath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
 	if (res)
@@ -83,9 +113,10 @@ void SaveConfig()
 	}
 	
 	char* tempbuf = (char*)malloc(1024);
-	u32 size = snprintf(tempbuf, 1024, configFile, 
+	u32 size = snprintf(tempbuf, 1024, configFileS, 
 		Config.HardwareRenderer,
-		Config.ScaleMode);
+		Config.ScaleMode,
+		tempDir);
 		
 	FSFILE_SetSize(file, (u64)size);
 	
@@ -94,4 +125,7 @@ void SaveConfig()
 	
 	FSFILE_Close(file);
 	free(tempbuf);
+
+	if(saveCurDir)
+		strncpy(lastDir,Config.DirPath,0x106);
 }
