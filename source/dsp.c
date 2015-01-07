@@ -49,7 +49,7 @@ s8 firFilter[16];
 s16 brrTab[16 * 16];
 u32 echoBase;
 u32 echoDelay ALIGNED;
-u16 dspPreamp ALIGNED = 0x140;
+u16 dspPreamp ALIGNED = 0x100;
 u16 echoRemain ALIGNED;
 
 

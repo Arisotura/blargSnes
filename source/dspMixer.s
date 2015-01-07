@@ -617,7 +617,8 @@ gaussianInterpolation:
 	ldrsh r11, [r12]
 	mul r9, r11, r7
 	add r8, r9, asr #10
-
+	ssat r8, #17, r8
+	
 	asr r8, #1
 
 	ldmfd sp!, {r6-r7,r9-r12}
@@ -706,8 +707,8 @@ processEcho:
 @ r2	Echo Buffer
 @ r3	Left Sample
 @ r4	Right Sample
-@ r5	const -0x8000
-@ r6	const  0x7FFF
+@ r5	
+@ r6	
 @ r7	FIR 8Tap Count
 @ r8	FIR value / DSP_MEM
 @ r9	FIR Filter / tmp
@@ -732,10 +733,6 @@ processEcho:
 	ldr r11, =firBuffer
 	ldr r10, =firOffset
 	ldrh r10, [r10]
-
-	ldr r5, =0xFFFF8000
-	ldr r6, =0x00007FFF
-	
 
 processEchoLoop:
 
@@ -783,15 +780,8 @@ echo8TapEnd:
 
 	@ I'ma give these samples....THE CLAMPS!!!
 
-	cmp r3, r6
-    movgt r3, r6
-    cmp r3, r5
-    movlt r3, r5
-
-	cmp r4, r6
-    movgt r4, r6
-    cmp r4, r5
-    movlt r4, r5
+	ssat r3, #16, r3
+	ssat r4, #16, r4
 
 	ldr r8, =DSP_MEM
 
@@ -811,6 +801,7 @@ echoWrite:
 	mov r1, r1, asr #15
 	mul r9, r7, r3
 	add r1, r1, r9, asr #7
+	ssat r1, #16, r1
 	bic r1, r1, #1
 	strh r1, [r12]
 
@@ -818,6 +809,7 @@ echoWrite:
 	mov r1, r1, asr #15
 	mul r9, r7, r4
 	add r1, r1, r9, asr #7
+	ssat r1, #16, r1
 	bic r1, r1, #1
 	strh r1, [r12, #2]
 
@@ -907,8 +899,8 @@ clipAndMix:
     @ r6 - right volume
     @ r7 - TMP (assigned to echo sample value)
     @ r8 - preamp
-    @ r9 - const -0x8000
-    @ r10 - const 0x7FFF
+    @ r9 - 
+    @ r10 - 
     @ r11 - echo left volume
     @ r12 - echo right volume
     @ r14 - 
@@ -917,8 +909,6 @@ clipAndMix:
     ldr r0, =numSamples
 	ldr r0, [r0]
 
-	ldr r9,  =0xFFFF8000
-	ldr r10, =0x00007FFF
 
 mixClipLoop:
 	@ TODO: all that junk could take advantage of ARMv6 SIMD?
@@ -933,10 +923,7 @@ mixClipLoop:
 	add r5, r5, r7, asr #7	
 	
 	@ Clip and store
-    cmp r5, r10
-    movgt r5, r10
-    cmp r5, r9
-    movlt r5, r9
+	ssat r5, #16, r5
     strh r5, [r3]
     add r3, r3, #MIXBUFSIZE * 4
 
@@ -951,10 +938,7 @@ mixClipLoop:
 		
 
     @ Clip and store
-    cmp r5, r10
-    movgt r5, r10
-    cmp r5, r9
-    movlt r5, r9
+	ssat r5, #16, r5
     strh r5, [r3], #2
     sub r3, r3, #MIXBUFSIZE * 4
 
