@@ -51,7 +51,7 @@ typedef struct
 typedef struct
 {
 	u8 EndOffset;
-	
+	u8 Size;
 	union
 	{
 		struct
@@ -97,7 +97,8 @@ typedef struct
 	u16* Tileset;
 	u16* Tilemap;
 	u8 Size;
-	
+	u8 LastSize;
+
 	union
 	{
 		struct
