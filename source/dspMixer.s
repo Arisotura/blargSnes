@@ -112,8 +112,7 @@ case1:
     movgt PREV1, r12
     cmp PREV1, r11
     movlt PREV1, r11
-
-    mov PREV1, PREV1, lsl #1
+	mov PREV1, PREV1, lsl #1
     strh PREV1, [r1], #2
     ldrsh PREV1, [r1, #-2]
 
@@ -125,8 +124,7 @@ case1:
     movgt PREV0, r12
     cmp PREV0, r11
     movlt PREV0, r11
-
-    mov PREV0, PREV0, lsl #1
+	mov PREV0, PREV0, lsl #1
     strh PREV0, [r1], #2
     ldrsh PREV0, [r1, #-2]
 
@@ -156,7 +154,7 @@ case2:
     movgt PREV0, r12
     cmp PREV0, r11
     movlt PREV0, r11
-    mov PREV0, PREV0, lsl #1
+	mov PREV0, PREV0, lsl #1
     strh PREV0, [r1], #2
     ldrsh PREV0, [r1, #-2]
 
@@ -174,7 +172,7 @@ case2:
     movgt PREV0, r12
     cmp PREV0, r11
     movlt PREV0, r11
-    mov PREV0, PREV0, lsl #1
+	mov PREV0, PREV0, lsl #1
     strh PREV0, [r1], #2
     ldrsh PREV0, [r1, #-2]
     
@@ -202,7 +200,7 @@ case3:
     add r6, r6, PREV0
     add PREV0, SAMPLE1, r6
 
-    cmp PREV0, r12
+	cmp PREV0, r12
     movgt PREV0, r12
     cmp PREV0, r11
     movlt PREV0, r11
@@ -226,7 +224,7 @@ case3:
     movgt PREV0, r12
     cmp PREV0, r11
     movlt PREV0, r11
-    mov PREV0, PREV0, lsl #1
+	mov PREV0, PREV0, lsl #1
     strh PREV0, [r1], #2
     ldrsh PREV0, [r1, #-2]
 
@@ -291,7 +289,9 @@ bool active;            77
 u8 brrHeader;           78
 bool echoEnabled;       79
 bool noiseEnabled;		80
-u8 empty[3];			81
+bool pmodEnabled;		81
+bool pmodWrite;			82
+u8 empty;				83
 };
 */
 
@@ -317,6 +317,8 @@ u8 empty[3];			81
 #define ACTIVE_OFFSET 77
 #define ECHOENABLED_OFFSET 79
 #define NOISEENABLED_OFFSET 80
+#define PMODENABLED_OFFSET 81
+#define PMODWRITE_OFFSET 82
 
 @ r0 - channel structure base
 @ r1 - mix buffer
@@ -386,19 +388,43 @@ channelLoopback:
     @ Save the start position of the mix buffer & echo buffer
     stmfd sp!, {r1,r2}
 
-
 	ldr r3, =numSamples
-    ldrb r3, [r3]
+	ldrb r3, [r3]
+	
     @ Load the important variables into registers
     ldmia r0, {r4-r7}
-    ldrsh LEFT_CALC_VOL, [r0, #LEFTCALCVOL_OFFSET]
+
+	ldrsh LEFT_CALC_VOL, [r0, #LEFTCALCVOL_OFFSET]
     ldrsh RIGHT_CALC_VOL, [r0, #RIGHTCALCVOL_OFFSET]
 
 	ldrb r14, [r0, #ECHOENABLED_OFFSET]
 
 mixLoopback:
+	/*
+	@ Have to reload the sample speed each time
+	ldr SAMPLE_SPEED, [r0]
 
-    @ Commence the mixing
+	@ Channel 0 will always have PMOD turned off, so no need to check for channel index
+	ldrb r9, [r0, #PMODENABLED_OFFSET]
+	cmp r9, #1
+	bne noPitchModUsed
+	
+	ldr r8, =pmodTemp
+	add r8, r8, r3
+	ldrsb r9, [r8]
+	mov r9, r9, lsl #3
+	add r9, r9, #0x400
+	mul r12, SAMPLE_SPEED, r9
+	mov SAMPLE_SPEED, r12, asr #10
+	ldr r12, =0x3FFF
+	cmp SAMPLE_SPEED, r12
+	movgt SAMPLE_SPEED, r12
+
+noPitchModUsed:
+	*/
+	
+
+	@ Commence the mixing
     subs ENV_COUNT, ENV_COUNT, ENV_SPEED
     bpl noEnvelopeUpdate
 
@@ -546,6 +572,7 @@ storeEnvx:
     mov RIGHT_CALC_VOL, RIGHT_CALC_VOL, asr #7
     
 noEnvelopeUpdate:
+
     add SAMPLE_POS, SAMPLE_POS, SAMPLE_SPEED
     cmp SAMPLE_POS, #16 << 12
     blo noSampleUpdate
@@ -617,10 +644,10 @@ gaussianInterpolation:
 	ldrsh r11, [r12]
 	mul r9, r11, r7
 	add r8, r9, asr #10
-	ssat r8, #17, r8
-	
-	asr r8, #1
 
+	mov r8, r8, asr #1
+	ssat r8, #16, r8
+	
 	ldmfd sp!, {r6-r7,r9-r12}
 
 	b finishSample
@@ -653,7 +680,24 @@ finishSample:
 	ldr r9, [r2]
 	mla r9, r12, RIGHT_CALC_VOL, r9
 	str r9, [r2], #4
+
+	/*
+	ldrb r12, [r0, #PMODWRITE_OFFSET]
+	cmp r12, #1
+	bne skipPModWrite
+
+	ldr r12, =pmodTemp
+	add r12, r12, r3
+	ldrh r9, [r0, #ENVX_OFFSET]
+    mov r9, r9, lsr #ENVX_SHIFT
+	mul r9, r8, r9
+	@ Would think ASR #15 would be right, but that doesn't seem to be the case, unless precision sample-generation is required.....
+	mov r9, r9, asr #18
+	strb r9, [r12]
 	
+skipPModWrite:
+	*/
+
     subs r3, r3, #1
     bne mixLoopback
 
@@ -802,7 +846,6 @@ echoWrite:
 	mul r9, r7, r3
 	add r1, r1, r9, asr #7
 	ssat r1, #16, r1
-	bic r1, r1, #1
 	strh r1, [r12]
 
 	ldr r1, [r2, #4]
@@ -810,7 +853,6 @@ echoWrite:
 	mul r9, r7, r4
 	add r1, r1, r9, asr #7
 	ssat r1, #16, r1
-	bic r1, r1, #1
 	strh r1, [r12, #2]
 
 echoSkipWrite:
@@ -1000,6 +1042,8 @@ gaussian:
 .hword 0x4E5,0x4E7,0x4E9,0x4EB,0x4ED,0x4EF,0x4F1,0x4F3,0x4F5,0x4F6,0x4F8,0x4FA,0x4FB,0x4FD,0x4FF,0x500
 .hword 0x502,0x503,0x504,0x506,0x507,0x508,0x50A,0x50B,0x50C,0x50D,0x50E,0x50F,0x510,0x511,0x511,0x512
 .hword 0x513,0x514,0x514,0x515,0x516,0x516,0x517,0x517,0x517,0x518,0x518,0x518,0x518,0x518,0x519,0x519
+pmodTemp:
+.byte 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 
 .align
 .pool

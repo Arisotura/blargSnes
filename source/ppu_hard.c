@@ -1549,7 +1549,7 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 	u16 attrib;
 	u32 idx;
 	s32 x;
-	s32 width = (s32)PPU.OBJWidth[(oamextra & 0x2) >> 1];
+	s32 width = (s32)PPU.CurOBJSecSel->OBJWidth[(oamextra & 0x2) >> 1];
 	u32 palid, prio;
 	int yincr = 8;
 	int ntiles = 0;
@@ -1575,7 +1575,7 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 	
 	idx = (attrib & 0x01FF) << 5;
 	if(attrib & 0x100)
-		idx += PPU.OBJGap;
+		idx += PPU.CurOBJSecSel->OBJGap;
 	
 	if (attrib & 0x4000)
 		idx += ((width-1) & 0x38) << 2;
@@ -1618,7 +1618,7 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 				continue;
 			}
 			
-			u32 addr = PPU.OBJTilesetAddr + idx;
+			u32 addr = PPU.CurOBJSecSel->OBJTilesetAddr + idx;
 			u32 coord = PPU_StoreTileInCache(TILE_4BPP, palid, addr);
 			if (coord == 0xC000)
 			{
@@ -1682,8 +1682,12 @@ void PPU_HardRenderOBJs()
 		u8* oam = &PPU.OAM[i << 2];
 		u8 oamextra = PPU.OAM[0x200 + (i >> 2)] >> ((i & 0x03) << 1);
 		s32 oy = (s32)oam[1] + 1;
-		s32 oh = (s32)PPU.OBJHeight[(oamextra & 0x2) >> 1];
-		
+
+		PPU.CurOBJSecSel = &PPU.OBJSections[0];
+		while(PPU.CurOBJSecSel->EndOffset < oy && PPU.CurOBJSecSel->EndOffset < 240)
+			PPU.CurOBJSecSel++;
+		s32 oh = (s32)PPU.CurOBJSecSel->OBJHeight[(oamextra & 0x2) >> 1];
+
 		if ((oy+oh) > ystart && oy < yend)
 		{
 			ntiles += PPU_HardRenderOBJ(oam, oamextra, oy, oh, ystart, yend);
@@ -1890,6 +1894,13 @@ void PPU_RenderScanline_Hard(u32 line)
 		PPU.CurModeSection->ColorMath1 = PPU.ColorMath1;
 		PPU.CurModeSection->ColorMath2 = PPU.ColorMath2;
 		PPU.ModeDirty = 0;
+
+		PPU.CurOBJSection = &PPU.OBJSections[0];
+		PPU.CurOBJSection->OBJWidth = PPU.OBJWidth;
+		PPU.CurOBJSection->OBJHeight = PPU.OBJHeight;
+		PPU.CurOBJSection->OBJTilesetAddr = PPU.OBJTilesetAddr;
+		PPU.CurOBJSection->OBJGap = PPU.OBJGap;
+
 		
 		for (i = 0; i < 4; i++)
 		{
@@ -1941,8 +1952,22 @@ void PPU_RenderScanline_Hard(u32 line)
 			PPU.CurModeSection->SubScreen = PPU.SubScreen;
 			PPU.CurModeSection->ColorMath1 = PPU.ColorMath1;
 			PPU.CurModeSection->ColorMath2 = PPU.ColorMath2;
+						
+		}
+
+		if (PPU.OBJDirty)
+		{
+			PPU.CurOBJSection->EndOffset = line;
+			PPU.CurOBJSection++;
+
+			PPU.CurOBJSection->OBJWidth = PPU.OBJWidth;
+			PPU.CurOBJSection->OBJHeight = PPU.OBJHeight;
+			PPU.CurOBJSection->OBJTilesetAddr = PPU.OBJTilesetAddr;
+			PPU.CurOBJSection->OBJGap = PPU.OBJGap;
+			PPU.OBJDirty = 0;
 		}
 		
+
 		u32 optChange = 0;
 		for (i = 3; i >= 0; i--)
 		{
@@ -2289,6 +2314,8 @@ void PPU_VBlank_Hard()
 
 	PPU.CurModeSection->EndOffset = 240;
 	
+	PPU.CurOBJSection->EndOffset = 240;
+
 	for (i = 0; i < 4; i++)
 	{
 		PPU_Background* bg = &PPU.BG[i];

@@ -166,7 +166,6 @@ typedef struct
 	u8 Mode;
 	u16 MainScreen, SubScreen;
 	u8 ColorMath1, ColorMath2;
-	
 } PPU_ModeSection;
 
 typedef struct
@@ -176,6 +175,14 @@ typedef struct
 	u8 Div2;
 	
 } PPU_SubBackdropSection;
+
+typedef struct
+{
+	u8 EndOffset;
+	u8 *OBJWidth, *OBJHeight;
+	u16 OBJTilesetAddr;
+	u32 OBJGap;
+} PPU_OBJSection;
 
 
 typedef struct
@@ -297,10 +304,16 @@ typedef struct
 
 	PPU_Background BG[4];
 
+	PPU_OBJSection OBJSections[240];
+	PPU_OBJSection* CurOBJSection;
+	PPU_OBJSection* CurOBJSecSel;
+
 	u16 OBJTilesetAddr;
 	u16* OBJTileset;
 	u32 OBJGap;
 	u8 OBJVDir;
+
+	u8 OBJDirty;
 
 	u8 OBJWindowMask;
 	u16 OBJWindowCombine;
