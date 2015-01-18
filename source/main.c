@@ -810,19 +810,13 @@ int main()
 	pause = 0;
 	exitspc = 0;
 	
-	
 	ClearConsole();
 	
-	srvInit(); 
-		
-	aptInit();
 	aptOpenSession();
 	APT_SetAppCpuTimeLimit(NULL, 30); // enables syscore usage
 	aptCloseSession();
 
-	gfxInit();
-	hidInit(NULL);
-	fsInit();
+	gfxInitDefault();
 	
 	sdmcArchive = (FS_archive){0x9, (FS_path){PATH_EMPTY, 1, (u8*)""}};
 	FSUSER_OpenArchive(NULL, &sdmcArchive);
@@ -1081,11 +1075,7 @@ int main()
 	
 	bglDeInit();
 
-	fsExit();
-	hidExit();
 	gfxExit();
-	aptExit();
-	srvExit();
 
     return 0;
 }
