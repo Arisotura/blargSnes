@@ -49,7 +49,9 @@ struct _DspChannel {
     u8 brrHeader;
     bool echoEnabled;
 	bool noiseEnabled;
-	u8 emptyend[3];
+	bool pmodEnabled;
+	bool pmodWrite;
+	u8 empty;
 } ALIGNED;
 typedef struct _DspChannel DspChannel;
 

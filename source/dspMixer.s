@@ -112,8 +112,7 @@ case1:
     movgt PREV1, r12
     cmp PREV1, r11
     movlt PREV1, r11
-
-    mov PREV1, PREV1, lsl #1
+	mov PREV1, PREV1, lsl #1
     strh PREV1, [r1], #2
     ldrsh PREV1, [r1, #-2]
 
@@ -125,8 +124,7 @@ case1:
     movgt PREV0, r12
     cmp PREV0, r11
     movlt PREV0, r11
-
-    mov PREV0, PREV0, lsl #1
+	mov PREV0, PREV0, lsl #1
     strh PREV0, [r1], #2
     ldrsh PREV0, [r1, #-2]
 
@@ -156,7 +154,7 @@ case2:
     movgt PREV0, r12
     cmp PREV0, r11
     movlt PREV0, r11
-    mov PREV0, PREV0, lsl #1
+	mov PREV0, PREV0, lsl #1
     strh PREV0, [r1], #2
     ldrsh PREV0, [r1, #-2]
 
@@ -174,7 +172,7 @@ case2:
     movgt PREV0, r12
     cmp PREV0, r11
     movlt PREV0, r11
-    mov PREV0, PREV0, lsl #1
+	mov PREV0, PREV0, lsl #1
     strh PREV0, [r1], #2
     ldrsh PREV0, [r1, #-2]
     
@@ -202,7 +200,7 @@ case3:
     add r6, r6, PREV0
     add PREV0, SAMPLE1, r6
 
-    cmp PREV0, r12
+	cmp PREV0, r12
     movgt PREV0, r12
     cmp PREV0, r11
     movlt PREV0, r11
@@ -226,7 +224,7 @@ case3:
     movgt PREV0, r12
     cmp PREV0, r11
     movlt PREV0, r11
-    mov PREV0, PREV0, lsl #1
+	mov PREV0, PREV0, lsl #1
     strh PREV0, [r1], #2
     ldrsh PREV0, [r1, #-2]
 
@@ -291,7 +289,9 @@ bool active;            77
 u8 brrHeader;           78
 bool echoEnabled;       79
 bool noiseEnabled;		80
-u8 empty[3];			81
+bool pmodEnabled;		81
+bool pmodWrite;			82
+u8 empty;				83
 };
 */
 
@@ -317,6 +317,8 @@ u8 empty[3];			81
 #define ACTIVE_OFFSET 77
 #define ECHOENABLED_OFFSET 79
 #define NOISEENABLED_OFFSET 80
+#define PMODENABLED_OFFSET 81
+#define PMODWRITE_OFFSET 82
 
 @ r0 - channel structure base
 @ r1 - mix buffer
@@ -386,19 +388,43 @@ channelLoopback:
     @ Save the start position of the mix buffer & echo buffer
     stmfd sp!, {r1,r2}
 
-
 	ldr r3, =numSamples
-    ldrb r3, [r3]
+	ldrb r3, [r3]
+	
     @ Load the important variables into registers
     ldmia r0, {r4-r7}
-    ldrsh LEFT_CALC_VOL, [r0, #LEFTCALCVOL_OFFSET]
+
+	ldrsh LEFT_CALC_VOL, [r0, #LEFTCALCVOL_OFFSET]
     ldrsh RIGHT_CALC_VOL, [r0, #RIGHTCALCVOL_OFFSET]
 
 	ldrb r14, [r0, #ECHOENABLED_OFFSET]
 
 mixLoopback:
+	/*
+	@ Have to reload the sample speed each time
+	ldr SAMPLE_SPEED, [r0]
 
-    @ Commence the mixing
+	@ Channel 0 will always have PMOD turned off, so no need to check for channel index
+	ldrb r9, [r0, #PMODENABLED_OFFSET]
+	cmp r9, #1
+	bne noPitchModUsed
+	
+	ldr r8, =pmodTemp
+	add r8, r8, r3
+	ldrsb r9, [r8]
+	mov r9, r9, lsl #3
+	add r9, r9, #0x400
+	mul r12, SAMPLE_SPEED, r9
+	mov SAMPLE_SPEED, r12, asr #10
+	ldr r12, =0x3FFF
+	cmp SAMPLE_SPEED, r12
+	movgt SAMPLE_SPEED, r12
+
+noPitchModUsed:
+	*/
+	
+
+	@ Commence the mixing
     subs ENV_COUNT, ENV_COUNT, ENV_SPEED
     bpl noEnvelopeUpdate
 
@@ -546,6 +572,7 @@ storeEnvx:
     mov RIGHT_CALC_VOL, RIGHT_CALC_VOL, asr #7
     
 noEnvelopeUpdate:
+
     add SAMPLE_POS, SAMPLE_POS, SAMPLE_SPEED
     cmp SAMPLE_POS, #16 << 12
     blo noSampleUpdate
@@ -618,8 +645,9 @@ gaussianInterpolation:
 	mul r9, r11, r7
 	add r8, r9, asr #10
 
-	asr r8, #1
-
+	mov r8, r8, asr #1
+	ssat r8, #16, r8
+	
 	ldmfd sp!, {r6-r7,r9-r12}
 
 	b finishSample
@@ -652,7 +680,24 @@ finishSample:
 	ldr r9, [r2]
 	mla r9, r12, RIGHT_CALC_VOL, r9
 	str r9, [r2], #4
+
+	/*
+	ldrb r12, [r0, #PMODWRITE_OFFSET]
+	cmp r12, #1
+	bne skipPModWrite
+
+	ldr r12, =pmodTemp
+	add r12, r12, r3
+	ldrh r9, [r0, #ENVX_OFFSET]
+    mov r9, r9, lsr #ENVX_SHIFT
+	mul r9, r8, r9
+	@ Would think ASR #15 would be right, but that doesn't seem to be the case, unless precision sample-generation is required.....
+	mov r9, r9, asr #18
+	strb r9, [r12]
 	
+skipPModWrite:
+	*/
+
     subs r3, r3, #1
     bne mixLoopback
 
@@ -706,8 +751,8 @@ processEcho:
 @ r2	Echo Buffer
 @ r3	Left Sample
 @ r4	Right Sample
-@ r5	const -0x8000
-@ r6	const  0x7FFF
+@ r5	
+@ r6	
 @ r7	FIR 8Tap Count
 @ r8	FIR value / DSP_MEM
 @ r9	FIR Filter / tmp
@@ -732,10 +777,6 @@ processEcho:
 	ldr r11, =firBuffer
 	ldr r10, =firOffset
 	ldrh r10, [r10]
-
-	ldr r5, =0xFFFF8000
-	ldr r6, =0x00007FFF
-	
 
 processEchoLoop:
 
@@ -783,15 +824,8 @@ echo8TapEnd:
 
 	@ I'ma give these samples....THE CLAMPS!!!
 
-	cmp r3, r6
-    movgt r3, r6
-    cmp r3, r5
-    movlt r3, r5
-
-	cmp r4, r6
-    movgt r4, r6
-    cmp r4, r5
-    movlt r4, r5
+	ssat r3, #16, r3
+	ssat r4, #16, r4
 
 	ldr r8, =DSP_MEM
 
@@ -811,14 +845,14 @@ echoWrite:
 	mov r1, r1, asr #15
 	mul r9, r7, r3
 	add r1, r1, r9, asr #7
-	bic r1, r1, #1
+	ssat r1, #16, r1
 	strh r1, [r12]
 
 	ldr r1, [r2, #4]
 	mov r1, r1, asr #15
 	mul r9, r7, r4
 	add r1, r1, r9, asr #7
-	bic r1, r1, #1
+	ssat r1, #16, r1
 	strh r1, [r12, #2]
 
 echoSkipWrite:
@@ -907,8 +941,8 @@ clipAndMix:
     @ r6 - right volume
     @ r7 - TMP (assigned to echo sample value)
     @ r8 - preamp
-    @ r9 - const -0x8000
-    @ r10 - const 0x7FFF
+    @ r9 - 
+    @ r10 - 
     @ r11 - echo left volume
     @ r12 - echo right volume
     @ r14 - 
@@ -917,8 +951,6 @@ clipAndMix:
     ldr r0, =numSamples
 	ldr r0, [r0]
 
-	ldr r9,  =0xFFFF8000
-	ldr r10, =0x00007FFF
 
 mixClipLoop:
 	@ TODO: all that junk could take advantage of ARMv6 SIMD?
@@ -933,10 +965,7 @@ mixClipLoop:
 	add r5, r5, r7, asr #7	
 	
 	@ Clip and store
-    cmp r5, r10
-    movgt r5, r10
-    cmp r5, r9
-    movlt r5, r9
+	ssat r5, #16, r5
     strh r5, [r3]
     add r3, r3, #MIXBUFSIZE * 4
 
@@ -951,10 +980,7 @@ mixClipLoop:
 		
 
     @ Clip and store
-    cmp r5, r10
-    movgt r5, r10
-    cmp r5, r9
-    movlt r5, r9
+	ssat r5, #16, r5
     strh r5, [r3], #2
     sub r3, r3, #MIXBUFSIZE * 4
 
@@ -1016,6 +1042,8 @@ gaussian:
 .hword 0x4E5,0x4E7,0x4E9,0x4EB,0x4ED,0x4EF,0x4F1,0x4F3,0x4F5,0x4F6,0x4F8,0x4FA,0x4FB,0x4FD,0x4FF,0x500
 .hword 0x502,0x503,0x504,0x506,0x507,0x508,0x50A,0x50B,0x50C,0x50D,0x50E,0x50F,0x510,0x511,0x511,0x512
 .hword 0x513,0x514,0x514,0x515,0x516,0x516,0x517,0x517,0x517,0x518,0x518,0x518,0x518,0x518,0x519,0x519
+pmodTemp:
+.byte 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 
 .align
 .pool

@@ -922,8 +922,8 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart,
 			oyoff = o->YScroll >> yshift;
 			tilemapx = PPU.VRAM + o->TilemapOffset + ((oyoff & 0xF8) << 3);
 			tilemapy = PPU.VRAM + o->TilemapOffset + (((oyoff + 8) & 0xF8) << 3);
-			if (oyoff & 0x100) if (obg->Size & 0x2) tilemapx += (obg->Size & 0x1) ? 2048 : 1024;
-			if ((oyoff+8) & 0x100) if (obg->Size & 0x2) tilemapy += (obg->Size & 0x1) ? 2048 : 1024;
+			if (oyoff & 0x100) if (o->Size & 0x2) tilemapx += (o->Size & 0x1) ? 2048 : 1024;
+			if ((oyoff+8) & 0x100) if (o->Size & 0x2) tilemapy += (o->Size & 0x1) ? 2048 : 1024;
 			syend1 = syend + (hi && PPU.Interlace ? 3 : 7);
 			y = systart;
 			oy = y - (yoff & 7);
@@ -946,8 +946,8 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart,
 			tilemap = PPU.VRAM + s->TilemapOffset + ((yoff & 0xF8) << 3);
 			if (yoff & 0x100)
 			{
-				if (bg->Size & 0x2)
-					tilemap += (bg->Size & 0x1) ? 2048 : 1024;
+				if (s->Size & 0x2)
+					tilemap += (s->Size & 0x1) ? 2048 : 1024;
 			}
 			
 			xoff = s->XScroll;
@@ -959,7 +959,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart,
 					idx = (xoff & 0xF8) >> 3;
 					if (xoff & 0x100)
 					{
-						if (bg->Size & 0x1)
+						if (s->Size & 0x1)
 							idx += 1024;
 					}
 					yf = oy;
@@ -969,7 +969,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart,
 					u32 hofs = xoff;
 					int vofs = yoff;
 					idx = (ox - 8 + oxoff) >> 3;
-					if ((ox - 8 + oxoff) & 0x100) if (obg->Size & 0x1) idx += 1024;
+					if ((ox - 8 + oxoff) & 0x100) if (o->Size & 0x1) idx += 1024;
 					u16 hval = tilemapx[idx], vval;
 					if(opt==4)
 					{
@@ -986,9 +986,9 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart,
 					if (hval & validBit) hofs = ox + (hval & 0x1F8) - (hval & 0x200);
 					if (vval & validBit) vofs = y + (vval & 0x1FF) - (vval & 0x200);
 					tilemap = PPU.VRAM + s->TilemapOffset + ((vofs & 0xF8) << 3);
-					if(vofs & 0x100) if(bg->Size & 0x2) tilemap += (bg->Size & 0x1) ? 2048 : 1024;
+					if(vofs & 0x100) if(s->Size & 0x2) tilemap += (s->Size & 0x1) ? 2048 : 1024;
 					idx = (hofs & 0xF8) >> 3;
-					if (hofs & 0x100) if (bg->Size & 0x1) idx += 1024;
+					if (hofs & 0x100) if (s->Size & 0x1) idx += 1024;
 					yf = y - (vofs & 7);
 				}
 
@@ -1147,8 +1147,8 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystar
 			tilemap = PPU.VRAM + s->TilemapOffset + ((yoff & 0x1F0) << 2);
 			if (yoff & 0x200)
 			{
-				if (bg->Size & 0x2)
-					tilemap += (bg->Size & 0x1) ? 2048 : 1024;
+				if (s->Size & 0x2)
+					tilemap += (s->Size & 0x1) ? 2048 : 1024;
 			}
 			
 			xoff = s->XScroll;
@@ -1159,7 +1159,7 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystar
 				idx = (xoff & 0x1F0) >> 4;
 				if (xoff & 0x200)
 				{
-					if (bg->Size & 0x1)
+					if (s->Size & 0x1)
 						idx += 1024;
 				}
 
@@ -1549,7 +1549,7 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 	u16 attrib;
 	u32 idx;
 	s32 x;
-	s32 width = (s32)PPU.OBJWidth[(oamextra & 0x2) >> 1];
+	s32 width = (s32)PPU.CurOBJSecSel->OBJWidth[(oamextra & 0x2) >> 1];
 	u32 palid, prio;
 	int yincr = 8;
 	int ntiles = 0;
@@ -1575,7 +1575,7 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 	
 	idx = (attrib & 0x01FF) << 5;
 	if(attrib & 0x100)
-		idx += PPU.OBJGap;
+		idx += PPU.CurOBJSecSel->OBJGap;
 	
 	if (attrib & 0x4000)
 		idx += ((width-1) & 0x38) << 2;
@@ -1618,7 +1618,7 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 				continue;
 			}
 			
-			u32 addr = PPU.OBJTilesetAddr + idx;
+			u32 addr = PPU.CurOBJSecSel->OBJTilesetAddr + idx;
 			u32 coord = PPU_StoreTileInCache(TILE_4BPP, palid, addr);
 			if (coord == 0xC000)
 			{
@@ -1682,8 +1682,12 @@ void PPU_HardRenderOBJs()
 		u8* oam = &PPU.OAM[i << 2];
 		u8 oamextra = PPU.OAM[0x200 + (i >> 2)] >> ((i & 0x03) << 1);
 		s32 oy = (s32)oam[1] + 1;
-		s32 oh = (s32)PPU.OBJHeight[(oamextra & 0x2) >> 1];
-		
+
+		PPU.CurOBJSecSel = &PPU.OBJSections[0];
+		while(PPU.CurOBJSecSel->EndOffset < oy && PPU.CurOBJSecSel->EndOffset < 240)
+			PPU.CurOBJSecSel++;
+		s32 oh = (s32)PPU.CurOBJSecSel->OBJHeight[(oamextra & 0x2) >> 1];
+
 		if ((oy+oh) > ystart && oy < yend)
 		{
 			ntiles += PPU_HardRenderOBJ(oam, oamextra, oy, oh, ystart, yend);
@@ -1890,6 +1894,13 @@ void PPU_RenderScanline_Hard(u32 line)
 		PPU.CurModeSection->ColorMath1 = PPU.ColorMath1;
 		PPU.CurModeSection->ColorMath2 = PPU.ColorMath2;
 		PPU.ModeDirty = 0;
+
+		PPU.CurOBJSection = &PPU.OBJSections[0];
+		PPU.CurOBJSection->OBJWidth = PPU.OBJWidth;
+		PPU.CurOBJSection->OBJHeight = PPU.OBJHeight;
+		PPU.CurOBJSection->OBJTilesetAddr = PPU.OBJTilesetAddr;
+		PPU.CurOBJSection->OBJGap = PPU.OBJGap;
+
 		
 		for (i = 0; i < 4; i++)
 		{
@@ -1898,9 +1909,11 @@ void PPU_RenderScanline_Hard(u32 line)
 			bg->CurSection = &bg->Sections[0];
 			bg->CurSection->ScrollParams = bg->ScrollParams;
 			bg->CurSection->GraphicsParams = bg->GraphicsParams;
+			bg->CurSection->Size = bg->Size;
 			
 			bg->LastScrollParams = bg->ScrollParams;
 			bg->LastGraphicsParams = bg->GraphicsParams;
+			bg->LastSize = bg->Size;
 		}
 		
 		PPU.CurMode7Section = &PPU.Mode7Sections[0];
@@ -1941,8 +1954,22 @@ void PPU_RenderScanline_Hard(u32 line)
 			PPU.CurModeSection->SubScreen = PPU.SubScreen;
 			PPU.CurModeSection->ColorMath1 = PPU.ColorMath1;
 			PPU.CurModeSection->ColorMath2 = PPU.ColorMath2;
+						
+		}
+
+		if (PPU.OBJDirty)
+		{
+			PPU.CurOBJSection->EndOffset = line;
+			PPU.CurOBJSection++;
+
+			PPU.CurOBJSection->OBJWidth = PPU.OBJWidth;
+			PPU.CurOBJSection->OBJHeight = PPU.OBJHeight;
+			PPU.CurOBJSection->OBJTilesetAddr = PPU.OBJTilesetAddr;
+			PPU.CurOBJSection->OBJGap = PPU.OBJGap;
+			PPU.OBJDirty = 0;
 		}
 		
+
 		u32 optChange = 0;
 		for (i = 3; i >= 0; i--)
 		{
@@ -1952,13 +1979,13 @@ void PPU_RenderScanline_Hard(u32 line)
 			{
 				if(i==2 && (PPU.CurModeSection->Mode & 0x7) > 0 && !(PPU.CurModeSection->Mode & 0x1))
 				{
-					if(bg->ScrollParams == bg->LastScrollParams && bg->GraphicsParams == bg->LastGraphicsParams)
+					if(bg->ScrollParams == bg->LastScrollParams && bg->GraphicsParams == bg->LastGraphicsParams && bg->Size == bg->LastSize)
 						continue;
 					else
 						optChange = 1;
 				}
 				else
-					if (bg->ScrollParams == bg->LastScrollParams && bg->GraphicsParams == bg->LastGraphicsParams)
+					if (bg->ScrollParams == bg->LastScrollParams && bg->GraphicsParams == bg->LastGraphicsParams && bg->Size == bg->LastSize)
 						continue;
 			}
 				
@@ -1967,9 +1994,11 @@ void PPU_RenderScanline_Hard(u32 line)
 			
 			bg->CurSection->ScrollParams = bg->ScrollParams;
 			bg->CurSection->GraphicsParams = bg->GraphicsParams;
+			bg->CurSection->Size = bg->Size;
 			
 			bg->LastScrollParams = bg->ScrollParams;
 			bg->LastGraphicsParams = bg->GraphicsParams;
+			bg->LastSize = bg->Size;
 		}
 
 		PPU.ModeDirty = 0;
@@ -2289,6 +2318,8 @@ void PPU_VBlank_Hard()
 
 	PPU.CurModeSection->EndOffset = 240;
 	
+	PPU.CurOBJSection->EndOffset = 240;
+
 	for (i = 0; i < 4; i++)
 	{
 		PPU_Background* bg = &PPU.BG[i];

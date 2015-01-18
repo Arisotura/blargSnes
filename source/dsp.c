@@ -49,7 +49,7 @@ s8 firFilter[16];
 s16 brrTab[16 * 16];
 u32 echoBase;
 u32 echoDelay ALIGNED;
-u16 dspPreamp ALIGNED = 0x140;
+u16 dspPreamp ALIGNED = 0x100;
 u16 echoRemain ALIGNED;
 
 
@@ -524,9 +524,6 @@ void DspReplayWriteByte(u8 val, u8 address)
 
         case 0xD:
             switch (address >> 4) {
-			case (DSP_EFB >> 4):
-				//bprintf("EFB - %d\n", (s8)val);
-				break;
 
             case (DSP_EDL >> 4):
                 val &= 0xf;
@@ -535,8 +532,18 @@ void DspReplayWriteByte(u8 val, u8 address)
                 } else {
                     echoDelay = ((u32)(val << 4) * 32) << 2;
                 }
-				//bprintf("EDL - %x, %x, %d\n", val, echoDelay, echoDelay);
                 break;
+
+			case (DSP_PMOD >> 4):
+				{
+					int i=1;
+					for (; i<8; i++)
+					{
+						channels[i].pmodEnabled = (val >> i) & 0x1;
+						channels[i-1].pmodWrite = channels[i].pmodEnabled;
+					}
+				}
+				break;
 
             case (DSP_NON >> 4):
 				{
@@ -548,7 +555,6 @@ void DspReplayWriteByte(u8 val, u8 address)
 
             case (DSP_ESA >> 4):
                 echoBase = (u32)val << 8;
-				//bprintf("ESA - %x, %x, %d\n", val, echoBase, echoBase);
                 break;
 
             case (DSP_EON >> 4):{
@@ -559,14 +565,4 @@ void DspReplayWriteByte(u8 val, u8 address)
                 break;
             }			
     }
-
-/*
-		case DSP_PMOD:
-			for (int i=0; i<8; i++)
-				if ((val>>i)&1) {
-//					dspunimpl(DSP_PMOD);
-//					channels[i].active = 0;
-				}
-			break;
-            */
 }
