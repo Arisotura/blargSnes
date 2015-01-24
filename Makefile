@@ -11,6 +11,10 @@ ifeq ($(strip $(CTRULIB)),)
 $(error "Please set CTRULIB in your environment. export CTRULIB=<path to>libctru")
 endif
 
+ifeq ($(strip $(AEMSTRO)),)
+$(error "Please set AEMSTRO in your environment. export AEMSTRO=<path to>aemstro")
+endif
+
 TOPDIR ?= $(CURDIR)
 include $(DEVKITARM)/3ds_rules
 

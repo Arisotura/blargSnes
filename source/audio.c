@@ -143,10 +143,13 @@ bool Audio_Begin()
 	memset(Audio_Buffer, 0, MIXBUFSIZE*4*2);
 	GSPGPU_FlushDataCache(NULL, Audio_Buffer, MIXBUFSIZE*4*2);
  
-	myCSND_playsound(8, 1, CSND_ENCODING_PCM16, 32000, (u32*)&Audio_Buffer[0],            (u32*)&Audio_Buffer[0],            MIXBUFSIZE*4, 0xFFFF, 0);
-	myCSND_playsound(9, 1, CSND_ENCODING_PCM16, 32000, (u32*)&Audio_Buffer[MIXBUFSIZE*2], (u32*)&Audio_Buffer[MIXBUFSIZE*2], MIXBUFSIZE*4, 0, 0xFFFF);
- 
-	CSND_sharedmemtype0_cmdupdatestate(0);
+	if (Audio_Type == 1)
+	{
+		myCSND_playsound(8, 1, CSND_ENCODING_PCM16, 32000, (u32*)&Audio_Buffer[0],            (u32*)&Audio_Buffer[0],            MIXBUFSIZE*4, 0xFFFF, 0);
+		myCSND_playsound(9, 1, CSND_ENCODING_PCM16, 32000, (u32*)&Audio_Buffer[MIXBUFSIZE*2], (u32*)&Audio_Buffer[MIXBUFSIZE*2], MIXBUFSIZE*4, 0, 0xFFFF);
+	 
+		CSND_sharedmemtype0_cmdupdatestate(0);
+	}
  
 	cursample = MIXBUFSIZE;//(MIXBUFSIZE * 3) >> 1;
 	isPlaying = true;

@@ -44,6 +44,8 @@
 #include "plain_quad_vsh_shbin.h"
 #include "window_mask_vsh_shbin.h"
 
+#include "version.h"
+
 
 u32* gpuOut;
 u32* gpuDOut;
@@ -366,7 +368,7 @@ void SafeWait(Handle evt)
 	// this method of waiting avoids that
 	// it's dirty and doesn't solve the actual issue but atleast it avoids a freeze
 	
-	Result res = svcWaitSynchronization(evt, 20*1000*1000);
+	Result res = svcWaitSynchronization(evt, 40*1000*1000);
 	if (!res)
 		svcClearEvent(evt);
 }
@@ -377,7 +379,7 @@ void RenderTopScreen()
 	bglUseShader(finalShader);
 	
 	bglOutputBuffers(gpuOut, gpuDOut);
-	bglViewport(0, 0, 240*2, 400);
+	bglViewport(0, 0, 240, 400);
 	
 	bglEnableDepthTest(false);
 	bglColorDepthMask(GPU_WRITE_ALL);
@@ -440,7 +442,7 @@ void ContinueRendering()
 		case 1:
 			if (PeekEvent(gspEvents[GSPEVENT_P3D]))
 			{
-				GX_SetDisplayTransfer(NULL, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
+				GX_SetDisplayTransfer(NULL, gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
 				RenderState = 2;
 			}
 			break;
@@ -468,7 +470,7 @@ void FinishRendering()
 	{
 		//gspWaitForP3D();
 		SafeWait(gspEvents[GSPEVENT_P3D]);
-		GX_SetDisplayTransfer(NULL, gpuOut, 0x019001E0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019001E0, 0x01001000);
+		GX_SetDisplayTransfer(NULL, gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
 		RenderState = 2;
 	}
 	if (RenderState == 2)
@@ -731,7 +733,7 @@ bool StartROM(char* path, char* dir)
 	framecount = 0;
 	
 	ClearConsole();
-	bprintf("blargSNES console\n");
+	bprintf("blargSNES %s\n", BLARGSNES_VERSION);
 	bprintf("http://blargsnes.kuribo64.net/\n");
 	
 	// load the ROM
@@ -810,19 +812,13 @@ int main()
 	pause = 0;
 	exitspc = 0;
 	
-	
 	ClearConsole();
 	
-	srvInit(); 
-		
-	aptInit();
 	aptOpenSession();
 	APT_SetAppCpuTimeLimit(NULL, 30); // enables syscore usage
 	aptCloseSession();
 
-	gfxInit();
-	hidInit(NULL);
-	fsInit();
+	gfxInitDefault();
 	
 	sdmcArchive = (FS_archive){0x9, (FS_path){PATH_EMPTY, 1, (u8*)""}};
 	FSUSER_OpenArchive(NULL, &sdmcArchive);
@@ -1081,11 +1077,7 @@ int main()
 	
 	bglDeInit();
 
-	fsExit();
-	hidExit();
 	gfxExit();
-	aptExit();
-	srvExit();
 
     return 0;
 }
