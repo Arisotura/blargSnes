@@ -126,7 +126,6 @@ bool SNES_LoadROM(char* path)
 	
 	if (SNES_SRAMMask)
 	{
-		// TODO
 		strncpy(SNES_SRAMPath, path, strlen(path)-3);
 		strncpy(SNES_SRAMPath + strlen(path)-3, "srm", 3);
 		SNES_SRAMPath[strlen(path)] = '\0';
