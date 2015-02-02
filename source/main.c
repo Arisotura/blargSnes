@@ -884,6 +884,20 @@ int main()
 	svcCreateEvent(&SPCSync, 0); 
 	
 	UI_Switch(&UI_ROMMenu);
+	
+	/*u8 sillycrap[128];
+	memset(sillycrap, 0, 128);
+	u32 hash16 = Murmur3(sillycrap, 16, 0);
+	u32 hash32 = Murmur3(sillycrap, 32, 0);
+	u32 hash64 = Murmur3(sillycrap, 64, 0);
+	u32 hash128 = Murmur3(sillycrap, 128, 0);*/
+	int z = 0;
+	u64 t1 = svcGetSystemTick();
+	for (z = 0; z < 32768; z++)
+		Murmur3(&PPU.VRAM[z], 32, 0);
+	u64 t2 = svcGetSystemTick();
+	UI_Switch(&UI_Console);
+	bprintf("%d\n", (u32)(t2-t1));
 
 	APP_STATUS status;
 	while (!forceexit && (status = aptGetStatus()) != APP_EXITING)

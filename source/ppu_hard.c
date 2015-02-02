@@ -54,10 +54,12 @@ u16* Mode7ColorBufferU;
 
 u32 YOffset256[256];
 
-//u16 TempPalette[256];
-#define TempPalette PPU.Palette
+u16 TempPalette[256];
 
 int doingBG = 0;
+
+u8 LastBrightness;
+u8 RenderStartY, LastEndY;
 
 
 // tile cache:
@@ -156,6 +158,13 @@ void PPU_Init_Hard()
 		
 		YOffset256[i] = y;
 	}
+}
+
+void PPU_Reset_Hard()
+{
+	LastBrightness = 0;
+	RenderStartY = 1;
+	LastEndY = 1;
 }
 
 void PPU_DeInit_Hard()
@@ -367,9 +376,65 @@ u32 PPU_DecodeTile_8bpp(u16* vram, u16* pal, u32* dst)
 }
 
 
+// Murmur3 hash
+// hash values for zero data
+// 16b  -> 8134CDF8
+// 32b  -> 1850D298
+// 64b  -> AE685C50
+// 128b -> 53557B7B
+u32 Murmur3(const void* key, u32 len, u32 seed) 
+{
+	/*static const u32 c1 = 0xcc9e2d51;
+	static const u32 c2 = 0x1b873593;
+	static const u32 r1 = 15;
+	static const u32 r2 = 13;
+	static const u32 m = 5;
+	static const u32 n = 0xe6546b64;
+ 
+	u32 hash = seed;
+ 
+	const int nblocks = len >> 2;
+	const u32* blocks = (const u32*) key;
+	int i;
+	for (i = 0; i < nblocks; i++) 
+	{
+		u32 k = blocks[i];
+		k *= c1;
+		k = (k << r1) | (k >> (32 - r1));
+		k *= c2;
+ 
+		hash ^= k;
+		hash = ((hash << r2) | (hash >> (32 - r2))) * m + n;
+	}
+ 
+	hash ^= len;
+	hash ^= (hash >> 16);
+	hash *= 0x85ebca6b;
+	hash ^= (hash >> 13);
+	hash *= 0xc2b2ae35;
+	hash ^= (hash >> 16);
+ 
+	return hash;*/
+	
+	int i;
+	const u32* data = (const u32*)key;
+	len >>= 2;
+	
+	for (i = 0; i < len; i++)
+	{
+		seed *= 0x600DCAFE;
+		seed ^= data[i];
+	}
+	
+	return seed;
+}
+
+
 
 u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 {
+	const u32 palsizes[] = {8, 32, 512};
+	
 	u32 key;
 	u32 paldirty = 0;
 	u32 vramdirty = 0;
@@ -529,7 +594,7 @@ void PPU_StartBG(u32 hi)
 
 
 
-void PPU_ClearMainScreen()
+void PPU_ClearMainScreen(u32 ystart, u32 yend)
 {
 	u8* vptr = (u8*)vertexPtr;
 	
@@ -585,17 +650,25 @@ void PPU_ClearMainScreen()
 	bglAttribBuffer(vptr);
 	
 	int nvtx = 0;
-	int ystart = 1;
 	PPU_ModeSection* s = &PPU.ModeSections[0];
 	for (;;)
 	{
+		u32 endoffset = s->EndOffset;
+		if (endoffset <= ystart)
+		{
+			s++;
+			continue;
+		}
+		
+		if (endoffset > yend) endoffset = yend;
+		
 		u8 alpha = (s->ColorMath2 & 0x20) ? 0xFF:0x80;
-		ADDVERTEX(0, ystart, 0x80,      	r, g, b, alpha);
-		ADDVERTEX(256, s->EndOffset, 0x80,  r, g, b, alpha);
+		ADDVERTEX(0, ystart, 0x80,       r, g, b, alpha);
+		ADDVERTEX(256, endoffset, 0x80,  r, g, b, alpha);
 		nvtx += 2;
 		
-		if (s->EndOffset >= 240) break;
-		ystart = s->EndOffset;
+		if (endoffset >= yend) break;
+		ystart = endoffset;
 		s++;
 	}
 	
@@ -621,7 +694,7 @@ void PPU_ClearMainScreen()
 #undef ADDVERTEX
 }
 
-void PPU_ClearSubScreen()
+void PPU_ClearSubScreen(u32 ystart, u32 yend)
 {
 	u8* vptr = (u8*)vertexPtr;
 	
@@ -672,10 +745,18 @@ void PPU_ClearSubScreen()
 	bglAttribBuffer(vptr);
 		
 	int nvtx = 0;
-	int ystart = 1;
 	PPU_SubBackdropSection* s = &PPU.SubBackdropSections[0];
 	for (;;)
 	{
+		u32 endoffset = s->EndOffset;
+		if (endoffset <= ystart)
+		{
+			s++;
+			continue;
+		}
+		
+		if (endoffset > yend) endoffset = yend;
+		
 		u16 col = s->Color;
 		u8 r = (col & 0xF800) >> 8; r |= (r >> 5);
 		u8 g = (col & 0x07C0) >> 3; g |= (g >> 5);
@@ -684,12 +765,12 @@ void PPU_ClearSubScreen()
 		// 'If "Sub Screen BG/OBJ Enable" is off (2130h.Bit1=0), then the "Div2" isn't forcefully ignored'
 		// -> this causes a glitch in Super Puyo Puyo-- it has subscreen disabled but color math enabled on BG1 AND div2 enabled
 		u8 alpha = 0xFF;//(s->Div2) ? 0x80:0xFF;
-		ADDVERTEX(0, ystart, 0x80,      	r, g, b, alpha);
-		ADDVERTEX(256, s->EndOffset, 0x80,  r, g, b, alpha);
+		ADDVERTEX(0, ystart, 0x80,       r, g, b, alpha);
+		ADDVERTEX(256, endoffset, 0x80,  r, g, b, alpha);
 		nvtx += 2;
 		
-		if (s->EndOffset >= 240) break;
-		ystart = s->EndOffset;
+		if (endoffset >= yend) break;
+		ystart = endoffset;
 		s++;
 	}
 	
@@ -703,7 +784,7 @@ void PPU_ClearSubScreen()
 }
 
 
-void PPU_DrawWindowMask(u32 snum)
+void PPU_DrawWindowMask(u32 snum, u32 ystart, u32 yend)
 {
 	// a bit of trickery is used here to easily fill the stencil buffer
 	//
@@ -742,10 +823,18 @@ void PPU_DrawWindowMask(u32 snum)
 	bglAttribBuffer(vptr);
 		
 	int nvtx = 0;
-	int ystart = 1;
 	PPU_WindowSection* s = &PPU.WindowSections[0];
 	for (;;)
 	{
+		u32 endoffset = s->EndOffset;
+		if (endoffset <= ystart)
+		{
+			s++;
+			continue;
+		}
+		
+		if (endoffset > yend) endoffset = yend;
+		
 		int xstart = 0;
 		PPU_WindowSegment* ws = &s->Window[0];
 		for (;;)
@@ -763,8 +852,8 @@ void PPU_DrawWindowMask(u32 snum)
 			ws++;
 		}
 		
-		if (s->EndOffset >= 240) break;
-		ystart = s->EndOffset;
+		if (endoffset >= yend) break;
+		ystart = endoffset;
 		s++;
 	}
 	
@@ -778,7 +867,7 @@ void PPU_DrawWindowMask(u32 snum)
 }
 
 
-void PPU_ClearAlpha(u32 snum)
+void PPU_ClearAlpha(u32 snum, u32 ystart, u32 yend)
 {
 	u8* vptr = (u8*)vertexPtr;
 	
@@ -831,8 +920,8 @@ void PPU_ClearAlpha(u32 snum)
 	bglAttribType(1, GPU_UNSIGNED_BYTE, 4);	// color
 	bglAttribBuffer(vptr);
 	
-	ADDVERTEX(0, 0, 0,      255, 0, 255, 255);
-	ADDVERTEX(256, 256, 0,  255, 0, 255, 255);
+	ADDVERTEX(0, ystart, 0,  255, 0, 255, 255);
+	ADDVERTEX(256, yend, 0,  255, 0, 255, 255);
 	vptr = (u8*)((((u32)vptr) + 0xF) & ~0xF);
 	
 	bglDrawArrays(GPU_UNKPRIM, 2);
@@ -1667,14 +1756,13 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 	return ntiles;
 }
 
-void PPU_HardRenderOBJs()
+void PPU_HardRenderOBJs(u32 ystart, u32 yend)
 {
 	int i = PPU.FirstOBJ;
 	i--;
 	if (i < 0) i = 127;
 	int last = i;
 	int ntiles = 0;
-	int ystart = 1, yend = SNES_Status->ScreenHeight;
 	void* vstart = vertexPtr;
 
 	do
@@ -1684,7 +1772,7 @@ void PPU_HardRenderOBJs()
 		s32 oy = (s32)oam[1] + 1;
 
 		PPU.CurOBJSecSel = &PPU.OBJSections[0];
-		while(PPU.CurOBJSecSel->EndOffset < oy && PPU.CurOBJSecSel->EndOffset < 240)
+		while(PPU.CurOBJSecSel->EndOffset < oy && PPU.CurOBJSecSel->EndOffset < yend)
 			PPU.CurOBJSecSel++;
 		s32 oh = (s32)PPU.CurOBJSecSel->OBJHeight[(oamextra & 0x2) >> 1];
 
@@ -1877,6 +1965,8 @@ void PPU_ComputeWindows_Hard(PPU_WindowSegment* s)
 	}
 }
 
+void PPU_HardRender(u32 ystart, u32 yend);
+
 void PPU_RenderScanline_Hard(u32 line)
 {
 	int i;
@@ -1941,6 +2031,9 @@ void PPU_RenderScanline_Hard(u32 line)
 		PPU.CurSubBackdrop->Color = PPU.SubBackdrop;
 		PPU.CurSubBackdrop->Div2 = (!(PPU.ColorMath1 & 0x02)) && (PPU.ColorMath2 & 0x40);
 		PPU.SubBackdropDirty = 0;
+		
+		LastBrightness = PPU.CurBrightness;
+		memcpy(TempPalette, PPU.Palette, 256*2);
 	}
 	else
 	{
@@ -2048,6 +2141,23 @@ void PPU_RenderScanline_Hard(u32 line)
 			PPU.CurSubBackdrop->Color = PPU.SubBackdrop;
 			PPU.CurSubBackdrop->Div2 = (!(PPU.ColorMath1 & 0x02)) && (PPU.ColorMath2 & 0x40);
 			PPU.SubBackdropDirty = 0;
+		}
+		
+		
+		// check for forced-blank changes
+		// normally VRAM can't be modified while the PPU is drawing, but a midframe forced-blank section would allow that
+		// 'hack': we treat zero-brightness cases the same was as forced-blank
+		if (PPU.CurBrightness != LastBrightness)
+		{
+			if (!PPU.CurBrightness)
+				PPU_HardRender(RenderStartY, line);
+			else if (!LastBrightness)
+			{
+				RenderStartY = line;
+				memcpy(TempPalette, PPU.Palette, 256*2);
+			}
+			
+			LastBrightness = PPU.CurBrightness;
 		}
 	}
 }
@@ -2237,13 +2347,21 @@ void PPU_HardRender_Mode7(int ystart, int yend, u32 screen, u32 mode, u32 colorm
 	}
 }
 
-void PPU_HardRender(u32 snum)
+void PPU_HardRenderScreen(u32 snum, u32 ystart, u32 yend)
 {
 	PPU_ModeSection* s = &PPU.ModeSections[0];
-	int ystart = 1;
 	
 	for (;;)
 	{
+		u32 endoffset = s->EndOffset;
+		if (endoffset <= ystart)
+		{
+			s++;
+			continue;
+		}
+		
+		if (endoffset > yend) endoffset = yend;
+		
 		u32 screen, colormath;
 		if (!snum)
 		{
@@ -2254,8 +2372,8 @@ void PPU_HardRender(u32 snum)
 		{
 			if (!(s->ColorMath1 & 0x02))
 			{
-				if (s->EndOffset >= 240) break;
-				ystart = s->EndOffset;
+				if (endoffset >= yend) break;
+				ystart = endoffset;
 				s++;
 				continue;
 			}
@@ -2273,111 +2391,127 @@ void PPU_HardRender(u32 snum)
 		switch (s->Mode & 0x07)
 		{
 			case 0:
-				PPU_HardRender_Mode0(ystart, s->EndOffset, screen, s->Mode, colormath);
+				PPU_HardRender_Mode0(ystart, endoffset, screen, s->Mode, colormath);
 				break;
 				
 			case 1:
-				PPU_HardRender_Mode1(ystart, s->EndOffset, screen, s->Mode, colormath);
+				PPU_HardRender_Mode1(ystart, endoffset, screen, s->Mode, colormath);
 				break;
 				
 			case 2:
-				PPU_HardRender_Mode2(ystart, s->EndOffset, screen, s->Mode, colormath);
+				PPU_HardRender_Mode2(ystart, endoffset, screen, s->Mode, colormath);
 				break;
 				
 			case 3:
-				PPU_HardRender_Mode3(ystart, s->EndOffset, screen, s->Mode, colormath);
+				PPU_HardRender_Mode3(ystart, endoffset, screen, s->Mode, colormath);
 				break;
 				
 			case 4:
-				PPU_HardRender_Mode4(ystart, s->EndOffset, screen, s->Mode, colormath);
+				PPU_HardRender_Mode4(ystart, endoffset, screen, s->Mode, colormath);
 				break;
 
 			case 5:
-				PPU_HardRender_Mode5(ystart, s->EndOffset, screen, s->Mode, colormath);
+				PPU_HardRender_Mode5(ystart, endoffset, screen, s->Mode, colormath);
 				break;
 
 			case 6:
-				PPU_HardRender_Mode6(ystart, s->EndOffset, screen, s->Mode, colormath);
+				PPU_HardRender_Mode6(ystart, endoffset, screen, s->Mode, colormath);
 				break;
 
 			case 7:
-				PPU_HardRender_Mode7(ystart, s->EndOffset, screen, s->Mode, colormath);
+				PPU_HardRender_Mode7(ystart, endoffset, screen, s->Mode, colormath);
 				break;
 		}
 		
-		if (s->EndOffset >= 240) break;
-		ystart = s->EndOffset;
+		if (endoffset >= yend) break;
+		ystart = endoffset;
 		s++;
 	}
 }
 
 
-void PPU_VBlank_Hard()
+void PPU_HardRender(u32 ystart, u32 yend)
 {
 	int i;
-
-	PPU.CurModeSection->EndOffset = 240;
 	
-	PPU.CurOBJSection->EndOffset = 240;
+	// safety
+	if (yend <= ystart) return;
+	
+	//bprintf("render %d->%d\n", ystart, yend);
+	
+	PPU.CurModeSection->EndOffset = yend;
+	
+	PPU.CurOBJSection->EndOffset = yend;
 
 	for (i = 0; i < 4; i++)
 	{
 		PPU_Background* bg = &PPU.BG[i];
-		bg->CurSection->EndOffset = 240;
+		bg->CurSection->EndOffset = yend;
 	}
 	
-	PPU.CurMode7Section->EndOffset = 240;
+	PPU.CurMode7Section->EndOffset = yend;
 	
-	PPU.CurWindowSection->EndOffset = 240;
+	PPU.CurWindowSection->EndOffset = yend;
 	
-	PPU.CurColorEffect->EndOffset = 240;
-	PPU.CurSubBackdrop->EndOffset = 240;
+	PPU.CurColorEffect->EndOffset = yend;
+	PPU.CurSubBackdrop->EndOffset = yend;
 	
-	
-	vertexPtr = vertexBuf;
 	
 	bglViewport(0, 0, 256, 256);
 
 	//memcpy(TempPalette, PPU.Palette, 512);
-	PPU_ClearMainScreen();
-	PPU_DrawWindowMask(0);
+	PPU_ClearMainScreen(ystart, yend);
+	PPU_DrawWindowMask(0, ystart, yend);
 	
 	bglGeometryShaderParams(4, 0x3);
 	bglUseShader(hardRenderShader);
 	
 	// OBJ LAYER
 	
-	PPU_HardRenderOBJs();
+	PPU_HardRenderOBJs(ystart, yend);
 	
 	// MAIN SCREEN
 	
 	doingBG = 0;
 	bglOutputBuffers(MainScreenTex, OBJDepthBuffer);
-	PPU_HardRender(0);
-	PPU_ClearAlpha(0);
+	PPU_HardRenderScreen(0, ystart, yend);
+	PPU_ClearAlpha(0, ystart, yend);
 	
 	// SUB SCREEN
 	
 	//memcpy(TempPalette, PPU.Palette, 512);
-	PPU_ClearSubScreen();
-	PPU_DrawWindowMask(1);
+	PPU_ClearSubScreen(ystart, yend);
+	PPU_DrawWindowMask(1, ystart, yend);
 	
 	bglGeometryShaderParams(4, 0x3);
 	bglUseShader(hardRenderShader);
 	
 	doingBG = 0;
 	bglOutputBuffers(SubScreenTex, OBJDepthBuffer);
-	PPU_HardRender(1);
-	PPU_ClearAlpha(1);
+	PPU_HardRenderScreen(1, ystart, yend);
+	PPU_ClearAlpha(1, ystart, yend);
 
 	// reuse the color math system used by the soft renderer
 	bglScissorMode(GPU_SCISSOR_DISABLE);
-	PPU_BlendScreens(GPU_RGBA8);
+	PPU_BlendScreens(GPU_RGBA8, ystart, yend);
+}
+
+void PPU_VBlank_Hard()
+{
+	if (PPU.CurBrightness)
+		PPU_HardRender(RenderStartY, SNES_Status->ScreenHeight+1);
+	
+	LastBrightness = PPU.CurBrightness;
+	RenderStartY = 1;
+	LastEndY = 1;
+	
 
 	u32 taken = ((u32)vertexPtr - (u32)vertexBuf);
 	GSPGPU_FlushDataCache(NULL, vertexBuf, taken);
 	if (taken > 0x80000)
 		bprintf("OVERFLOW %05X/80000 (%d%%)\n", taken, (taken*100)/0x80000);
+		
+	vertexPtr = vertexBuf;
 		
 	
 	GSPGPU_FlushDataCache(NULL, PPU_TileCache, 1024*1024*sizeof(u16));

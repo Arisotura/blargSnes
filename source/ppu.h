@@ -369,6 +369,7 @@ void PPU_VBlank_Soft();
 
 
 void PPU_Init_Hard();
+void PPU_Reset_Hard();
 void PPU_DeInit_Hard();
 
 void PPU_RenderScanline_Hard(u32 line);

@@ -1389,10 +1389,8 @@ void PPU_RenderScanline_Soft(u32 line)
 }
 
 
-void PPU_BlendScreens(u32 colorformat)
+void PPU_BlendScreens(u32 colorformat, u32 startoffset, u32 yend)
 {
-	int startoffset = 1;
-	
 	u16* vptr = (u16*)vertexPtr;
 	
 	bglGeometryShaderParams(4, 0x3);
@@ -1424,6 +1422,15 @@ void PPU_BlendScreens(u32 colorformat)
 	PPU_ColorEffectSection* s = &PPU.ColorEffectSections[0];
 	for (;;)
 	{
+		u32 endoffset = s->EndOffset;
+		if (endoffset <= startoffset)
+		{
+			s++;
+			continue;
+		}
+		
+		if (endoffset > yend) endoffset = yend;
+		
 		// TEXTURE ENV STAGES
 		// ---
 		// blending operation: (Main.Color +- (Sub.Color * Main.Alpha)) * Sub.Alpha
@@ -1512,17 +1519,17 @@ void PPU_BlendScreens(u32 colorformat)
 		
 		bglAttribBuffer(vptr);
 		
-		ADDVERTEX(0, startoffset,       0, startoffset);
-		ADDVERTEX(256, s->EndOffset,    256, s->EndOffset);
+		ADDVERTEX(0, startoffset,    0, startoffset);
+		ADDVERTEX(256, endoffset,    256, endoffset);
 		
 		vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
 		vertexPtr = vptr;
 		
 		bglDrawArrays(GPU_UNKPRIM, 2);
 		
-		if (s->EndOffset == 240) break;
+		if (endoffset >= yend) break;
 		
-		startoffset = s->EndOffset;
+		startoffset = endoffset;
 		s++;
 	}
 	
@@ -1543,7 +1550,7 @@ void PPU_VBlank_Soft()
 	
 	vertexPtr = vertexBuf;
 	
-	PPU_BlendScreens(GPU_RGBA5551);
+	PPU_BlendScreens(GPU_RGBA5551, 1, SNES_Status->ScreenHeight+1);
 	
 	RenderState = 3;
 }

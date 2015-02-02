@@ -206,6 +206,8 @@ void PPU_Reset()
 	{
 		for (i = 1; i < 256; i++)
 			PPU.Palette[i] = 0x0001;
+			
+		PPU_Reset_Hard();
 	}
 }
 
