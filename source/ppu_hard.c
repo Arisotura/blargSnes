@@ -24,10 +24,11 @@
 #include "ppu.h"
 
 
-#define SET_UNIFORM(n, v0, v1, v2, v3) \
+
+#define SET_UNIFORM(t, n, v0, v1, v2, v3) \
 	{ \
 		float blarg[4] = {(v0), (v1), (v2), (v3)}; \
-		bglUniform(n, blarg); \
+		bglUniform(t, n, blarg); \
 	}
 
 
@@ -37,6 +38,10 @@ extern void* vertexPtr;
 extern DVLB_s* hardRenderShader;
 extern DVLB_s* plainQuadShader;
 extern DVLB_s* windowMaskShader;
+
+extern shaderProgram_s hardRenderShaderP;
+extern shaderProgram_s plainQuadShaderP;
+extern shaderProgram_s windowMaskShaderP;
 
 extern float snesProjMatrix[16];
 
@@ -510,7 +515,7 @@ void PPU_StartBG(u32 hi)
 	
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	
-	SET_UNIFORM(4, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
+	SET_UNIFORM(GPU_VERTEX_SHADER, 4, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
 	
 	bglEnableTextures(GPU_TEXUNIT0);
 	
@@ -547,9 +552,9 @@ void PPU_ClearMainScreen()
 	*vptr++ = b; \
 	*vptr++ = a;
 	
-	bglGeometryShaderParams(4, 0x3);
-	bglUseShader(plainQuadShader);
-	
+
+	bglUseShader(&plainQuadShaderP);
+
 	bglOutputBuffers(MainScreenTex, OBJDepthBuffer);
 	
 	bglEnableStencilTest(false);
@@ -562,7 +567,7 @@ void PPU_ClearMainScreen()
 	
 	bglColorDepthMask(GPU_WRITE_ALL);
 	
-	bglUniformMatrix(0, snesProjMatrix);
+	bglUniformMatrix(GPU_VERTEX_SHADER, 0, snesProjMatrix);
 	
 	bglEnableTextures(0);
 	
@@ -633,9 +638,9 @@ void PPU_ClearSubScreen()
 	*vptr++ = g; \
 	*vptr++ = b; \
 	*vptr++ = a;
-	
-	bglGeometryShaderParams(4, 0x3);
-	bglUseShader(plainQuadShader);
+
+	bglUseShader(&plainQuadShaderP);
+
 	
 	bglOutputBuffers(SubScreenTex, OBJDepthBuffer);
 	
@@ -649,7 +654,7 @@ void PPU_ClearSubScreen()
 	
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	
-	bglUniformMatrix(0, snesProjMatrix);
+	bglUniformMatrix(GPU_VERTEX_SHADER, 0, snesProjMatrix);
 	
 	bglEnableTextures(0);
 	
@@ -719,8 +724,9 @@ void PPU_DrawWindowMask(u32 snum)
 	*(u16*)vptr = y; vptr += 2; \
 	*vptr++ = a; vptr++;
 	
-	bglGeometryShaderParams(4, 0x3);
-	bglUseShader(windowMaskShader);
+
+	bglUseShader(&windowMaskShaderP);
+
 	
 	bglOutputBuffers(OBJDepthBuffer, OBJDepthBuffer);
 	
@@ -734,7 +740,7 @@ void PPU_DrawWindowMask(u32 snum)
 	
 	bglColorDepthMask(GPU_WRITE_RED);
 	
-	bglUniformMatrix(0, snesProjMatrix);
+	bglUniformMatrix(GPU_VERTEX_SHADER, 0, snesProjMatrix);
 	
 	bglNumAttribs(2);
 	bglAttribType(0, GPU_SHORT, 2);	// vertex
@@ -790,9 +796,9 @@ void PPU_ClearAlpha(u32 snum)
 	*vptr++ = g; \
 	*vptr++ = b; \
 	*vptr++ = a;
-	
-	bglGeometryShaderParams(4, 0x3);
-	bglUseShader(plainQuadShader);
+
+
+	bglUseShader(&plainQuadShaderP);
 	
 	bglEnableStencilTest(false);
 	bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
@@ -809,7 +815,7 @@ void PPU_ClearAlpha(u32 snum)
 	
 	bglColorDepthMask(GPU_WRITE_ALPHA);
 	
-	bglUniformMatrix(0, snesProjMatrix);
+	bglUniformMatrix(GPU_VERTEX_SHADER, 0, snesProjMatrix);
 	
 	bglEnableTextures(0);
 	
@@ -1507,7 +1513,7 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend, u32 prio)
 	
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	
-	SET_UNIFORM(4, 1.0f/256.0f, 1.0f/256.0f, 1.0f, 1.0f);
+	SET_UNIFORM(GPU_VERTEX_SHADER, 4, 1.0f/256.0f, 1.0f/256.0f, 1.0f, 1.0f);
 	
 	bglEnableTextures(GPU_TEXUNIT0);
 	
@@ -1724,9 +1730,9 @@ void PPU_HardRenderOBJs()
 	
 	bglColorDepthMask(GPU_WRITE_ALL);
 	
-	bglUniformMatrix(0, snesProjMatrix);
-	SET_UNIFORM(4, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
-	//SET_UNIFORM(5, 1.0f, 0.0f, 0.0f, 0.0f);
+	bglUniformMatrix(GPU_VERTEX_SHADER, 0, snesProjMatrix);
+	SET_UNIFORM(GPU_VERTEX_SHADER, 4, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
+	//SET_UNIFORM(GPU_VERTEX_SHADER, 5, 1.0f, 0.0f, 0.0f, 0.0f);
 	
 	bglEnableTextures(GPU_TEXUNIT0);
 	
@@ -1786,8 +1792,8 @@ void PPU_HardRenderOBJLayer(u32 setalpha, u32 prio, int ystart, int yend)
 	
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	
-	SET_UNIFORM(4, 1.0f/256.0f, 1.0f/256.0f, 1.0f, 1.0f);
-	//SET_UNIFORM(5, 1.0f, 0.0f, 0.0f, 0.0f);
+	SET_UNIFORM(GPU_VERTEX_SHADER, 4, 1.0f/256.0f, 1.0f/256.0f, 1.0f, 1.0f);
+	//SET_UNIFORM(GPU_VERTEX_SHADER, 5, 1.0f, 0.0f, 0.0f, 0.0f);
 	
 	bglEnableTextures(GPU_TEXUNIT0);
 	
@@ -2341,10 +2347,10 @@ void PPU_VBlank_Hard()
 	//memcpy(TempPalette, PPU.Palette, 512);
 	PPU_ClearMainScreen();
 	PPU_DrawWindowMask(0);
-	
-	bglGeometryShaderParams(4, 0x3);
-	bglUseShader(hardRenderShader);
-	
+
+
+	bglUseShader(&hardRenderShaderP);
+
 	// OBJ LAYER
 	
 	PPU_HardRenderOBJs();
@@ -2361,10 +2367,11 @@ void PPU_VBlank_Hard()
 	//memcpy(TempPalette, PPU.Palette, 512);
 	PPU_ClearSubScreen();
 	PPU_DrawWindowMask(1);
-	
-	bglGeometryShaderParams(4, 0x3);
-	bglUseShader(hardRenderShader);
-	
+
+
+	bglUseShader(&hardRenderShaderP);
+
+
 	doingBG = 0;
 	bglOutputBuffers(SubScreenTex, OBJDepthBuffer);
 	PPU_HardRender(1);

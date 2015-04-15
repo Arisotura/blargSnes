@@ -19,16 +19,23 @@
 #ifndef BGL_H
 #define BGL_H
 
+#include <stdlib.h>
+#include <string.h>
+#include <3ds/types.h>
+#include <3ds/gpu/registers.h>
+#include <3ds/gpu/gpu.h>
+#include <3ds/gpu/shbin.h>
+#include <3ds/gpu/shaderProgram.h>
+
 // blargGL -- thin wrapper around the ctrulib GPU API
 // Not meant to be on par with OpenGL, just meant to be somewhat sane~
 
 void bglInit();
 void bglDeInit();
 
-void bglGeometryShaderParams(u32 stride, u32 attrmask);
-void bglUseShader(DVLB_s* shader);
-void bglUniform(u32 id, float* val);
-void bglUniformMatrix(u32 id, float* val);
+
+void bglUniform(GPU_SHADER_TYPE type, u32 id, float* val);
+void bglUniformMatrix(GPU_SHADER_TYPE type, u32 id, float* val);
 
 void bglOutputBuffers(void* color, void* depth);
 void bglViewport(u32 x, u32 y, u32 w, u32 h);

@@ -20,6 +20,7 @@
 #include "ui.h"
 #include "config.h"
 
+extern badShader;
 
 int configdirty = 0;
 
@@ -42,6 +43,7 @@ void Config_Render(bool force)
 	configdirty--;
 	
 	ClearFramebuffer();
+
 	DrawText(2, 2, RGB(255, 255, 255), "blargSNES config");
 	
 	y = 2 + 12 + 10;
@@ -57,7 +59,6 @@ void Config_Render(bool force)
 	int themode = Config.ScaleMode;
 	if (themode < 0 || themode > 4) themode = 0;
 	DrawButton(x, y-3, 140, RGB(255,255,255), scalemodes[themode]);
-	
 	
 	DrawButton(10, 212, 0, RGB(255,128,128), "Cancel");
 	DrawButton(-10, 212, 0, RGB(128,255,128), "Save changes");
