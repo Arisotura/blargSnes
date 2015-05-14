@@ -137,7 +137,7 @@ void bglInit()
 	memset(&bglState, 0, sizeof(bglState));
 	bglState.DirtyFlags = 0xFFFFFFFF;
 	
-	bglCommandBufferSize = 0x40000;
+	bglCommandBufferSize = 0x80000;
 	bglCommandBuffer = linearAlloc(bglCommandBufferSize * 4);
 	
 	GPU_Reset(NULL, bglCommandBuffer, bglCommandBufferSize);

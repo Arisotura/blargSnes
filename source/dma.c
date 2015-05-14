@@ -128,6 +128,8 @@ void DMA_Enable(u8 flag)
 					{
 						*(u16*)&PPU.VRAM[newaddr] = newval;
 						PPU.VRAMUpdateCount[newaddr >> 4]++;
+						PPU.VRAM7[newaddr >> 1] = newval >> 8;
+						PPU.VRAM7UpdateCount[newaddr >> 7]++;
 					}
 					memaddr += maddrinc<<1;
 					bytecount -= 2;

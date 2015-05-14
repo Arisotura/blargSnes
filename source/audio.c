@@ -100,7 +100,7 @@ void Audio_Mix()
 // the last two parameters are also repurposed for volume control
 
 
-void myCSND_SetSound(u32 chn, u32 flags, u32 sampleRate, void* data0, void *data1, u32 size, u32 leftvol, u32 rightvol)
+void myCSND_SetSound(u32 chn, u32 flags, u32 sampleRate, void* data0, void *data1, u32 size, float vol, float pan)
 {
 	u32 paddr0 = 0, paddr1 = 0;
 
@@ -126,7 +126,7 @@ void myCSND_SetSound(u32 chn, u32 flags, u32 sampleRate, void* data0, void *data
 	flags &= ~0xFFFF001F;
 	flags |= SOUND_ENABLE | SOUND_CHANNEL(chn) | (timer << 16);
 
-	CSND_SetChnRegs(flags, paddr0, paddr1, size);
+	CSND_SetChnRegs(flags, paddr0, paddr1, size, CSND_VOL(vol, pan), 0);
 
 	if (loopMode == CSND_LOOPMODE_NORMAL && paddr1 > paddr0)
 	{
@@ -134,7 +134,6 @@ void myCSND_SetSound(u32 chn, u32 flags, u32 sampleRate, void* data0, void *data
 		size -= paddr1 - paddr0;
 		CSND_SetBlock(chn, 1, paddr1, size);
 	}
-	CSND_SetVol(chn, leftvol, rightvol);
 	CSND_SetPlayState(chn, 1);
 }
 
@@ -149,8 +148,8 @@ bool Audio_Begin()
  
 	if (Audio_Type == 1)
 	{
-		myCSND_SetSound(8, SOUND_FORMAT_16BIT | SOUND_REPEAT, 32000, &Audio_Buffer[0],            &Audio_Buffer[0],            MIXBUFSIZE*4, 0xFFFF, 0);
-		myCSND_SetSound(9, SOUND_FORMAT_16BIT | SOUND_REPEAT, 32000, &Audio_Buffer[MIXBUFSIZE*2], &Audio_Buffer[MIXBUFSIZE*2], MIXBUFSIZE*4, 0, 0xFFFF);
+		myCSND_SetSound(8, SOUND_FORMAT_16BIT | SOUND_REPEAT, 32000, &Audio_Buffer[0],            &Audio_Buffer[0],            MIXBUFSIZE*4, 1.0, -1.0);
+		myCSND_SetSound(9, SOUND_FORMAT_16BIT | SOUND_REPEAT, 32000, &Audio_Buffer[MIXBUFSIZE*2], &Audio_Buffer[MIXBUFSIZE*2], MIXBUFSIZE*4, 1.0, 1.0);
 
 		csndExecCmds(0);
 	}
