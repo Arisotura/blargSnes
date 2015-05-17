@@ -75,6 +75,10 @@ void LoadConfig(u8 init)
 		&Config.HardwareRenderer,
 		&Config.ScaleMode,
 		tempDir);
+
+	if(Config.HardwareMode7 == -1)
+		Config.HardwareMode7 = 0;
+
 	if(init && strlen(tempDir) > 0 && tempDir[0] == '/')
 	{
 		Handle dirHandle;

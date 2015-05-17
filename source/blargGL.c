@@ -38,8 +38,8 @@ struct
 {
 	u32 GeometryStride;
 	u32 ShaderAttrMask; // for vertex->geometry shaders
-	DVLB_s* Shader;
-	
+
+	shaderProgram_s* Shader;
 	
 	void* ColorBuffer;
 	void* DepthBuffer;
@@ -137,11 +137,11 @@ void bglInit()
 	memset(&bglState, 0, sizeof(bglState));
 	bglState.DirtyFlags = 0xFFFFFFFF;
 	
-	bglCommandBufferSize = 0x40000;
+	bglCommandBufferSize = 0x80000;
 	bglCommandBuffer = linearAlloc(bglCommandBufferSize * 4);
 	
 	GPU_Reset(NULL, bglCommandBuffer, bglCommandBufferSize);
-	GPUCMD_SetBuffer(bglCommandBuffer, bglCommandBufferSize, 0);
+	//GPUCMD_SetBuffer(bglCommandBuffer, bglCommandBufferSize, 0);
 	
 	// sane defaults
 	bglDepthRange(-1.0f, 0.0f);
@@ -151,6 +151,7 @@ void bglInit()
 	bglColorDepthMask(GPU_WRITE_ALL);
 	bglBlendEquation(GPU_BLEND_ADD, GPU_BLEND_ADD);
 	bglBlendFunc(GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+
 }
 
 void bglDeInit()
@@ -159,256 +160,6 @@ void bglDeInit()
 }
 
 
-// This viewport code taken from ctrulib, modified to allow setting the scissor coords without needing extra commands
-
-// f32tof24() needs to be copied too, calling the ctrulib one doesn't work for whatever reason
-
-u32 blarg_f32tof24(float f)
-{
-	if(!f)return 0;
-	u32 v=*((u32*)&f);
-	u8 s=v>>31;
-	u32 exp=((v>>23)&0xFF)-0x40;
-	u32 man=(v>>7)&0xFFFF;
-
-	if(exp>=0)return man|(exp<<16)|(s<<23);
-	else return s<<23;
-}
-
-u32 blarg_computeInvValue(u32 val)
-{
-	//usual values
-	if(val==240)return 0x38111111;
-	if(val==480)return 0x37111111;
-	if(val==400)return 0x3747ae14;
-	if (val == 256) return 0x38000000; // blargSNES specific
-	
-	//but let's not limit ourselves to the usual
-	float fval=2.0/val;
-	u32 tmp1,tmp2;
-	u32 tmp3=*((u32*)&fval);
-	tmp1=(tmp3<<9)>>9;
-	tmp2=tmp3&(~0x80000000);
-	if(tmp2)
-	{
-		tmp1=(tmp3<<9)>>9;
-		int tmp=((tmp3<<1)>>24)-0x40;
-		if(tmp<0)return ((tmp3>>31)<<30)<<1;
-		else tmp2=tmp;
-	}
-	tmp3>>=31;
-	return (tmp1|(tmp2<<23)|(tmp3<<30))<<1;
-}
-
-//takes PAs as arguments
-void blarg_GPU_SetViewport()
-{
-	u32 param[0x4];
-	float fw=(float)bglState.ViewportW;
-	float fh=(float)bglState.ViewportH;
-
-	// CHECKME: is that junk required here?
-	GPUCMD_AddSingleParam(0x000F0111, 0x00000001);
-	GPUCMD_AddSingleParam(0x000F0110, 0x00000001);
-
-	u32 f116e=0x01000000|(((bglState.ViewportH-1)&0xFFF)<<12)|(bglState.ViewportW&0xFFF);
-
-	param[0x0]=((u32)bglState.DepthBuffer)>>3;
-	param[0x1]=((u32)bglState.ColorBuffer)>>3;
-	param[0x2]=f116e;
-	GPUCMD_Add(0x800F011C, param, 0x00000003);
-
-	GPUCMD_AddSingleParam(0x000F006E, f116e);
-	GPUCMD_AddSingleParam(0x000F0116, 0x00000003); //depth buffer format
-	GPUCMD_AddSingleParam(0x000F0117, 0x00000002); //color buffer format
-	GPUCMD_AddSingleParam(0x000F011B, 0x00000000); //?
-
-	param[0x0]=blarg_f32tof24(fw/2);
-	param[0x1]=blarg_computeInvValue(fw);
-	param[0x2]=blarg_f32tof24(fh/2);
-	param[0x3]=blarg_computeInvValue(fh);
-	GPUCMD_Add(0x800F0041, param, 0x00000004);
-
-	GPUCMD_AddSingleParam(0x000F0068, (bglState.ViewportY<<16)|(bglState.ViewportX&0xFFFF));
-
-	param[0x0]=bglState.ScissorMode;
-	param[0x1]=(bglState.ScissorY << 16) | (bglState.ScissorX & 0xFFFF);
-	param[0x2]=((bglState.ScissorH-1)<<16)|((bglState.ScissorW-1)&0xFFFF);
-	GPUCMD_Add(0x800F0065, param, 0x00000003);
-
-	//enable depth buffer
-	param[0x0]=0x0000000F;
-	param[0x1]=0x0000000F;
-	param[0x2]=0x00000002;
-	param[0x3]=0x00000002;
-	GPUCMD_Add(0x800F0112, param, 0x00000004);
-}
-
-// type: 0=vsh, 1=gsh
-void blarg_DVLP_SendCode(DVLP_s* dvlp, int type)
-{
-	if(!dvlp)return;
-	
-	u32 offset = type ? 0 : 0x30;
-
-	GPUCMD_AddSingleParam(0x000F029B+offset, 0x00000000);
-
-	int i;
-	for(i=0;i<dvlp->codeSize;i+=0x80)
-		GPUCMD_Add(0x000F029C+offset, &dvlp->codeData[i], ((dvlp->codeSize-i)<0x80)?(dvlp->codeSize-i):0x80);
-
-	GPUCMD_AddSingleParam(0x000F028F+offset, 0x00000001);
-}
-
-void blarg_DVLP_SendOpDesc(DVLP_s* dvlp, int type)
-{
-	if(!dvlp)return;
-	
-	u32 offset = type ? 0 : 0x30;
-
-	GPUCMD_AddSingleParam(0x000F02A5+offset, 0x00000000);
-
-	u32 param[0x20];
-
-	int i;
-	//TODO : should probably preprocess this
-	for(i=0;i<dvlp->opdescSize;i++)
-		param[i]=dvlp->opcdescData[i*2];
-
-	GPUCMD_Add(0x000F02A6+offset, param, dvlp->opdescSize);
-}
-
-void blarg_DVLE_SendOutmap(DVLE_s* dvle)
-{
-	if(!dvle)return;
-	
-	u32 offset = dvle->type ? 0 : 0x30;
-
-	u32 param[0x7]={0x1F1F1F1F,0x1F1F1F1F,0x1F1F1F1F,0x1F1F1F1F,
-					0x1F1F1F1F,0x1F1F1F1F,0x1F1F1F1F};
-
-	int i;
-	u8 numAttr=0;
-	u8 maxAttr=0;
-	u8 attrMask=0;
-	//TODO : should probably preprocess this
-	for(i=0;i<dvle->outTableSize;i++)
-	{
-		u32* out=&param[dvle->outTableData[i].regID];
-		
-		if(*out==0x1F1F1F1F)numAttr++;
-
-		//desc could include masking/swizzling info not currently taken into account
-		//also TODO : map out other output register values
-		switch(dvle->outTableData[i].type)
-		{
-			case RESULT_POSITION: *out=0x03020100; break;
-			case RESULT_COLOR: *out=0x0B0A0908; break;
-			case RESULT_TEXCOORD0: *out=0x1F1F0D0C; break;
-			case RESULT_TEXCOORD1: *out=0x1F1F0F0E; break;
-			case RESULT_TEXCOORD2: *out=0x1F1F1716; break;
-		}
-
-		attrMask|=1<<dvle->outTableData[i].regID;
-		if(dvle->outTableData[i].regID+1>maxAttr)maxAttr=dvle->outTableData[i].regID+1;
-	}
-
-	//GPUCMD_AddSingleParam(0x000F0251, numAttr-1); //?
-	//GPUCMD_AddSingleParam(0x000F024A, numAttr-1); //?
-	GPUCMD_AddSingleParam(0x000F028D+offset, attrMask); //?
-	GPUCMD_AddSingleParam(0x0001025E, numAttr-1); //?
-	GPUCMD_AddSingleParam(0x000F004F, numAttr); //?
-	GPUCMD_Add(0x800F0050, param, 0x00000007);
-}
-
-void blarg_DVLE_SendConstants(DVLE_s* dvle)
-{
-	if(!dvle)return;
-	
-	u32 offset = dvle->type ? 0 : 0x30;
-
-	u32 param[4];
-	u32 rev[3];
-	u8* rev8=(u8*)rev;
-
-	int i;
-	DVLE_constEntry_s* cnst=dvle->constTableData;
-	for(i=0;i<dvle->constTableSize;i++,cnst++)
-	{
-		memcpy(&rev8[0], &cnst->data[0], 3);
-		memcpy(&rev8[3], &cnst->data[1], 3);
-		memcpy(&rev8[6], &cnst->data[2], 3);
-		memcpy(&rev8[9], &cnst->data[3], 3);
-
-		param[0x0]=(cnst->header>>16)&0xFF;
-		param[0x1]=rev[2];
-		param[0x2]=rev[1];
-		param[0x3]=rev[0];
-
-		GPUCMD_Add(0x800F0290+offset, param, 0x00000004);
-	}
-}
-
-// omg geometry shader
-// thanks to smealum :D
-void blarg_SHDR_UseProgram(DVLB_s* dvlb, u32 vsh_id, u32 gsh_id, u32 geo_stride, u32 attr_mask)
-{
-	// vertex shader
-	
-	DVLE_s* dvle = &dvlb->DVLE[vsh_id];
-	int i;
-
-	//?
-	GPUCMD_AddSingleParam(0x00010229, 0x00000000);
-	GPUCMD_AddSingleParam(0x00010244, 0x00000000);
-
-	blarg_DVLP_SendCode(&dvlb->DVLP, dvle->type);
-	blarg_DVLP_SendOpDesc(&dvlb->DVLP, dvle->type);
-	blarg_DVLE_SendConstants(dvle);
-
-	GPUCMD_AddSingleParam(0x00080229, 0x00000000);
-	GPUCMD_AddSingleParam(0x000F02BA, 0x7FFF0000|(dvle->mainOffset&0xFFFF)); //set entrypoint
-
-	GPUCMD_AddSingleParam(0x000F0252, 0x00000000); // should all be part of DVLE_SendOutmap ?
-
-	//blarg_DVLE_SendOutmap(dvle);
-	u32 num_attr = 0; u32 temp = attr_mask;
-	for (i = 0; i < 16; i++)
-	{
-		if (!temp) break;
-		if (temp & 1) num_attr++;
-		temp >>= 1;
-	}
-	GPUCMD_AddSingleParam(0x000F0251, num_attr-1);
-	GPUCMD_AddSingleParam(0x000F024A, num_attr-1);
-	GPUCMD_AddSingleParam(0x000F02BD, attr_mask);
-
-	//?
-	GPUCMD_AddSingleParam(0x000F0064, 0x00000001);
-	GPUCMD_AddSingleParam(0x000F006F, 0x00000703);
-	
-	// geometry shader
-	
-	dvle = &dvlb->DVLE[gsh_id];
-
-	blarg_DVLP_SendCode(&dvlb->DVLP, dvle->type);
-	blarg_DVLP_SendOpDesc(&dvlb->DVLP, dvle->type);
-	blarg_DVLE_SendConstants(dvle);
-
-	blarg_DVLE_SendOutmap(dvle);
-
-	GPUCMD_AddSingleParam(0x00010229, 0x00000002);
-	GPUCMD_AddSingleParam(0x00010244, 0x00000001); //not necessary ?
-
-	GPUCMD_AddSingleParam(0x00090289, 0x08000000|(geo_stride-1));
-	GPUCMD_AddSingleParam(0x000F028A, 0x7FFF0000|(dvle->mainOffset&0xFFFF)); //set entrypoint
-
-	// GPUCMD_AddSingleParam(0x000F0064, 0x00000001); //not necessary ?
-	// GPUCMD_AddSingleParam(0x000F006F, 0x01030703); //not necessary ?
-
-	u32 param[] = {0x76543210, 0xFEDCBA98};
-	GPUCMD_Add(0x800F028B, param, 0x00000002);
-}
 
 // update PICA200 state as needed before drawing shit
 void _bglUpdateState()
@@ -432,31 +183,29 @@ void _bglUpdateState()
 		dirty |= 0x2;
 			
 		if (dirty & 0x1)
-			blarg_SHDR_UseProgram(bglState.Shader, 0, 1, bglState.GeometryStride, bglState.ShaderAttrMask);
+			shaderProgramUse(bglState.Shader);
 		
 		if (dirty & 0x4)
-			blarg_GPU_SetViewport();
-		
-		GPU_DepthRange(bglState.DepthMin, bglState.DepthMax);
-		
+		{
+			GPU_SetViewport(bglState.DepthBuffer, bglState.ColorBuffer, bglState.ViewportX, bglState.ViewportY, bglState.ViewportW, bglState.ViewportH);
+			GPU_SetScissorTest(bglState.ScissorMode, bglState.ScissorX, bglState.ScissorY, bglState.ScissorW, bglState.ScissorH);
+		}
+
+		GPU_DepthMap(bglState.DepthMin, bglState.DepthMax);
 		GPU_SetFaceCulling(bglState.CullMode);
-		
 		GPU_SetStencilTest(bglState.StencilTest, bglState.StencilFunc, bglState.StencilRef, bglState.StencilMask, bglState.StencilReplace);
 		GPU_SetStencilOp(bglState.StencilOpSFail, bglState.StencilOpDFail, bglState.StencilOpPass);
-		
 		GPU_SetBlendingColor(bglState.BlendingColor.R, bglState.BlendingColor.G, bglState.BlendingColor.B, bglState.BlendingColor.A);
-		
 		GPU_SetDepthTestAndWriteMask(bglState.DepthTest, bglState.DepthFunc, bglState.ColorDepthMask);
 		
 		// start drawing? whatever that junk is
-		GPUCMD_AddSingleParam(0x00010062, 0);
-		GPUCMD_AddSingleParam(0x000F0118, 0);
+		GPUCMD_AddMaskedWrite(GPUREG_0062, 0x1, 0);
+		GPUCMD_AddWrite(GPUREG_0118, 0);
 		
 		GPU_SetAlphaBlending(
 			bglState.ColorBlendEquation, bglState.AlphaBlendEquation,
 			bglState.ColorSrcFactor, bglState.ColorDstFactor,
 			bglState.AlphaSrcFactor, bglState.AlphaDstFactor);
-			
 		GPU_SetAlphaTest(bglState.AlphaTest, bglState.AlphaFunc, bglState.AlphaRef);
 		
 		GPU_SetTextureEnable(bglState.TextureEnable);
@@ -515,29 +264,20 @@ void _bglUpdateState()
 }
 
 
-void bglGeometryShaderParams(u32 stride, u32 attrmask)
-{
-	// those depend on the shader used
-	// TODO eventually embed this information in the shader?
-	
-	bglState.GeometryStride = stride;
-	bglState.ShaderAttrMask = attrmask;
-	bglState.DirtyFlags |= 0x5;
-}
-
-void bglUseShader(DVLB_s* shader)
+void bglUseShader(shaderProgram_s* shader)
 {
 	bglState.Shader = shader;
 	bglState.DirtyFlags |= 0x5;
 }
 
-void bglUniform(u32 id, float* val)
+
+void bglUniform(GPU_SHADER_TYPE type, u32 id, float* val)
 {
 	float pancake[4] = {val[3], val[2], val[1], val[0]};
-	GPU_SetUniform(id, (u32*)pancake, 1);
+	GPU_SetFloatUniform(type, id, (u32*)pancake, 1);
 }
 
-void bglUniformMatrix(u32 id, float* val)
+void bglUniformMatrix(GPU_SHADER_TYPE type, u32 id, float* val)
 {
 	float pancake[16] = {
 		val[3], val[2], val[1], val[0],
@@ -545,7 +285,7 @@ void bglUniformMatrix(u32 id, float* val)
 		val[11], val[10], val[9], val[8],
 		val[15], val[14], val[13], val[12]
 	};
-	GPU_SetUniform(id, (u32*)pancake, 4);
+	GPU_SetFloatUniform(type, id, (u32*)pancake, 4);
 }
 
 

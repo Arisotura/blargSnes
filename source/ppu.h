@@ -21,20 +21,59 @@
 
 typedef struct
 {
+	s32 x;
+	s32 y;
+	s32 slope;
+} PPU_Vertex;
+
+typedef struct
+{
+	u8 StartOffset;
 	u8 EndOffset;
+	u8 doHW, endSW;
+	u8 hflip, vflip;
+	u8 tileType;
 	
 	u8 Sel;
 	
-	s16 A;
-	s16 B;
-	s16 C;
-	s16 D;
-	
-	s16 RefX;
-	s16 RefY;
-	
-	s16 XScroll;
-	s16 YScroll;
+	union
+	{
+		struct
+		{
+			s16 A;
+			s16 B;
+		};
+		u32 AffineParams1;
+	};
+	union
+	{
+		struct
+		{
+			s16 C;
+			s16 D;
+		};
+		u32 AffineParams2;
+	};
+	union
+	{
+		struct
+		{
+			s16 RefX;
+			s16 RefY;
+		};
+		u32 RefParams;
+	};
+	union
+	{
+		struct
+		{
+			s16 XScroll;
+			s16 YScroll;
+		};
+		u32 ScrollParams;
+	};
+
+	PPU_Vertex vert[8];
 	
 } PPU_Mode7Section;
 
@@ -173,8 +212,14 @@ typedef struct
 {
 	u8 EndOffset;
 	u16 Color;
+	u8 ColorMath2;
+} PPU_MainBackdropSection;
+
+typedef struct
+{
+	u8 EndOffset;
+	u16 Color;
 	u8 Div2;
-	
 } PPU_SubBackdropSection;
 
 typedef struct
@@ -208,7 +253,10 @@ typedef struct
 	u8 CGRAMVal;
 	u16 CGRAM[256];		// SNES CGRAM, xBGR1555
 	u16 Palette[256];	// our own palette, converted to RGBx5551
+	u16 PaletteEx1[256];
+	u16 PaletteEx2[256];
 	u8 PaletteUpdateCount[64];
+	u16 PaletteUpdateCount128;
 	u16 PaletteUpdateCount256;
 	
 	// mid-frame palette changes
@@ -220,7 +268,9 @@ typedef struct
 	u8 VRAMInc;
 	u16 VRAMStep;
 	u8 VRAM[0x10000];
+	u8 VRAM7[0x8000];
 	u8 VRAMUpdateCount[0x1000];
+	u16 VRAM7UpdateCount[0x800];
 
 	u16 OAMAddr;
 	u8 OAMVal;
@@ -264,8 +314,13 @@ typedef struct
 	u8 ColorMath1;
 	u8 ColorMath2;
 
+
 	u16 SubBackdrop;
 	
+	u8 MainBackdropDirty;
+	PPU_MainBackdropSection MainBackdropSections[240];
+	PPU_MainBackdropSection* CurMainBackdrop;
+
 	u8 SubBackdropDirty;
 	PPU_SubBackdropSection SubBackdropSections[240];
 	PPU_SubBackdropSection* CurSubBackdrop;
@@ -289,14 +344,43 @@ typedef struct
 	s32 MulResult;
 
 	u8 M7Sel;
-	s16 M7A;
-	s16 M7B;
-	s16 M7C;
-	s16 M7D;
-	s16 M7RefX;
-	s16 M7RefY;
-	s16 M7XScroll;
-	s16 M7YScroll;
+	union
+	{
+		struct
+		{
+			s16 M7A;
+			s16 M7B;
+		};
+		u32 M7AffineParams1;
+	};
+	union
+	{
+		struct
+		{
+			s16 M7C;
+			s16 M7D;
+		};
+		u32 M7AffineParams2;
+	};
+	union
+	{
+		struct
+		{
+			s16 M7RefX;
+			s16 M7RefY;
+		};
+		u32 M7RefParams;
+	};
+	union
+	{
+		struct
+		{
+			s16 M7XScroll;
+			s16 M7YScroll;
+		};
+		u32 M7ScrollParams;
+	};
+	
 	u8 M7ExtBG;
 	
 	PPU_Mode7Section Mode7Sections[240];

@@ -28,6 +28,8 @@ extern void* vertexPtr;
 
 extern DVLB_s* softRenderShader;
 
+extern shaderProgram_s softRenderShaderP;
+
 extern float snesProjMatrix[16];
 
 extern u32* gpuOut;
@@ -1394,9 +1396,9 @@ void PPU_BlendScreens(u32 colorformat)
 	int startoffset = 1;
 	
 	u16* vptr = (u16*)vertexPtr;
-	
-	bglGeometryShaderParams(4, 0x3);
-	bglUseShader(softRenderShader);
+
+
+	bglUseShader(&softRenderShaderP);
 	
 	bglOutputBuffers(SNESFrame, gpuDOut); // depth buffer doesn't matter
 	bglViewport(0, 0, 256, 256);
@@ -1405,7 +1407,7 @@ void PPU_BlendScreens(u32 colorformat)
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	bglEnableAlphaTest(false);
 
-	bglUniformMatrix(0, snesProjMatrix);
+	bglUniformMatrix(GPU_VERTEX_SHADER, 0, snesProjMatrix);
 	
 	bglEnableTextures(GPU_TEXUNIT0|GPU_TEXUNIT1);
 	bglTexImage(GPU_TEXUNIT0, MainScreenTex,256,256,0,colorformat);

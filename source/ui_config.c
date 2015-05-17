@@ -20,6 +20,7 @@
 #include "ui.h"
 #include "config.h"
 
+extern badShader;
 
 int configdirty = 0;
 
@@ -42,11 +43,16 @@ void Config_Render(bool force)
 	configdirty--;
 	
 	ClearFramebuffer();
+
 	DrawText(2, 2, RGB(255, 255, 255), "blargSNES config");
 	
 	y = 2 + 12 + 10;
 	
 	DrawCheckBox(10, y, RGB(255,255,255), "Hardware renderer", Config.HardwareRenderer);
+
+	y += 26;
+
+	DrawCheckBox(26, y, RGB(255,255,255), "Hardware-assisted Mode7 (WIP)", Config.HardwareMode7);
 	
 	y += 26;
 	
@@ -57,7 +63,6 @@ void Config_Render(bool force)
 	int themode = Config.ScaleMode;
 	if (themode < 0 || themode > 4) themode = 0;
 	DrawButton(x, y-3, 140, RGB(255,255,255), scalemodes[themode]);
-	
 	
 	DrawButton(10, 212, 0, RGB(255,128,128), "Cancel");
 	DrawButton(-10, 212, 0, RGB(128,255,128), "Save changes");
@@ -80,6 +85,11 @@ void Config_Touch(int touch, u32 x, u32 y)
 		configdirty = 2;
 	}
 	else if (y >= 50 && y < 70)
+	{
+		Config.HardwareMode7 = !Config.HardwareMode7;
+		configdirty = 2;
+	}
+	else if (y >= 76 && y < 96)
 	{
 		Config.ScaleMode++;
 		if (Config.ScaleMode > 4) Config.ScaleMode = 0;

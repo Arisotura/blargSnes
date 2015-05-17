@@ -28,4 +28,7 @@ bool Audio_Begin();
 
 void Audio_Mix();
 
+void Audio_Inc();
+void Audio_Dec();
+
 #endif

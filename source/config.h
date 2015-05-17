@@ -23,7 +23,8 @@ typedef struct
 {
 	int HardwareRenderer;
 	int ScaleMode;
-	char DirPath[0x106]
+	char DirPath[0x106];
+	int HardwareMode7;
 } Config_t;
 
 extern Config_t Config;

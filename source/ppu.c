@@ -205,7 +205,11 @@ void PPU_Reset()
 	if (PPU.HardwareRenderer)
 	{
 		for (i = 1; i < 256; i++)
+		{
 			PPU.Palette[i] = 0x0001;
+			PPU.PaletteEx1[i] = (i < 128);
+			PPU.PaletteEx2[i] = (i >= 128);
+		}
 	}
 }
 
@@ -301,9 +305,24 @@ inline void PPU_SetColor(u32 num, u16 val)
 		else
 #endif
 		{
+			
+
 			PPU.Palette[num] = temp | 0x0001;
-			PPU.PaletteUpdateCount[num >> 2]++;
-			PPU.PaletteUpdateCount256++;
+			if(num < 128)
+			{
+				PPU.PaletteEx1[num] = temp | 0x0001;
+				PPU.PaletteEx2[num + 128] = temp | 0x0001;
+				if(num > 0)
+					PPU.PaletteUpdateCount128++;
+			}
+			
+			if(num == 0)
+				PPU.MainBackdropDirty = 1;
+			else
+			{
+				PPU.PaletteUpdateCount[num >> 2]++;
+				PPU.PaletteUpdateCount256++;
+			}
 		}
 	}
 	else
@@ -632,6 +651,8 @@ void PPU_Write8(u32 addr, u8 val)
 				{
 					PPU.VRAM[addr+1] = val;
 					PPU.VRAMUpdateCount[addr >> 4]++;
+					PPU.VRAM7[addr >> 1] = val;
+					PPU.VRAM7UpdateCount[addr >> 7]++;
 				}
 				if (PPU.VRAMInc & 0x80)
 					PPU.VRAMAddr += PPU.VRAMStep;
@@ -887,6 +908,8 @@ void PPU_Write16(u32 addr, u16 val)
 			{
 				*(u16*)&PPU.VRAM[addr] = val;
 				PPU.VRAMUpdateCount[addr >> 4]++;
+				PPU.VRAM7[addr >> 1] = val >> 8;
+				PPU.VRAM7UpdateCount[addr >> 7]++;
 			}
 			PPU.VRAMAddr += PPU.VRAMStep;
 			break;
@@ -1138,7 +1161,9 @@ void PPU_VBlank()
 	if (!SkipThisFrame)
 	{
 		if (PPU.HardwareRenderer)
-			PPU_VBlank_Hard();
+		{
+			PPU_VBlank_Hard(240);
+		}
 		else
 			PPU_VBlank_Soft();
 		
