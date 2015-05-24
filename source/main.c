@@ -887,12 +887,12 @@ int main()
 	vplainQuadShader = DVLB_ParseFile((u32*)vplain_quad_vsh_shbin, vplain_quad_vsh_shbin_size);		gplainQuadShader = DVLB_ParseFile((u32*)gplain_quad_vsh_shbin, gplain_quad_vsh_shbin_size);
 	vwindowMaskShader = DVLB_ParseFile((u32*)vwindow_mask_vsh_shbin, vwindow_mask_vsh_shbin_size);	gwindowMaskShader = DVLB_ParseFile((u32*)gwindow_mask_vsh_shbin, gwindow_mask_vsh_shbin_size);
 
-	shaderProgramInit(&finalShaderP);		shaderProgramSetVsh(&finalShaderP, &vfinalShader->DVLE[0]);				shaderProgramSetGsh(&finalShaderP, &gfinalShader->DVLE[1], 4);
-	shaderProgramInit(&softRenderShaderP);	shaderProgramSetVsh(&softRenderShaderP, &vsoftRenderShader->DVLE[0]);	shaderProgramSetGsh(&softRenderShaderP, &gsoftRenderShader->DVLE[1], 4);
-	shaderProgramInit(&hardRenderShaderP);	shaderProgramSetVsh(&hardRenderShaderP, &vhardRenderShader->DVLE[0]);	shaderProgramSetGsh(&hardRenderShaderP, &ghardRenderShader->DVLE[1], 4);
-	shaderProgramInit(&hard7RenderShaderP);	shaderProgramSetVsh(&hard7RenderShaderP, &vhard7RenderShader->DVLE[0]);	shaderProgramSetGsh(&hard7RenderShaderP, &ghard7RenderShader->DVLE[1], 2);
-	shaderProgramInit(&plainQuadShaderP);	shaderProgramSetVsh(&plainQuadShaderP, &vplainQuadShader->DVLE[0]);		shaderProgramSetGsh(&plainQuadShaderP, &gplainQuadShader->DVLE[1], 4);
-	shaderProgramInit(&windowMaskShaderP);	shaderProgramSetVsh(&windowMaskShaderP, &vwindowMaskShader->DVLE[0]);	shaderProgramSetGsh(&windowMaskShaderP, &gwindowMaskShader->DVLE[1], 4);
+	shaderProgramInit(&finalShaderP);		shaderProgramSetVsh(&finalShaderP, &vfinalShader->DVLE[0]);				shaderProgramSetGsh(&finalShaderP, &gfinalShader->DVLE[0], 4);
+	shaderProgramInit(&softRenderShaderP);	shaderProgramSetVsh(&softRenderShaderP, &vsoftRenderShader->DVLE[0]);	shaderProgramSetGsh(&softRenderShaderP, &gsoftRenderShader->DVLE[0], 4);
+	shaderProgramInit(&hardRenderShaderP);	shaderProgramSetVsh(&hardRenderShaderP, &vhardRenderShader->DVLE[0]);	shaderProgramSetGsh(&hardRenderShaderP, &ghardRenderShader->DVLE[0], 4);
+	shaderProgramInit(&hard7RenderShaderP);	shaderProgramSetVsh(&hard7RenderShaderP, &vhard7RenderShader->DVLE[0]);	shaderProgramSetGsh(&hard7RenderShaderP, &ghard7RenderShader->DVLE[0], 2);
+	shaderProgramInit(&plainQuadShaderP);	shaderProgramSetVsh(&plainQuadShaderP, &vplainQuadShader->DVLE[0]);		shaderProgramSetGsh(&plainQuadShaderP, &gplainQuadShader->DVLE[0], 4);
+	shaderProgramInit(&windowMaskShaderP);	shaderProgramSetVsh(&windowMaskShaderP, &vwindowMaskShader->DVLE[0]);	shaderProgramSetGsh(&windowMaskShaderP, &gwindowMaskShader->DVLE[0], 4);
 
 	GX_SetMemoryFill(NULL, gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
 	gspWaitForPSC0();
