@@ -1,5 +1,9 @@
 TODO
 
+
+HARDWARE RENDERER REFACTOR BRANCH
+
+
 short term
 
  * atleast one expansion chip
