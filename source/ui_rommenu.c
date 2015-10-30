@@ -271,7 +271,7 @@ void ROMMenu_Init()
 	FS_dirent entry;
 	int i;
 	
-	FSUSER_OpenDirectory(NULL, &dirHandle, sdmcArchive, dirPath);
+	FSUSER_OpenDirectory(&dirHandle, sdmcArchive, dirPath);
 	
 	
 	head = NULL;

@@ -232,7 +232,7 @@ bool ROM_LoadFile(char* name)
 	filePath.size = strlen(name) + 1;
 	filePath.data = (u8*)name;
 	
-	Result res = FSUSER_OpenFile(NULL, &fileHandle, sdmcArchive, filePath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(&fileHandle, sdmcArchive, filePath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
 	if ((res & 0xFFFC03FF) != 0)
 	{
 		bprintf("Error %08X while opening file\n", res);

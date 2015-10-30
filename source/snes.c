@@ -136,10 +136,10 @@ bool SNES_LoadROM(char* path)
 		sramPath.size = strlen(SNES_SRAMPath) + 1;
 		sramPath.data = (u8*)SNES_SRAMPath;
 	
-		Result res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_READ|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+		Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_READ|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
 		if ((res & 0xFFFC03FF) != 0)
 		{
-			res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_READ|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+			res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_READ|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
 			if ((res & 0xFFFC03FF) != 0)
 				bprintf("Error %08X while trying to open the savefile.\nMake sure it isn't read-only.\n", res);
 			else
@@ -192,7 +192,7 @@ void SNES_Reset()
 		sramPath.size = strlen(SNES_SRAMPath) + 1;
 		sramPath.data = (u8*)SNES_SRAMPath;
 	
-		Result res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
+		Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
 		if ((res & 0xFFFC03FF) == 0)
 		{
 			u32 bytesread = 0;
@@ -293,7 +293,7 @@ void SNES_SaveSRAM()
 	sramPath.size = strlen(SNES_SRAMPath) + 1;
 	sramPath.data = (u8*)SNES_SRAMPath;
 	
-	Result res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
 	if ((res & 0xFFFC03FF) == 0)
 	{
 		u32 byteswritten = 0;

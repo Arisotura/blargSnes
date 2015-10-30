@@ -58,7 +58,7 @@ void LoadConfig(u8 init)
 	filePath.size = strlen(configFilePath) + 1;
 	filePath.data = (u8*)configFilePath;
 	
-	Result res = FSUSER_OpenFile(NULL, &file, sdmcArchive, filePath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
 	if (res) return;
 	
 	u64 size64 = 0;
@@ -83,7 +83,7 @@ void LoadConfig(u8 init)
 	{
 		Handle dirHandle;
 		FS_path dirPath = (FS_path){PATH_CHAR, strlen(tempDir)+1, (u8*)tempDir};
-		Result resDir = FSUSER_OpenDirectory(NULL, &dirHandle, sdmcArchive, dirPath);
+		Result resDir = FSUSER_OpenDirectory(&dirHandle, sdmcArchive, dirPath);
 		if (!resDir)
 		{
 			strncpy(Config.DirPath, tempDir, 0x106);
@@ -109,7 +109,7 @@ void SaveConfig(u8 saveCurDir)
 	else
 		strncpy(tempDir,Config.DirPath,0x106);
 	
-	Result res = FSUSER_OpenFile(NULL, &file, sdmcArchive, filePath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
 	if (res)
 	{
 		bprintf("Error %08X while saving config\n", res);

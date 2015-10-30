@@ -2,6 +2,7 @@ TODO
 
 
 HARDWARE RENDERER REFACTOR BRANCH
+well also adapting to ctrulib great-refactor (living the old days again~)
 
 
 short term

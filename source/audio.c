@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2015 StapleButter
 
     This file is part of blargSnes.
 
@@ -82,7 +82,7 @@ void Audio_Pause()
 		}
 	
 		memset(Audio_Buffer, 0, MIXBUFSIZE*4*2);
-		GSPGPU_FlushDataCache(NULL, Audio_Buffer, MIXBUFSIZE*4*2);
+		GSPGPU_FlushDataCache(Audio_Buffer, MIXBUFSIZE*4*2);
 		isPlaying = false;
 	}
 }
@@ -144,7 +144,7 @@ bool Audio_Begin()
 	    return 0;
  
 	memset(Audio_Buffer, 0, MIXBUFSIZE*4*2);
-	GSPGPU_FlushDataCache(NULL, Audio_Buffer, MIXBUFSIZE*4*2);
+	GSPGPU_FlushDataCache(Audio_Buffer, MIXBUFSIZE*4*2);
  
 	if (Audio_Type == 1)
 	{

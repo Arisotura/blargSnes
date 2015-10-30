@@ -197,7 +197,7 @@ void dbg_save(char* path, void* buf, int size)
 	sramPath.size = strlen(path) + 1;
 	sramPath.data = (u8*)path;
 	
-	Result res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
 	if ((res & 0xFFFC03FF) == 0)
 	{
 		u32 byteswritten = 0;
@@ -273,7 +273,7 @@ void ReportCrash()
 void dbgcolor(u32 col)
 {
 	u32 regData=0x01000000|col;
-	GSPGPU_WriteHWRegs(NULL, 0x202204, &regData, 4);
+	GSPGPU_WriteHWRegs(0x202204, &regData, 4);
 }
 
 
@@ -378,7 +378,7 @@ void ApplyScaling()
 	screenVertices[5*0 + 0] = x1; screenVertices[5*0 + 1] = y1; screenVertices[5*0 + 4] = texy; 
 	screenVertices[5*1 + 0] = x2; screenVertices[5*1 + 1] = y2; 
 	
-	GSPGPU_FlushDataCache(NULL, (u32*)screenVertices, 5*2*sizeof(float));
+	GSPGPU_FlushDataCache((u32*)screenVertices, 5*2*sizeof(float));
 }
 
 
@@ -414,7 +414,7 @@ void RenderTopScreen()
 {
 	bglUseShader(&finalShaderP);
 
-	bglOutputBuffers(gpuOut, gpuDOut);
+	bglOutputBuffers(gpuOut, gpuDOut, 240, 400);
 	bglViewport(0, 0, 240, 400);
 	
 	bglEnableDepthTest(false);
@@ -444,15 +444,15 @@ void RenderTopScreen()
 	bglAttribType(1, GPU_FLOAT, 2);	// texcoord
 	bglAttribBuffer(borderVertices);
 	
-	bglDrawArrays(GPU_UNKPRIM, 2); // border
+	bglDrawArrays(GPU_GEOMETRY_PRIM, 2); // border
 
 	// filtering enabled only when scaling
 	// filtering at 1:1 causes output to not be pixel-perfect, but not filtering at higher res looks like total shit
-	bglTexImage(GPU_TEXUNIT0, SNESFrame,256,256, Config.ScaleMode?0x6:0 ,GPU_RGBA8);
+	bglTexImage(GPU_TEXUNIT0, SNESFrame, 256,256, Config.ScaleMode?0x6:0 ,GPU_RGBA8);
 	
 	bglAttribBuffer(screenVertices);
 	
-	bglDrawArrays(GPU_UNKPRIM, 2); // screen
+	bglDrawArrays(GPU_GEOMETRY_PRIM, 2); // screen
 
 	if (!RenderState)
 	{
@@ -478,7 +478,7 @@ void ContinueRendering()
 		case 1:
 			if (PeekEvent(gspEvents[GSPEVENT_P3D]))
 			{
-				GX_SetDisplayTransfer(NULL, gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
+				GX_DisplayTransfer(gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
 				RenderState = 2;
 			}
 			break;
@@ -506,7 +506,7 @@ void FinishRendering()
 	{
 		//gspWaitForP3D();
 		SafeWait(gspEvents[GSPEVENT_P3D]);
-		GX_SetDisplayTransfer(NULL, gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
+		GX_DisplayTransfer(gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
 		RenderState = 2;
 	}
 	if (RenderState == 2)
@@ -553,7 +553,7 @@ void VSyncAndFrameskip()
 			
 			UI_SetFramebuffer(bottomfb);
 			UI_Render();
-			GSPGPU_FlushDataCache(NULL, bottomfb, 0x38400);
+			GSPGPU_FlushDataCache(bottomfb, 0x38400);
 		}
 		
 		gfxSwapBuffersGpu();
@@ -584,7 +584,7 @@ bool TakeScreenshot(char* path)
 	filePath.size = strlen(path) + 1;
 	filePath.data = (u8*)path;
 	
-	Result res = FSUSER_OpenFile(NULL, &file, sdmcArchive, filePath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
 	if (res) 
 		return false;
 		
@@ -684,7 +684,7 @@ bool LoadBitmap(char* path, u32 width, u32 height, void* dst, u32 alpha, u32 sta
 	filePath.size = strlen(path) + 1;
 	filePath.data = (u8*)path;
 	
-	Result res = FSUSER_OpenFile(NULL, &file, sdmcArchive, filePath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
 	if (res) 
 		return false;
 		
@@ -851,13 +851,13 @@ int main()
 	ClearConsole();
 	
 	aptOpenSession();
-	APT_SetAppCpuTimeLimit(NULL, 30); // enables syscore usage
+	APT_SetAppCpuTimeLimit(30); // enables syscore usage -- TODO: new3DS fast mode
 	aptCloseSession();
 
 	gfxInitDefault();
 	
 	sdmcArchive = (FS_archive){0x9, (FS_path){PATH_EMPTY, 1, (u8*)""}};
-	FSUSER_OpenArchive(NULL, &sdmcArchive);
+	FSUSER_OpenArchive(&sdmcArchive);
 	
 	Config.HardwareMode7 = -1;
 	LoadConfig(1);
@@ -866,7 +866,7 @@ int main()
 	SNES_Init();
 	PPU_Init();
 	
-	GPU_Init(NULL);
+	//GPU_Init(NULL);
 	gfxSet3D(false);
 	bglInit();
 	RenderState = 0;
@@ -894,7 +894,7 @@ int main()
 	shaderProgramInit(&plainQuadShaderP);	shaderProgramSetVsh(&plainQuadShaderP, &vplainQuadShader->DVLE[0]);		shaderProgramSetGsh(&plainQuadShaderP, &gplainQuadShader->DVLE[0], 4);
 	shaderProgramInit(&windowMaskShaderP);	shaderProgramSetVsh(&windowMaskShaderP, &vwindowMaskShader->DVLE[0]);	shaderProgramSetGsh(&windowMaskShaderP, &gwindowMaskShader->DVLE[0], 4);
 
-	GX_SetMemoryFill(NULL, gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
+	GX_MemoryFill(gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
 	gspWaitForPSC0();
 	gfxSwapBuffersGpu();
 	
@@ -920,9 +920,9 @@ int main()
 	// copy splashscreen
 	u32* tempbuf = (u32*)linearAlloc(256*256*4);
 	CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x0);
-	GSPGPU_FlushDataCache(NULL, tempbuf, 256*256*4);
+	GSPGPU_FlushDataCache(tempbuf, 256*256*4);
 
-	GX_SetDisplayTransfer(NULL, tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
+	GX_DisplayTransfer(tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
 	//gspWaitForPPF();
 
 	SafeWait(gspEvents[GSPEVENT_PPF]);
@@ -998,9 +998,9 @@ int main()
 						ApplyScaling();
 						u32* tempbuf = (u32*)linearAlloc(256*256*4);
 						CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x0);
-						GSPGPU_FlushDataCache(NULL, tempbuf, 256*256*4);
+						GSPGPU_FlushDataCache(tempbuf, 256*256*4);
 
-						GX_SetDisplayTransfer(NULL, tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
+						GX_DisplayTransfer(tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
 						//gspWaitForPPF();
 
 						SafeWait(gspEvents[GSPEVENT_PPF]);
