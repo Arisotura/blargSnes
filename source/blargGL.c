@@ -176,7 +176,6 @@ void bglDeInit()
 }
 
 
-
 // update PICA200 state as needed before drawing shit
 void _bglUpdateState()
 {
@@ -372,7 +371,7 @@ void _bglUpdateState()
 		memset(temp, 0, 39*4);
 		temp[0] = (u32)bglState.AttribBufferPtr >> 3;
 		temp[1] = (u32)attrib;
-		temp[2] = (0xFFC<<16) | ((attrib>>32)&0xFFFF);
+		temp[2] = ((bglState.NumAttribBuffers-1)<<28) | (0xFFC<<16) | ((attrib>>32)&0xFFFF);
 		
 		temp[3] = 0;
 		temp[4] = (u32)permut;

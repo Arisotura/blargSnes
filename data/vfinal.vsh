@@ -43,4 +43,3 @@ vmain:
 	mov o1.xyzw, v1.xyzw
 	end
 	nop
-end_vmain:

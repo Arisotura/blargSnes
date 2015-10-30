@@ -67,4 +67,3 @@ gmain:
 
 	end
 	nop
-end_gmain:
