@@ -255,7 +255,7 @@ void _bglUpdateState()
 		                                     ((bglState.StencilFunc&7)<<4) |
 											 (bglState.StencilReplace<<8) | // write mask
 											 (bglState.StencilRef<<16) |
-											 (bglState.StencilReplace<<24)); // input mask
+											 (bglState.StencilMask<<24)); // input mask
 
 		GPUCMD_AddWrite(GPUREG_STENCIL_ACTION, bglState.StencilOpSFail | 
 		                                       (bglState.StencilOpDFail << 4) | 
