@@ -370,7 +370,7 @@ void SPC_Compensate()
 {
 	int cyclenow = (SNES_Status->HCount * SNES_Status->SPC_CycleRatio);
 	int torun = cyclenow - SNES_Status->SPC_LastCycle;
-	torun >>= 24;
+	//torun >>= 24;
 	if (torun > 0)
 	{
 		SPC_Run(torun);
@@ -464,10 +464,10 @@ u8 PPU_Read8(u32 addr)
 			PPU.OPVFlag = 0;
 			break;
 		
-		case 0x40: ret = SPC_IOPorts[4]; break;
-		case 0x41: ret = SPC_IOPorts[5]; break;
-		case 0x42: ret = SPC_IOPorts[6]; break;
-		case 0x43: ret = SPC_IOPorts[7]; break;
+		case 0x40: SPC_Compensate(); ret = SPC_IOPorts[4]; break;
+		case 0x41: SPC_Compensate(); ret = SPC_IOPorts[5]; break;
+		case 0x42: SPC_Compensate(); ret = SPC_IOPorts[6]; break;
+		case 0x43: SPC_Compensate(); ret = SPC_IOPorts[7]; break;
 		
 		case 0x80: ret = SNES_SysRAM[Mem_WRAMAddr++]; Mem_WRAMAddr &= ~0x20000; break;
 

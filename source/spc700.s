@@ -342,12 +342,17 @@ SPC_Reset:
 	
 @ --- Main loop ---------------------------------------------------------------
 
-@ r0 = number of cycles to run
+@ r0 = number of cycles to run (6400 = 1 cycle)
 SPC_Run:
 	stmdb sp!, {r3-r12, lr}
 	LoadRegs
 	
+	@stmdb sp!, {r0-r12, lr}
+	@bl zerp
+	@ldmia sp!, {r0-r12, lr}
+	
 	add spcCycles, r0
+	@mul spcCycles, r0, #6400
 	
 	@SPCResume
 			
@@ -437,6 +442,9 @@ noTimer2:
 		str r0, [memory, #-4]
 		blge DSP_BufferSwap
 		
+		@mov r0, #6400 @ derp
+		ldr r0, =134013 @ haxxxx!!!! TODO FIX ME
+		mul r3, r3, r0
 		subs spcCycles, spcCycles, r3
 		bpl spcloop
 		

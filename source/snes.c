@@ -115,8 +115,9 @@ bool SNES_LoadROM(char* path)
 	SNES_Status->TotalLines = (ROM_Region ? 312 : 262) >> 1;
 	SNES_Status->ScreenHeight = 224;
 	
-	SNES_Status->SPC_CycleRatio = ROM_Region ? 0x000C51D9 : 0x000C39C6;
-	SNES_Status->SPC_CycleRatio += 0x1000; // hax -- TODO investigate why we need this to run at a somewhat proper rate
+	//SNES_Status->SPC_CycleRatio = ROM_Region ? 0x000C51D9 : 0x000C39C6;
+	//SNES_Status->SPC_CycleRatio += 0x1000; // hax -- TODO investigate why we need this to run at a somewhat proper rate
+	SNES_Status->SPC_CycleRatio = 6400;//ROM_Region ? 132990 : 134013;
 	SNES_Status->SPC_CyclesPerLine = SNES_Status->SPC_CycleRatio * 1364;
 	//SNES_Status->SPC_CyclesPerLine = ROM_Region ? 0x41A41A42 : 0x4123D3B5;
 	

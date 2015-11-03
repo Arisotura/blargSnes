@@ -409,7 +409,7 @@ void SafeWait(Handle evt)
 	if (!res)
 		svcClearEvent(evt);
 }
-
+//u64 baderp;
 void RenderTopScreen()
 {
 	bglUseShader(&finalShaderP);
@@ -457,7 +457,15 @@ void RenderTopScreen()
 	if (!RenderState)
 	{
 		bglFlush();
+		//baderp = svcGetSystemTick();
 		RenderState = 1;
+		
+		
+		
+		/*SafeWait(gspEvents[GSPEVENT_P3D]);
+		{u64 darp = svcGetSystemTick() - baderp;bprintf("GPU: %f\n", (float)darp/268123.480);}
+		GX_DisplayTransfer(gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
+		RenderState = 2;*/
 	}
 }
 
@@ -478,9 +486,11 @@ void ContinueRendering()
 		case 1:
 			if (PeekEvent(gspEvents[GSPEVENT_P3D]))
 			{
+				//{u64 darp = svcGetSystemTick() - baderp;bprintf("GPU: %f\n", (float)darp/268123.480);}
 				GX_DisplayTransfer(gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
 				RenderState = 2;
 			}
+			//baderp = svcGetSystemTick();
 			break;
 			
 		case 2:
@@ -506,9 +516,11 @@ void FinishRendering()
 	{
 		//gspWaitForP3D();
 		SafeWait(gspEvents[GSPEVENT_P3D]);
+		//{u64 darp = svcGetSystemTick() - baderp;bprintf("GPU: %f\n", (float)darp/268123.480);}
 		GX_DisplayTransfer(gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
 		RenderState = 2;
 	}
+	//baderp = svcGetSystemTick();
 	if (RenderState == 2)
 	{
 		//gspWaitForPPF();

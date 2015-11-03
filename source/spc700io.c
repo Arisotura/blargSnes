@@ -155,3 +155,8 @@ void SPC_IOWrite16(u16 addr, u16 val)
 			break;
 	}
 }
+
+void zerp(u32 crapo)
+{
+	bprintf("SPC: %d\n", crapo);
+}
