@@ -38,19 +38,12 @@
 #include "defaultborder.h"
 #include "screenfill.h"
 
-#include "vfinal_vsh_shbin.h"
-#include "vrender_soft_vsh_shbin.h"
-#include "vrender_hard_vsh_shbin.h"
-#include "vrender_hard7_vsh_shbin.h"
-#include "vplain_quad_vsh_shbin.h"
-#include "vwindow_mask_vsh_shbin.h"
-
-#include "gfinal_vsh_shbin.h"
-#include "grender_soft_vsh_shbin.h"
-#include "grender_hard_vsh_shbin.h"
-#include "grender_hard7_vsh_shbin.h"
-#include "gplain_quad_vsh_shbin.h"
-#include "gwindow_mask_vsh_shbin.h"
+#include "final_shbin.h"
+#include "render_soft_shbin.h"
+#include "render_hard_shbin.h"
+#include "render_hard7_shbin.h"
+#include "plain_quad_shbin.h"
+#include "window_mask_shbin.h"
 
 #include "version.h"
 
@@ -58,19 +51,12 @@ u32* gpuOut;
 u32* gpuDOut;
 u32* SNESFrame;
 
-DVLB_s* vfinalShader;
-DVLB_s* vsoftRenderShader;
-DVLB_s* vhardRenderShader;
-DVLB_s* vhard7RenderShader;
-DVLB_s* vplainQuadShader;
-DVLB_s* vwindowMaskShader;
-
-DVLB_s* gfinalShader;
-DVLB_s* gsoftRenderShader;
-DVLB_s* ghardRenderShader;
-DVLB_s* ghard7RenderShader;
-DVLB_s* gplainQuadShader;
-DVLB_s* gwindowMaskShader;
+DVLB_s* finalShader;
+DVLB_s* softRenderShader;
+DVLB_s* hardRenderShader;
+DVLB_s* hard7RenderShader;
+DVLB_s* plainQuadShader;
+DVLB_s* windowMaskShader;
 
 shaderProgram_s finalShaderP;
 shaderProgram_s softRenderShaderP;
@@ -862,8 +848,11 @@ int main()
 	
 	ClearConsole();
 	
+	// Enable 804Mhz mode on New 3DS
+	osSetSpeedupEnable(true);
+
 	aptOpenSession();
-	APT_SetAppCpuTimeLimit(30); // enables syscore usage -- TODO: new3DS fast mode
+	APT_SetAppCpuTimeLimit(30); // enables syscore usage
 	aptCloseSession();
 
 	gfxInitDefault();
@@ -892,19 +881,19 @@ int main()
 	gpuDOut = (u32*)VRAM_Alloc(400*240*2*4);
 	SNESFrame = (u32*)VRAM_Alloc(256*256*4);
 
-	vfinalShader = DVLB_ParseFile((u32*)vfinal_vsh_shbin, vfinal_vsh_shbin_size);					gfinalShader = DVLB_ParseFile((u32*)gfinal_vsh_shbin, gfinal_vsh_shbin_size);
-	vsoftRenderShader = DVLB_ParseFile((u32*)vrender_soft_vsh_shbin, vrender_soft_vsh_shbin_size);	gsoftRenderShader = DVLB_ParseFile((u32*)grender_soft_vsh_shbin, grender_soft_vsh_shbin_size);
-	vhardRenderShader = DVLB_ParseFile((u32*)vrender_hard_vsh_shbin, vrender_hard_vsh_shbin_size);	ghardRenderShader = DVLB_ParseFile((u32*)grender_hard_vsh_shbin, grender_hard_vsh_shbin_size);
-	vhard7RenderShader = DVLB_ParseFile((u32*)vrender_hard7_vsh_shbin, vrender_hard7_vsh_shbin_size);	ghard7RenderShader = DVLB_ParseFile((u32*)grender_hard7_vsh_shbin, grender_hard7_vsh_shbin_size);
-	vplainQuadShader = DVLB_ParseFile((u32*)vplain_quad_vsh_shbin, vplain_quad_vsh_shbin_size);		gplainQuadShader = DVLB_ParseFile((u32*)gplain_quad_vsh_shbin, gplain_quad_vsh_shbin_size);
-	vwindowMaskShader = DVLB_ParseFile((u32*)vwindow_mask_vsh_shbin, vwindow_mask_vsh_shbin_size);	gwindowMaskShader = DVLB_ParseFile((u32*)gwindow_mask_vsh_shbin, gwindow_mask_vsh_shbin_size);
+	finalShader = DVLB_ParseFile((u32*)final_shbin, final_shbin_size);
+	softRenderShader = DVLB_ParseFile((u32*)render_soft_shbin, render_soft_shbin_size);
+	hardRenderShader = DVLB_ParseFile((u32*)render_hard_shbin, render_hard_shbin_size);
+	hard7RenderShader = DVLB_ParseFile((u32*)render_hard7_shbin, render_hard7_shbin_size);
+	plainQuadShader = DVLB_ParseFile((u32*)plain_quad_shbin, plain_quad_shbin_size);
+	windowMaskShader = DVLB_ParseFile((u32*)window_mask_shbin, window_mask_shbin_size);
 
-	shaderProgramInit(&finalShaderP);		shaderProgramSetVsh(&finalShaderP, &vfinalShader->DVLE[0]);				shaderProgramSetGsh(&finalShaderP, &gfinalShader->DVLE[0], 4);
-	shaderProgramInit(&softRenderShaderP);	shaderProgramSetVsh(&softRenderShaderP, &vsoftRenderShader->DVLE[0]);	shaderProgramSetGsh(&softRenderShaderP, &gsoftRenderShader->DVLE[0], 4);
-	shaderProgramInit(&hardRenderShaderP);	shaderProgramSetVsh(&hardRenderShaderP, &vhardRenderShader->DVLE[0]);	shaderProgramSetGsh(&hardRenderShaderP, &ghardRenderShader->DVLE[0], 4);
-	shaderProgramInit(&hard7RenderShaderP);	shaderProgramSetVsh(&hard7RenderShaderP, &vhard7RenderShader->DVLE[0]);	shaderProgramSetGsh(&hard7RenderShaderP, &ghard7RenderShader->DVLE[0], 2);
-	shaderProgramInit(&plainQuadShaderP);	shaderProgramSetVsh(&plainQuadShaderP, &vplainQuadShader->DVLE[0]);		shaderProgramSetGsh(&plainQuadShaderP, &gplainQuadShader->DVLE[0], 4);
-	shaderProgramInit(&windowMaskShaderP);	shaderProgramSetVsh(&windowMaskShaderP, &vwindowMaskShader->DVLE[0]);	shaderProgramSetGsh(&windowMaskShaderP, &gwindowMaskShader->DVLE[0], 4);
+	shaderProgramInit(&finalShaderP);		shaderProgramSetVsh(&finalShaderP, &finalShader->DVLE[0]);				shaderProgramSetGsh(&finalShaderP, &finalShader->DVLE[1], 4);
+	shaderProgramInit(&softRenderShaderP);	shaderProgramSetVsh(&softRenderShaderP, &softRenderShader->DVLE[0]);	shaderProgramSetGsh(&softRenderShaderP, &softRenderShader->DVLE[1], 4);
+	shaderProgramInit(&hardRenderShaderP);	shaderProgramSetVsh(&hardRenderShaderP, &hardRenderShader->DVLE[0]);	shaderProgramSetGsh(&hardRenderShaderP, &hardRenderShader->DVLE[1], 4);
+	shaderProgramInit(&hard7RenderShaderP);	shaderProgramSetVsh(&hard7RenderShaderP, &hard7RenderShader->DVLE[0]);	shaderProgramSetGsh(&hard7RenderShaderP, &hard7RenderShader->DVLE[1], 2);
+	shaderProgramInit(&plainQuadShaderP);	shaderProgramSetVsh(&plainQuadShaderP, &plainQuadShader->DVLE[0]);		shaderProgramSetGsh(&plainQuadShaderP, &plainQuadShader->DVLE[1], 4);
+	shaderProgramInit(&windowMaskShaderP);	shaderProgramSetVsh(&windowMaskShaderP, &windowMaskShader->DVLE[0]);	shaderProgramSetGsh(&windowMaskShaderP, &windowMaskShader->DVLE[1], 4);
 
 	GX_MemoryFill(gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
 	gspWaitForPSC0();
@@ -1143,13 +1132,12 @@ int main()
 	shaderProgramFree(&plainQuadShaderP);
 	shaderProgramFree(&windowMaskShaderP);
 
-	DVLB_Free(vfinalShader);		DVLB_Free(gfinalShader);
-	DVLB_Free(vsoftRenderShader);	DVLB_Free(gsoftRenderShader);
-	DVLB_Free(vhardRenderShader);	DVLB_Free(ghardRenderShader);
-	DVLB_Free(vhard7RenderShader);	DVLB_Free(ghard7RenderShader);
-	DVLB_Free(vplainQuadShader);	DVLB_Free(gplainQuadShader);
-	DVLB_Free(vwindowMaskShader);	DVLB_Free(gwindowMaskShader);
-
+	DVLB_Free(finalShader);
+	DVLB_Free(softRenderShader);
+	DVLB_Free(hardRenderShader);
+	DVLB_Free(hard7RenderShader);
+	DVLB_Free(plainQuadShader);
+	DVLB_Free(windowMaskShader);
 
 	linearFree(borderVertices);
 	linearFree(screenVertices);
