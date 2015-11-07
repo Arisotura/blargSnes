@@ -6,10 +6,6 @@ ifeq ($(strip $(DEVKITARM)),)
 $(error "Please set DEVKITARM in your environment. export DEVKITARM=<path to>devkitARM")
 endif
 
-ifeq ($(strip $(NIHSTRO)),)
-$(error "Please set NIHSTRO in your environment. export NIHSTRO=<path to>nihstro-assemble")
-endif
-
 TOPDIR ?= $(CURDIR)
 include $(DEVKITARM)/3ds_rules
 
@@ -41,7 +37,7 @@ INCLUDES	:=	include
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv6k -mtune=mpcore -mfloat-abi=hard
 
-CFLAGS	:=	-g -Wall -O2 -mword-relocations \
+CFLAGS	:=	-g -Wall -O2 -mword-relocations -ffunction-sections \
 			-fomit-frame-pointer -ffast-math \
 			$(ARCH)
 
@@ -50,7 +46,7 @@ CFLAGS	+=	$(INCLUDE) -DARM11 -D_3DS
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 
 ASFLAGS	:=	-g $(ARCH)
-LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
+LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map) -Wl,--gc-sections
 
 LIBS	:= -lctru -lm
 
@@ -165,7 +161,7 @@ $(OUTPUT).elf	:	$(OFILES)
 v%.vsh.o: v%.vsh
 #---------------------------------------------------------------------------------
 	@echo $(notdir $<)
-	@$(NIHSTRO)/nihstro-assemble -e vmain --output ../$(notdir $<).shbin $<
+	@picasso -o ../$(notdir $<).shbin $<
 	@bin2s ../$(notdir $<).shbin | $(PREFIX)as -o $@
 	@echo "extern const u8" `(echo $(notdir $<).shbin | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`"_end[];" > `(echo $(notdir $<).shbin | tr . _)`.h
 	@echo "extern const u8" `(echo $(notdir $<).shbin | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`"[];" >> `(echo $(notdir $<).shbin | tr . _)`.h
@@ -174,7 +170,7 @@ v%.vsh.o: v%.vsh
 
 g%.vsh.o: g%.vsh
 	@echo $(notdir $<)
-	@$(NIHSTRO)/nihstro-assemble -g -e gmain --output ../$(notdir $<).shbin $<
+	@picasso -o ../$(notdir $<).shbin $<
 	@bin2s ../$(notdir $<).shbin | $(PREFIX)as -o $@
 	@echo "extern const u8" `(echo $(notdir $<).shbin | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`"_end[];" > `(echo $(notdir $<).shbin | tr . _)`.h
 	@echo "extern const u8" `(echo $(notdir $<).shbin | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`"[];" >> `(echo $(notdir $<).shbin | tr . _)`.h
