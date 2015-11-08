@@ -30,6 +30,13 @@ extern DVLB_s* softRenderShader;
 
 extern shaderProgram_s softRenderShaderP;
 
+extern u8 finalUniforms[1];
+extern u8 softRenderUniforms[1];
+extern u8 hardRenderUniforms[2];
+extern u8 hard7RenderUniforms[4];
+extern u8 plainQuadUniforms[1];
+extern u8 windowMaskUniforms[1];
+
 extern float snesProjMatrix[16];
 
 extern u32* gpuOut;
@@ -1407,7 +1414,7 @@ void PPU_BlendScreens(u32 colorformat)
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	bglEnableAlphaTest(false);
 
-	bglUniformMatrix(GPU_VERTEX_SHADER, 0, snesProjMatrix);
+	bglUniformMatrix(GPU_VERTEX_SHADER, softRenderUniforms[0], snesProjMatrix);
 	
 	bglEnableTextures(GPU_TEXUNIT0|GPU_TEXUNIT1);
 	bglTexImage(GPU_TEXUNIT0, MainScreenTex,256,256,0,colorformat);

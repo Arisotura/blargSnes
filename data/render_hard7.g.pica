@@ -29,7 +29,7 @@
 .out outtc0 texcoord0.xy
 
 ; setup uniform map (not required)
-.fvec snesM7Matrix[2] ; TODO: use! currently hardcoding c14/c15
+.fvec snesM7Matrix[2]
 
 ; INPUT
 ; - VERTEX ATTRIBUTES -
@@ -58,7 +58,7 @@
 
 	; x2 y1
 	setemit 1
-	mov r3, c14
+	mov r3, snesM7Matrix[0]
 	add outpos, v0, r3
 	mov outclr, const9.w
 	mov r3, v1
@@ -67,7 +67,7 @@
 
 	; x1 y2
 	setemit 2, prim
-	mov r3, c15
+	mov r3, snesM7Matrix[1]
 	add outpos, v0, r3
 	mov outclr, const9.w
 	mov r3, v1
@@ -76,8 +76,8 @@
 
 	; x2 y2
 	setemit 0, prim inv
-	mov r4, c14
-	add r3, c15, r4
+	mov r4, snesM7Matrix[0]
+	add r3, snesM7Matrix[1], r4
 	add outpos, v0, r3
 	mov outclr, const9.w
 	mov r3, v1

@@ -65,6 +65,12 @@ shaderProgram_s hard7RenderShaderP;
 shaderProgram_s plainQuadShaderP;
 shaderProgram_s windowMaskShaderP;
 
+u8 finalUniforms[1];
+u8 softRenderUniforms[1];
+u8 hardRenderUniforms[2];
+u8 hard7RenderUniforms[4];
+u8 plainQuadUniforms[1];
+u8 windowMaskUniforms[1];
 
 void* vertexBuf;
 void* vertexPtr;
@@ -423,7 +429,7 @@ void RenderTopScreen()
 	
 	bglTexImage(GPU_TEXUNIT0, BorderTex,512,256,0,GPU_RGBA8);
 	
-	bglUniformMatrix(GPU_VERTEX_SHADER, 0, screenProjMatrix);
+	bglUniformMatrix(GPU_VERTEX_SHADER, finalUniforms[0], screenProjMatrix);
 	
 	bglNumAttribs(2);
 	bglAttribType(0, GPU_FLOAT, 3);	// vertex
@@ -894,6 +900,22 @@ int main()
 	shaderProgramInit(&hard7RenderShaderP);	shaderProgramSetVsh(&hard7RenderShaderP, &hard7RenderShader->DVLE[0]);	shaderProgramSetGsh(&hard7RenderShaderP, &hard7RenderShader->DVLE[1], 2);
 	shaderProgramInit(&plainQuadShaderP);	shaderProgramSetVsh(&plainQuadShaderP, &plainQuadShader->DVLE[0]);		shaderProgramSetGsh(&plainQuadShaderP, &plainQuadShader->DVLE[1], 4);
 	shaderProgramInit(&windowMaskShaderP);	shaderProgramSetVsh(&windowMaskShaderP, &windowMaskShader->DVLE[0]);	shaderProgramSetGsh(&windowMaskShaderP, &windowMaskShader->DVLE[1], 4);
+
+	finalUniforms[0] = shaderInstanceGetUniformLocation(finalShaderP.vertexShader, "projMtx");
+
+	softRenderUniforms[0] = shaderInstanceGetUniformLocation(softRenderShaderP.vertexShader, "projMtx");
+
+	hardRenderUniforms[0] = shaderInstanceGetUniformLocation(hardRenderShaderP.vertexShader, "projMtx");
+	hardRenderUniforms[1] = shaderInstanceGetUniformLocation(hardRenderShaderP.vertexShader, "scaler");
+
+	hard7RenderUniforms[0] = shaderInstanceGetUniformLocation(hard7RenderShaderP.vertexShader, "projMtx");
+	hard7RenderUniforms[1] = shaderInstanceGetUniformLocation(hard7RenderShaderP.vertexShader, "scaler");
+	hard7RenderUniforms[2] = shaderInstanceGetUniformLocation(hard7RenderShaderP.vertexShader, "m7Mtx");
+	hard7RenderUniforms[3] = shaderInstanceGetUniformLocation(hard7RenderShaderP.geometryShader, "snesM7Matrix");
+
+	plainQuadUniforms[0] = shaderInstanceGetUniformLocation(plainQuadShaderP.vertexShader, "projMtx");
+
+	windowMaskUniforms[0] = shaderInstanceGetUniformLocation(windowMaskShaderP.vertexShader, "projMtx");
 
 	GX_MemoryFill(gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
 	gspWaitForPSC0();
