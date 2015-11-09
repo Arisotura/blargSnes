@@ -216,6 +216,9 @@ void debugcrapo(u32 op, u32 op2)
 
 void SPC_ReportUnk(u8 op, u32 pc)
 {
+	static bool unkreported = false;
+	if (unkreported) return;
+	unkreported = true;
 	bprintf("SPC UNK %02X @ %04X\n", op, pc);
 }
 
@@ -831,8 +834,11 @@ void reportshit(u32 pc, u32 a, u32 y)
 	//bprintf("!! IRQ %04X %02X\n", SNES_Status->IRQ_CurHMatch, SNES_Status->IRQCond);
 	//pause=1;
 	//bprintf("TSX S=%04X X=%04X P=%04X  %04X\n", pc>>16, a, y&0xFFFF, y>>16);
-	bprintf("%06X\n", debugpc);
-	running=0; pause=1;
+	if (reported) return;
+	//bprintf("!! %08X -> %08X | %08X\n", pc, a, y);
+	bprintf("!! A=%02X X=%02X Y=%02X\n", pc, a, y);
+	reported=1;
+	//running=0; pause=1;
 }
 
 int reported2=0;
@@ -842,6 +848,11 @@ void reportshit2(u32 pc, u32 a, u32 y)
 	if (SNES_SysRAM[0x3C8] == 0 && reported2 != 0)
 		bprintf("[%06X] 3C8=0\n", debugpc);
 	reported2 = SNES_SysRAM[0x3C8];
+}
+
+void derpreport()
+{
+	bprintf("passed NMI check\n");
 }
 
 

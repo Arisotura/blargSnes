@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2015 StapleButter
 
     This file is part of blargSnes.
 
@@ -25,11 +25,11 @@
 
 
 #define CONSOLE_MAX 20
-char consolebuf[CONSOLE_MAX][37] = {{0}};
+char consolebuf[CONSOLE_MAX][64] = {{0}};
 int consoleidx = 0;
 int consoledirty = 0;
 
-extern int running;
+extern int running, pause;
 
 
 void bprintf(char* fmt, ...)
@@ -41,12 +41,17 @@ void bprintf(char* fmt, ...)
 	vsnprintf(buf, 1024, fmt, args);
 	va_end(args);
 	
-	int i = 0, j = 0;
+	int i = 0, j = 0, x = 0;
 	for (;;)
 	{
-		j = 0;
-		while (buf[i] != '\0' && buf[i] != '\n' && j<36)
+		j = 0; x = 0;
+		while (buf[i] != '\0' && buf[i] != '\n' && j<63)
+		{
+			x += MeasureCharacter(buf[i]);
+			if (x >= 320) break;
+			
 			consolebuf[consoleidx][j++] = buf[i++];
+		}
 		consolebuf[consoleidx][j] = '\0';
 		
 		consoleidx++;
@@ -62,7 +67,7 @@ void bprintf(char* fmt, ...)
 void ClearConsole()
 {
 	consoleidx = 0;
-	memset(consolebuf, 0, CONSOLE_MAX*37);
+	memset(consolebuf, 0, CONSOLE_MAX*64);
 	
 	consoledirty = 2;
 }
@@ -77,7 +82,7 @@ void DrawConsole()
 	{
 		if (consolebuf[j][0] != '\0')
 		{
-			DrawText(0, y, RGB(255,255,255), consolebuf[j]);
+			DrawText(0, y, (running&&!pause)?RGB(128,128,128):RGB(255,255,255), consolebuf[j]);
 			y += 12;
 		}
 		
@@ -101,7 +106,8 @@ void Console_Render(bool force)
 	if (!consoledirty) return;
 	consoledirty--;
 	
-	ClearFramebuffer();
+	if (running&&!pause) ClearFramebufferWithColor(RGB(0,0,0));
+	else                 ClearFramebuffer();
 	DrawConsole();
 }
 

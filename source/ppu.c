@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2015 StapleButter
 
     This file is part of blargSnes.
 
@@ -25,6 +25,7 @@
 
 u32 Mem_WRAMAddr = 0;
 u8 SPC_IOPorts[8];
+u8 SPC_IOUnread[4];
 
 
 
@@ -373,6 +374,7 @@ void SPC_Compensate()
 	//torun >>= 24;
 	if (torun > 0)
 	{
+		//*(u32*)&SPC_IOUnread[0] = 0;
 		SPC_Run(torun);
 		SNES_Status->SPC_LastCycle = cyclenow;
 	}
@@ -464,18 +466,16 @@ u8 PPU_Read8(u32 addr)
 			PPU.OPVFlag = 0;
 			break;
 		
-		case 0x40: SPC_Compensate(); ret = SPC_IOPorts[4]; break;
-		case 0x41: SPC_Compensate(); ret = SPC_IOPorts[5]; break;
-		case 0x42: SPC_Compensate(); ret = SPC_IOPorts[6]; break;
-		case 0x43: SPC_Compensate(); ret = SPC_IOPorts[7]; break;
-		
 		case 0x80: ret = SNES_SysRAM[Mem_WRAMAddr++]; Mem_WRAMAddr &= ~0x20000; break;
 
 		default:
 			if (addr >= 0x84) // B-Bus open bus
 				ret = SNES_Status->LastBusVal;
-			else if (addr >= 0x44 && addr < 0x80)
-				bprintf("!! SPC IO MIRROR READ %02X\n", addr);
+			else if (addr >= 0x40 && addr < 0x80)
+			{
+				SPC_Compensate();
+				ret = SPC_IOPorts[4 + (addr&0x03)];
+			}
 			else
 				bprintf("Open bus 21%02X\n", addr); 
 			break;
@@ -492,8 +492,8 @@ u16 PPU_Read16(u32 addr)
 		// not in the right place, but well
 		// our I/O functions are mapped to the whole $21xx range
 		
-		case 0x40: ret = *(u16*)&SPC_IOPorts[4]; break;
-		case 0x42: ret = *(u16*)&SPC_IOPorts[6]; break;
+		case 0x40: SPC_Compensate(); ret = *(u16*)&SPC_IOPorts[4]; break;
+		case 0x42: SPC_Compensate(); ret = *(u16*)&SPC_IOPorts[6]; break;
 		
 		default:
 			ret = PPU_Read8(addr);
@@ -873,11 +873,6 @@ void PPU_Write8(u32 addr, u8 val)
 				if (val & 0x08) bprintf("!! PSEUDO HIRES\n");
 			}
 			break;
-			
-		case 0x40: SPC_Compensate(); SPC_IOPorts[0] = val; break;
-		case 0x41: SPC_Compensate(); SPC_IOPorts[1] = val; break;
-		case 0x42: SPC_Compensate(); SPC_IOPorts[2] = val; break;
-		case 0x43: SPC_Compensate(); SPC_IOPorts[3] = val; break;
 		
 		case 0x80: SNES_SysRAM[Mem_WRAMAddr++] = val; Mem_WRAMAddr &= ~0x20000; break;
 		case 0x81: Mem_WRAMAddr = (Mem_WRAMAddr & 0x0001FF00) | val; break;
@@ -885,7 +880,13 @@ void PPU_Write8(u32 addr, u8 val)
 		case 0x83: Mem_WRAMAddr = (Mem_WRAMAddr & 0x0000FFFF) | ((val & 0x01) << 16); break;
 				
 		default:
-			iprintf("PPU_Write8(%08X, %08X)\n", addr, val);
+			if (addr >= 0x40 && addr < 0x80)
+			{
+				SPC_Compensate();
+				SPC_IOPorts[addr&0x03] = val;
+			}
+			else
+				iprintf("PPU_Write8(%08X, %08X)\n", addr, val);
 			break;
 	}
 }
@@ -917,9 +918,6 @@ void PPU_Write16(u32 addr, u16 val)
 		case 0x40: SPC_Compensate(); *(u16*)&SPC_IOPorts[0] = val; break;
 		case 0x41: SPC_Compensate(); *(u16*)&SPC_IOPorts[1] = val; break;
 		case 0x42: SPC_Compensate(); *(u16*)&SPC_IOPorts[2] = val; break;
-		
-		case 0x3F:
-		case 0x43: bprintf("!! write $21%02X %04X\n", addr, val); break;
 		
 		case 0x81: Mem_WRAMAddr = (Mem_WRAMAddr & 0x00010000) | val; break;
 		

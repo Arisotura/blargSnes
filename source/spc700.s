@@ -1,5 +1,5 @@
 @ -----------------------------------------------------------------------------
-@ Copyright 2014 StapleButter
+@ Copyright 2014-2015 StapleButter
 @
 @ This file is part of blargSnes.
 @
@@ -41,6 +41,7 @@ dbgcycles:
 nruns:
 	.long 0
 	
+.global SPC_CycleRatio
 .global SPC_TimerReload
 .global SPC_TimerVal
 .global SPC_TimerEnable
@@ -52,6 +53,8 @@ nruns:
 @ r0-r4, r12, lr
 @SPC_ResumeInfo:		@ -60
 @	.long 0,0,0,0,0,0,0
+SPC_CycleRatio:		@ -36
+	.long 0
 SPC_TimerReload:	@ -32
 	.long 0,0,0
 SPC_TimerVal: 		@ -20
@@ -347,17 +350,10 @@ SPC_Run:
 	stmdb sp!, {r3-r12, lr}
 	LoadRegs
 	
-	@stmdb sp!, {r0-r12, lr}
-	@bl zerp
-	@ldmia sp!, {r0-r12, lr}
-	
-	add spcCycles, r0
-	@mul spcCycles, r0, #6400
-	
-	@SPCResume
+	adds spcCycles, r0
+	ble spcdone
 			
 spcloop:
-		
 		Prefetch8
 		ldr pc, [pc, r0, lsl #0x2]
 		nop
@@ -442,13 +438,12 @@ noTimer2:
 		str r0, [memory, #-4]
 		blge DSP_BufferSwap
 		
-		@mov r0, #6400 @ derp
-		ldr r0, =134013 @ haxxxx!!!! TODO FIX ME
+		ldr r0, [memory, #-36]
 		mul r3, r3, r0
 		subs spcCycles, spcCycles, r3
 		bpl spcloop
 		
-spcpause:
+spcdone:
 	StoreRegs
 	ldmia sp!, {r3-r12, pc}
 		

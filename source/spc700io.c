@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2015 StapleButter
 
     This file is part of blargSnes.
 
@@ -37,6 +37,7 @@ void SPC_InitMisc()
 	
 	*(u32*)&SPC_IOPorts[0] = 0;
 	*(u32*)&SPC_IOPorts[4] = 0;
+	*(u32*)&SPC_IOUnread[0] = 0;
 	
 	SPC_TimerEnable = 0;
 	SPC_TimerReload[0] = 0;
@@ -57,7 +58,10 @@ u8 SPC_IORead8(u16 addr)
 	switch (addr)
 	{
 		case 0xF2: ret = SPC_DSPAddr; break;
-		case 0xF3: ret = DSP_MEM[SPC_DSPAddr]; break;
+		case 0xF3: ret = DSP_MEM[SPC_DSPAddr]; 
+			if ((SPC_DSPAddr&0x0F)==0x08 || (SPC_DSPAddr&0x0F)==0x09 || SPC_DSPAddr==0x7C) // those ports would require syncing the DSP thread
+				bprintf("!! DSP READ %02X\n", SPC_DSPAddr); 
+			break;
 		
 		case 0xF4: ret = SPC_IOPorts[0]; break;
 		case 0xF5: ret = SPC_IOPorts[1]; break;
@@ -154,9 +158,4 @@ void SPC_IOWrite16(u16 addr, u16 val)
 			SPC_IOWrite8(addr+1, val >> 8);
 			break;
 	}
-}
-
-void zerp(u32 crapo)
-{
-	bprintf("SPC: %d\n", crapo);
 }

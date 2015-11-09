@@ -603,7 +603,8 @@ nmi_nostack:
 	subne r0, r0, #vec_e1_NMI
 	ldrh r0, [r0]
 	SetPC
-	b cpuloop
+	@b cpuloop
+	b nmi_return
 	
 @ --- Main loop ---------------------------------------------------------------
 
@@ -628,12 +629,29 @@ CPU_Run:
 	@ldr r2, [r1]
 	@sub r2, r2, r0
 	
-	tst snesP, #flagNMI
-	bne CPU_TriggerNMI
+	@tst snesP, #flagNMI
+	@bne CPU_TriggerNMI
+	
+				@ HAAXXX
+				tst snesP, #flagNMI
+				bicne snesP, snesP, #flagW
 	
 	@ do not execute if we're waiting for an IRQ
 	tst snesP, #flagW
 	beq cpuloop
+	
+	@ WAI: look if we're supposed to get an IRQ
+	ldrh r0, [snesStatus, #IRQ_CurHMatch]
+	cmp r0, #0x8000 @ no IRQ for this line
+	beq wai_noirq
+	mov snesCycles, snesCycles, lsl #16
+	mov snesCycles, snesCycles, lsr #16
+	orr snesCycles, snesCycles, r0, lsl #16
+	cmp snesCycles, snesCycles, lsl #16
+	bge cpu_run_end
+	b cpuloop
+
+wai_noirq:
 	mov snesCycles, snesCycles, lsl #16
 	orr snesCycles, snesCycles, lsr #16
 	ldmia sp!, {r3, pc}
@@ -654,14 +672,34 @@ cpuloop:
 		tst r3, #0x10
 		blne CPU_TriggerIRQ
 		
+						mov r0, snesPBR, lsl #0x10
+						orr r0, r0, snesPC, lsr #0x10
+						ldr r1, =debugpc
+						str r0, [r1]
+						@ldr r1, =0xC0B6DA
+						@cmp r0, r1
+						@bne booboo
+						@stmdb sp!, {r0-r12,lr}
+						@bl derpreport
+						@ldmia sp!, {r0-r12,lr}
+						@booboo:
+		
 		OpcodePrefetch8
 		str snesCycles, [snesStatus, #HCountFull]
 		ldr pc, [opTable, r0, lsl #0x2]
 		
 	op_return:
+	
+		@ delayed NMI check
+		@ not elegant, but will do
+		tst snesP, #flagNMI
+		bne CPU_TriggerNMI
+	nmi_return:
+	
 		cmp snesCycles, snesCycles, lsl #16
 		blt cpuloop
-	
+
+cpu_run_end:
 	ldmia sp!, {r3, pc}
 	
 	
@@ -734,11 +772,11 @@ lineloop1:
 		@ run the SPC700
 		mov r0, snesCycles, asr #16
 		ldr r1, [snesStatus, #SPC_CycleRatio]
-		mul r2, r1, r0
+		mul r2, r1, r0							@ cyclenow = SPC_CycleRatio * HCount
 		ldr r1, [snesStatus, #SPC_LastCycle]
-		subs r0, r2, r1
+		subs r0, r2, r1							@ r0 = cyclenow - SPC_LastCycle
 		ldr r1, [snesStatus, #SPC_CyclesPerLine]
-		sub r2, r2, r1
+		sub r2, r2, r1							@ SPC_LastCycle = cyclenow - SPC_CyclesPerLine
 		str r2, [snesStatus, #SPC_LastCycle]
 		@movs r0, r0, asr #24
 		@movmis r0, #0

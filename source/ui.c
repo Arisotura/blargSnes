@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2015 StapleButter
 
     This file is part of blargSnes.
 
@@ -172,37 +172,31 @@ void FillRect(int x1, int x2, int y1, int y2, u32 color)
 
 void ClearFramebuffer()
 {
-	FillRect(0, 319, 0, 239, RGB(0,0,32));
+	ClearFramebufferWithColor(RGB(0,0,32));
+}
+
+void ClearFramebufferWithColor(u32 color)
+{
+	FillRect(0, 319, 0, 239, color);
+}
+
+inline int MeasureCharacter(char ch)
+{
+	if (ch < 0x10 || ch > 0x7E) ch = 0x7F;
+	
+	u16 glyphsize = font[(ch-0x10) << 4];
+	
+	if (!glyphsize) return 6;
+	return glyphsize+2;
 }
 
 int MeasureText(char* str)
 {
-	unsigned short* ptr;
-	unsigned short glyphsize;
 	int i, x = 0;
 	
 	for (i = 0; str[i] != '\0'; i++)
 	{
-		if (str[i] == 0x20)
-		{
-			x += 6;
-			continue;
-		}
-		
-		u32 ch = str[i];
-		if (ch < 0x10 || ch > 0x7E) ch = 0x7F;
-		
-		ptr = &font[(ch-0x10) << 4];
-		glyphsize = ptr[0];
-		if (!glyphsize)
-		{
-			x += 6;
-			continue;
-		}
-		
-		x++;
-		x += glyphsize;
-		x++;
+		x += MeasureCharacter(str[i]);
 	}
 	
 	return x;

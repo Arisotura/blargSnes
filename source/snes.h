@@ -91,6 +91,7 @@ extern u8 SNES_SysRAM[0x20000];
 extern u8 SNES_WRIO;
 
 extern u8 SPC_IOPorts[8];
+extern u8 SPC_IOUnread[4];
 
 
 bool ROM_LoadFile(char* name);
