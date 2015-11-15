@@ -82,7 +82,7 @@ u32* BorderTex;
 u16* MainScreenTex;
 u16* SubScreenTex;
 
-FS_archive sdmcArchive;
+FS_Archive sdmcArchive;
 
 
 int forceexit = 0;
@@ -184,12 +184,12 @@ void SPCThread(u32 blarg)
 void dbg_save(char* path, void* buf, int size)
 {
 	Handle sram;
-	FS_path sramPath;
-	sramPath.type = PATH_CHAR;
+	FS_Path sramPath;
+	sramPath.type = PATH_ASCII;
 	sramPath.size = strlen(path) + 1;
 	sramPath.data = (u8*)path;
 	
-	Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_WRITE, 0);
 	if ((res & 0xFFFC03FF) == 0)
 	{
 		u32 byteswritten = 0;
@@ -583,12 +583,12 @@ bool TakeScreenshot(char* path)
 	int x, y;
 	
 	Handle file;
-	FS_path filePath;
-	filePath.type = PATH_CHAR;
+	FS_Path filePath;
+	filePath.type = PATH_ASCII;
 	filePath.size = strlen(path) + 1;
 	filePath.data = (u8*)path;
 	
-	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_CREATE|FS_OPEN_WRITE, 0);
 	if (res) 
 		return false;
 		
@@ -683,12 +683,12 @@ void CopyBitmapToTexture(u8* src, void* dst, u32 width, u32 height, u32 alpha, u
 bool LoadBitmap(char* path, u32 width, u32 height, void* dst, u32 alpha, u32 startx, u32 stride, u32 flags)
 {
 	Handle file;
-	FS_path filePath;
-	filePath.type = PATH_CHAR;
+	FS_Path filePath;
+	filePath.type = PATH_ASCII;
 	filePath.size = strlen(path) + 1;
 	filePath.data = (u8*)path;
 	
-	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_READ, 0);
 	if (res) 
 		return false;
 		
@@ -863,7 +863,7 @@ int main()
 
 	gfxInitDefault();
 	
-	sdmcArchive = (FS_archive){0x9, (FS_path){PATH_EMPTY, 1, (u8*)""}};
+	sdmcArchive = (FS_Archive){0x9, (FS_Path){PATH_EMPTY, 1, (u8*)""}};
 	FSUSER_OpenArchive(&sdmcArchive);
 	
 	Config.HardwareMode7 = -1;

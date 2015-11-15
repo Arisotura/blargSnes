@@ -36,7 +36,7 @@ u32 SNES_SRAMMask;
 u8* SNES_SRAM = NULL;
 
 char SNES_SRAMPath[300];
-extern FS_archive sdmcArchive;
+extern FS_Archive sdmcArchive;
 
 // addressing: BBBBBBBB:AAAaaaaa:aaaaaaaa
 // bit4-31: argument
@@ -132,15 +132,15 @@ bool SNES_LoadROM(char* path)
 		SNES_SRAMPath[strlen(path)] = '\0';
 
 		Handle sram;
-		FS_path sramPath;
-		sramPath.type = PATH_CHAR;
+		FS_Path sramPath;
+		sramPath.type = PATH_ASCII;
 		sramPath.size = strlen(SNES_SRAMPath) + 1;
 		sramPath.data = (u8*)SNES_SRAMPath;
 	
-		Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_READ|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+		Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_READ|FS_OPEN_WRITE, 0);
 		if ((res & 0xFFFC03FF) != 0)
 		{
-			res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_READ|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+			res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_READ|FS_OPEN_WRITE, 0);
 			if ((res & 0xFFFC03FF) != 0)
 				bprintf("Error %08X while trying to open the savefile.\nMake sure it isn't read-only.\n", res);
 			else
@@ -188,12 +188,12 @@ void SNES_Reset()
 			*(u32*)&SNES_SRAM[i] = 0;
 		
 		Handle sram;
-		FS_path sramPath;
-		sramPath.type = PATH_CHAR;
+		FS_Path sramPath;
+		sramPath.type = PATH_ASCII;
 		sramPath.size = strlen(SNES_SRAMPath) + 1;
 		sramPath.data = (u8*)SNES_SRAMPath;
 	
-		Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
+		Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_READ, 0);
 		if ((res & 0xFFFC03FF) == 0)
 		{
 			u32 bytesread = 0;
@@ -289,12 +289,12 @@ void SNES_SaveSRAM()
 		return;
 	
 	Handle sram;
-	FS_path sramPath;
-	sramPath.type = PATH_CHAR;
+	FS_Path sramPath;
+	sramPath.type = PATH_ASCII;
 	sramPath.size = strlen(SNES_SRAMPath) + 1;
 	sramPath.data = (u8*)SNES_SRAMPath;
 	
-	Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_WRITE, 0);
 	if ((res & 0xFFFC03FF) == 0)
 	{
 		u32 byteswritten = 0;
