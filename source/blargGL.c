@@ -201,7 +201,7 @@ void _bglUpdateState()
 		temp[2] = 0x01000000 | (((bglState.BufferH-1)&0xFFF)<<12) | (bglState.BufferW&0xFFF);
 		GPUCMD_AddIncrementalWrites(GPUREG_DEPTHBUFFER_LOC, temp, 3);
 		
-		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_DIM2, temp[2]);
+		GPUCMD_AddWrite(GPUREG_RENDERBUF_DIM, temp[2]);
 		GPUCMD_AddWrite(GPUREG_DEPTHBUFFER_FORMAT, 0x00000003); // depth 24 stencil 8
 		GPUCMD_AddWrite(GPUREG_COLORBUFFER_FORMAT, 0x00000002); // 32bit RGBA8
 		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_BLOCK32, 0x00000000);
@@ -237,8 +237,7 @@ void _bglUpdateState()
 	
 	if (dirty & DIRTY_DEPTHRANGE)
 	{
-		// min/max are misnamed, should be scale/offset according to oldgpu API
-		GPUCMD_AddWrite(GPUREG_006D, 0x00000001); //?
+		GPUCMD_AddWrite(GPUREG_DEPTHMAP_ENABLE, 0x00000001);
 		GPUCMD_AddWrite(GPUREG_DEPTHMAP_SCALE, f32tof24(bglState.DepthMin));
 		GPUCMD_AddWrite(GPUREG_DEPTHMAP_OFFSET, f32tof24(bglState.DepthMax));
 	}
@@ -278,8 +277,8 @@ void _bglUpdateState()
 												 
 		// early Z-test crap
 		// TODO: check if this is required
-		GPUCMD_AddMaskedWrite(GPUREG_0062, 0x1, 0);
-		GPUCMD_AddWrite(GPUREG_0118, 0);
+		GPUCMD_AddMaskedWrite(GPUREG_EARLYDEPTH_TEST1, 0x1, 0);
+		GPUCMD_AddWrite(GPUREG_EARLYDEPTH_TEST2, 0);
 	}
 	
 	if (dirty & DIRTY_ALPHABLEND)
@@ -303,8 +302,7 @@ void _bglUpdateState()
 	
 	if (dirty & DIRTY_TEXENABLE)
 	{
-		GPUCMD_AddMaskedWrite(GPUREG_006F, 0x2, bglState.TextureEnable<<8); 			// enables texcoord outputs
-		GPUCMD_AddWrite(GPUREG_TEXUNIT_ENABLE, 0x00011000|bglState.TextureEnable);		// enables texture units
+		GPUCMD_AddWrite(GPUREG_TEXUNIT_CONFIG, 0x00011000|bglState.TextureEnable); // enables texture units
 	}
 	
 	const u8 tevreg[] = {
@@ -332,21 +330,21 @@ void _bglUpdateState()
 	if (dirty & DIRTY_TEXUNITS(0))
 	{
 		GPUCMD_AddWrite(GPUREG_TEXUNIT0_TYPE, bglState.Texture[0].ColorType);
-		GPUCMD_AddWrite(GPUREG_TEXUNIT0_LOC, ((u32)bglState.Texture[0].Data)>>3);
+		GPUCMD_AddWrite(GPUREG_TEXUNIT0_ADDR1, ((u32)bglState.Texture[0].Data)>>3);
 		GPUCMD_AddWrite(GPUREG_TEXUNIT0_DIM, (bglState.Texture[0].Width<<16)|bglState.Texture[0].Height);
 		GPUCMD_AddWrite(GPUREG_TEXUNIT0_PARAM, bglState.Texture[0].Parameters);
 	}
 	if (dirty & DIRTY_TEXUNITS(1))
 	{
 		GPUCMD_AddWrite(GPUREG_TEXUNIT1_TYPE, bglState.Texture[1].ColorType);
-		GPUCMD_AddWrite(GPUREG_TEXUNIT1_LOC, ((u32)bglState.Texture[1].Data)>>3);
+		GPUCMD_AddWrite(GPUREG_TEXUNIT1_ADDR, ((u32)bglState.Texture[1].Data)>>3);
 		GPUCMD_AddWrite(GPUREG_TEXUNIT1_DIM, (bglState.Texture[1].Width<<16)|bglState.Texture[1].Height);
 		GPUCMD_AddWrite(GPUREG_TEXUNIT1_PARAM, bglState.Texture[1].Parameters);
 	}
 	if (dirty & DIRTY_TEXUNITS(2))
 	{
 		GPUCMD_AddWrite(GPUREG_TEXUNIT2_TYPE, bglState.Texture[2].ColorType);
-		GPUCMD_AddWrite(GPUREG_TEXUNIT2_LOC, ((u32)bglState.Texture[2].Data)>>3);
+		GPUCMD_AddWrite(GPUREG_TEXUNIT2_ADDR, ((u32)bglState.Texture[2].Data)>>3);
 		GPUCMD_AddWrite(GPUREG_TEXUNIT2_DIM, (bglState.Texture[2].Width<<16)|bglState.Texture[2].Height);
 		GPUCMD_AddWrite(GPUREG_TEXUNIT2_PARAM, bglState.Texture[2].Parameters);
 	}
@@ -380,7 +378,7 @@ void _bglUpdateState()
 		GPUCMD_AddIncrementalWrites(GPUREG_ATTRIBBUFFERS_LOC, temp, 39);
 
 		GPUCMD_AddMaskedWrite(GPUREG_VSH_INPUTBUFFER_CONFIG, 0xB, 0xA0000000|(bglState.NumAttribBuffers-1));
-		GPUCMD_AddWrite(GPUREG_0242, (bglState.NumAttribBuffers-1));
+		GPUCMD_AddWrite(GPUREG_VSH_NUM_ATTR, (bglState.NumAttribBuffers-1));
 
 		GPUCMD_AddIncrementalWrites(GPUREG_VSH_ATTRIBUTES_PERMUTATION_LOW, ((u32[]){(u32)permut, (permut>>32)&0xFFFF}), 2);
 	}
@@ -427,8 +425,8 @@ void bglUniformMatrix(GPU_SHADER_TYPE type, u32 id, float* val)
 
 void bglOutputBuffers(void* color, void* depth, u32 w, u32 h)
 {
-	color = (void*)osConvertVirtToPhys((u32)color);
-	depth = (void*)osConvertVirtToPhys((u32)depth);
+	color = (void*)osConvertVirtToPhys(color);
+	depth = (void*)osConvertVirtToPhys(depth);
 	
 	if (color == bglState.ColorBuffer && 
 		depth == bglState.DepthBuffer &&
@@ -679,7 +677,7 @@ void bglDummyTexEnv(u32 id)
 void bglTexImage(GPU_TEXUNIT unit, void* data, u32 width, u32 height, u32 param, GPU_TEXCOLOR colortype)
 {
 	u32 id = (unit==4) ? 2:(unit-1);
-	data = (void*)osConvertVirtToPhys((u32)data);
+	data = (void*)osConvertVirtToPhys(data);
 	
 	if (data == bglState.Texture[id].Data &&
 		width == bglState.Texture[id].Width &&
@@ -708,7 +706,7 @@ void bglNumAttribs(u32 num)
 
 void bglAttribBuffer(void* data)
 {
-	data = (void*)osConvertVirtToPhys((u32)data);
+	data = (void*)osConvertVirtToPhys(data);
 	
 	if (data == bglState.AttribBufferPtr)
 		return;
@@ -741,12 +739,12 @@ void bglDrawArrays(GPU_Primitive_t type, u32 numvertices)
 	GPUCMD_AddWrite(GPUREG_NUMVERTICES, numvertices);
 	GPUCMD_AddWrite(GPUREG_VERTEX_OFFSET, 0);
 
-	GPUCMD_AddMaskedWrite(GPUREG_0253, 1, 0x00000001);
+	GPUCMD_AddMaskedWrite(GPUREG_GEOSTAGE_CONFIG2, 1, 0x00000001);
 
-	GPUCMD_AddMaskedWrite(GPUREG_0245, 1, 0x00000000);
+	GPUCMD_AddMaskedWrite(GPUREG_START_DRAW_FUNC0, 1, 0x00000000);
 	GPUCMD_AddWrite(GPUREG_DRAWARRAYS, 0x00000001);
-	GPUCMD_AddMaskedWrite(GPUREG_0245, 1, 0x00000001);
-	GPUCMD_AddWrite(GPUREG_0231, 0x00000001);
+	GPUCMD_AddMaskedWrite(GPUREG_START_DRAW_FUNC0, 1, 0x00000001);
+	GPUCMD_AddWrite(GPUREG_VTX_FUNC, 0x00000001);
 	
 	bglState.DrawnSomething = true;
 }
@@ -758,7 +756,7 @@ void bglFlush()
 	{
 		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_FLUSH, 0x00000001);
 		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_INVALIDATE, 0x00000001);
-		GPUCMD_AddWrite(GPUREG_0063, 0x00000001); // whatever
+		GPUCMD_AddWrite(GPUREG_EARLYDEPTH_CLEAR, 0x00000001);
 		
 		bglState.DrawnSomething = false;
 	}
