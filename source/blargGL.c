@@ -256,7 +256,7 @@ void _bglUpdateState()
 											 (bglState.StencilRef<<16) |
 											 (bglState.StencilMask<<24)); // input mask
 
-		GPUCMD_AddWrite(GPUREG_STENCIL_ACTION, bglState.StencilOpSFail | 
+		GPUCMD_AddWrite(GPUREG_STENCIL_OP, bglState.StencilOpSFail | 
 		                                       (bglState.StencilOpDFail << 4) | 
 											   (bglState.StencilOpPass << 8));
 	}
@@ -271,7 +271,7 @@ void _bglUpdateState()
 	
 	if (dirty & DIRTY_DEPTHTEST)
 	{
-		GPUCMD_AddWrite(GPUREG_DEPTHTEST_CONFIG, (bglState.DepthTest&1) |
+		GPUCMD_AddWrite(GPUREG_DEPTH_COLOR_MASK, (bglState.DepthTest&1) |
 		                                         ((bglState.DepthFunc&7)<<4) |
 												 (bglState.ColorDepthMask<<8));
 												 
@@ -283,19 +283,19 @@ void _bglUpdateState()
 	
 	if (dirty & DIRTY_ALPHABLEND)
 	{
-		GPUCMD_AddWrite(GPUREG_BLEND_CONFIG, bglState.ColorBlendEquation | 
+		GPUCMD_AddWrite(GPUREG_BLEND_FUNC, bglState.ColorBlendEquation | 
 		                                     (bglState.AlphaBlendEquation<<8) | 
 											 (bglState.ColorSrcFactor<<16) | 
 											 (bglState.ColorDstFactor<<20) | 
 											 (bglState.AlphaSrcFactor<<24) | 
 											 (bglState.AlphaDstFactor<<28));
 		
-		GPUCMD_AddMaskedWrite(GPUREG_BLEND_ENABLE, 0x2, 0x00000100);
+		GPUCMD_AddMaskedWrite(GPUREG_COLOR_OPERATION, 0x2, 0x00000100);
 	}
 	
 	if (dirty & DIRTY_ALPHATEST)
 	{
-		GPUCMD_AddWrite(GPUREG_ALPHATEST_CONFIG, (bglState.AlphaTest&1) |
+		GPUCMD_AddWrite(GPUREG_FRAGOP_ALPHA_TEST, (bglState.AlphaTest&1) |
 		                                         ((bglState.AlphaFunc&7)<<4) |
 												 (bglState.AlphaRef<<8));
 	}
