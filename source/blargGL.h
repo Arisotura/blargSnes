@@ -39,7 +39,9 @@ void bglUseShader(shaderProgram_s* shader);
 void bglUniform(GPU_SHADER_TYPE type, u32 id, float* val);
 void bglUniformMatrix(GPU_SHADER_TYPE type, u32 id, float* val);
 
-void bglOutputBuffers(void* color, void* depth, u32 w, u32 h);
+void bglOutputBuffers(u32 colorF, u32 depthF, void* color, void* depth, u32 w, u32 h);
+void bglOutputBufferAccess(u32 colorR, u32 colorW, u32 depthstencilR, u32 depthstencilW);
+
 void bglViewport(u32 x, u32 y, u32 w, u32 h);
 
 void bglScissorMode(GPU_SCISSORMODE mode);
@@ -63,6 +65,7 @@ void bglAlphaFunc(GPU_TESTFUNC func, u32 ref);
 void bglBlendColor(u32 r, u32 g, u32 b, u32 a);
 void bglBlendEquation(GPU_BLENDEQUATION coloreq, GPU_BLENDEQUATION alphaeq);
 void bglBlendFunc(GPU_BLENDFACTOR colorsrc, GPU_BLENDFACTOR colordst, GPU_BLENDFACTOR alphasrc, GPU_BLENDFACTOR alphadst);
+void bglColorLogicOp(GPU_LOGICOP op);
 
 void bglEnableTextures(GPU_TEXUNIT units);
 void bglTexEnv(u32 id, u32 colorsrc, u32 alphasrc, u32 colorop, u32 alphaop, GPU_COMBINEFUNC colorcomb, GPU_COMBINEFUNC alphacomb, u32 constcol);

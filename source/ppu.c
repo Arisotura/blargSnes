@@ -1,5 +1,5 @@
 /*
-    Copyright 2014-2015 StapleButter
+    Copyright 2014 StapleButter
 
     This file is part of blargSnes.
 
@@ -27,6 +27,12 @@ u32 Mem_WRAMAddr = 0;
 u8 SPC_IOPorts[8];
 u8 SPC_IOUnread[4];
 
+extern SNES_StatusData* SNES_Status;
+
+extern u64 emuTick;
+extern u64 emuTime;
+extern u64 ppuTick;
+extern u64 ppuTime;
 
 
 const u8 PPU_OBJWidths[16] = 
@@ -166,10 +172,17 @@ void PPU_Reset()
 	u8 hardrend = PPU.HardwareRenderer;
 	u16* mbuf = PPU.MainBuffer;
 	u16* sbuf = PPU.SubBuffer;
+
 	
 	memset(&PPU, 0, sizeof(PPUState));
-	
+
+		
 	ApplyScaling();
+
+	//	consoleInit(GFX_TOP, NULL);
+	//printf("test\n");
+
+
 	
 	PPU.HardwareRenderer = hardrend;
 	PPU.MainBuffer = mbuf;
@@ -202,15 +215,15 @@ void PPU_Reset()
 	PPU.OBJHeight = &PPU_OBJHeights[0];
 	
 	PPU.SubBackdrop = 0x0001;
+
 	
 	if (PPU.HardwareRenderer)
 	{
 		for (i = 1; i < 256; i++)
 		{
 			PPU.Palette[i] = 0x0001;
-			PPU.PaletteEx1[i] = (i < 128);
-			PPU.PaletteEx2[i] = (i >= 128);
 		}
+		PPU_Reset_Hard();
 	}
 }
 
@@ -309,13 +322,6 @@ inline void PPU_SetColor(u32 num, u16 val)
 			
 
 			PPU.Palette[num] = temp | 0x0001;
-			if(num < 128)
-			{
-				PPU.PaletteEx1[num] = temp | 0x0001;
-				PPU.PaletteEx2[num + 128] = temp | 0x0001;
-				if(num > 0)
-					PPU.PaletteUpdateCount128++;
-			}
 			
 			if(num == 0)
 				PPU.MainBackdropDirty = 1;
@@ -466,6 +472,11 @@ u8 PPU_Read8(u32 addr)
 			PPU.OPVFlag = 0;
 			break;
 		
+		case 0x40: SPC_Compensate(); ret = SPC_IOPorts[4]; break;
+		case 0x41: SPC_Compensate(); ret = SPC_IOPorts[5]; break;
+		case 0x42: SPC_Compensate(); ret = SPC_IOPorts[6]; break;
+		case 0x43: SPC_Compensate(); ret = SPC_IOPorts[7]; break;
+		
 		case 0x80: ret = SNES_SysRAM[Mem_WRAMAddr++]; Mem_WRAMAddr &= ~0x20000; break;
 
 		default:
@@ -545,13 +556,13 @@ void PPU_Write8(u32 addr, u8 val)
 		case 0x02:
 			PPU.OAMAddr = (PPU.OAMAddr & 0x200) | (val << 1);
 			PPU.OAMReload = PPU.OAMAddr;
-			PPU.FirstOBJ = PPU.OAMPrio ? ((PPU.OAMAddr >> 1) & 0x7F) : 0;
+			PPU.FirstOBJ = PPU.OAMPrio ? ((PPU.OAMAddr >> 2) & 0x7F) : 0;
 			break;
 		case 0x03:
 			PPU.OAMAddr = (PPU.OAMAddr & 0x1FE) | ((val & 0x01) << 9);
 			PPU.OAMPrio = val & 0x80;
 			PPU.OAMReload = PPU.OAMAddr;
-			PPU.FirstOBJ = PPU.OAMPrio ? ((PPU.OAMAddr >> 1) & 0x7F) : 0;
+			PPU.FirstOBJ = PPU.OAMPrio ? ((PPU.OAMAddr >> 2) & 0x7F) : 0;
 			break;
 			
 		case 0x04:
@@ -637,8 +648,9 @@ void PPU_Write8(u32 addr, u8 val)
 				addr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
 				if (PPU.VRAM[addr] != val)
 				{
+					if(PPU.HardwareRenderer)
+						PPU_ConvertVRAM8(addr, val);
 					PPU.VRAM[addr] = val;
-					PPU.VRAMUpdateCount[addr >> 4]++;
 				}
 				if (!(PPU.VRAMInc & 0x80))
 					PPU.VRAMAddr += PPU.VRAMStep;
@@ -649,10 +661,9 @@ void PPU_Write8(u32 addr, u8 val)
 				addr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
 				if (PPU.VRAM[addr+1] != val)
 				{
+					if(PPU.HardwareRenderer)
+						PPU_ConvertVRAM8(addr+1, val);
 					PPU.VRAM[addr+1] = val;
-					PPU.VRAMUpdateCount[addr >> 4]++;
-					PPU.VRAM7[addr >> 1] = val;
-					PPU.VRAM7UpdateCount[addr >> 7]++;
 				}
 				if (PPU.VRAMInc & 0x80)
 					PPU.VRAMAddr += PPU.VRAMStep;
@@ -804,6 +815,7 @@ void PPU_Write8(u32 addr, u8 val)
 			{
 				PPU.MainLayerEnable = val;
 				PPU.ModeDirty = 1;
+				PPU.WindowDirty = 1;
 			}
 			break;
 		case 0x2D:
@@ -811,6 +823,7 @@ void PPU_Write8(u32 addr, u8 val)
 			{
 				PPU.SubLayerEnable = val;
 				PPU.ModeDirty = 1;
+				PPU.WindowDirty = 1;
 			}
 			break;
 			
@@ -873,6 +886,11 @@ void PPU_Write8(u32 addr, u8 val)
 				if (val & 0x08) bprintf("!! PSEUDO HIRES\n");
 			}
 			break;
+			
+		case 0x40: SPC_Compensate(); SPC_IOPorts[0] = val; break;
+		case 0x41: SPC_Compensate(); SPC_IOPorts[1] = val; break;
+		case 0x42: SPC_Compensate(); SPC_IOPorts[2] = val; break;
+		case 0x43: SPC_Compensate(); SPC_IOPorts[3] = val; break;
 		
 		case 0x80: SNES_SysRAM[Mem_WRAMAddr++] = val; Mem_WRAMAddr &= ~0x20000; break;
 		case 0x81: Mem_WRAMAddr = (Mem_WRAMAddr & 0x0001FF00) | val; break;
@@ -907,10 +925,9 @@ void PPU_Write16(u32 addr, u16 val)
 			addr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
 			if (*(u16*)&PPU.VRAM[addr] != val)
 			{
+				if(PPU.HardwareRenderer)
+					PPU_ConvertVRAM16(addr,	val);
 				*(u16*)&PPU.VRAM[addr] = val;
-				PPU.VRAMUpdateCount[addr >> 4]++;
-				PPU.VRAM7[addr >> 1] = val >> 8;
-				PPU.VRAM7UpdateCount[addr >> 7]++;
 			}
 			PPU.VRAMAddr += PPU.VRAMStep;
 			break;
@@ -918,6 +935,9 @@ void PPU_Write16(u32 addr, u16 val)
 		case 0x40: SPC_Compensate(); *(u16*)&SPC_IOPorts[0] = val; break;
 		case 0x41: SPC_Compensate(); *(u16*)&SPC_IOPorts[1] = val; break;
 		case 0x42: SPC_Compensate(); *(u16*)&SPC_IOPorts[2] = val; break;
+		
+		case 0x3F:
+		case 0x43: bprintf("!! write $21%02X %04X\n", addr, val); break;
 		
 		case 0x81: Mem_WRAMAddr = (Mem_WRAMAddr & 0x00010000) | val; break;
 		
@@ -1139,42 +1159,62 @@ void PPU_ComputeWindows(PPU_WindowSegment* s)
 
 void PPU_RenderScanline(u32 line)
 {
+	emuTime += svcGetSystemTick() - emuTick;
+
 	if (!(line & 7))
 		ContinueRendering();
 	
-	if (SkipThisFrame) return;
+	if (!SkipThisFrame)
+	{
+		ppuTick = svcGetSystemTick();
 	
-	if (PPU.HardwareRenderer)
-		PPU_RenderScanline_Hard(line);
-	else
-		PPU_RenderScanline_Soft(line);
+		if (PPU.HardwareRenderer)
+			PPU_RenderScanline_Hard(line);
+		else
+		{
+			PPU_RenderScanline_Soft(line);
+		}
+		emuTick = svcGetSystemTick();		
+		ppuTime += emuTick - ppuTick;
+	} else
+		emuTick = svcGetSystemTick();
 }
 
 void PPU_VBlank()
 {
+	emuTime += svcGetSystemTick() - emuTick;
+
 	int i;
-	
 	FinishRendering();
 	
 	if (!SkipThisFrame)
 	{
+		ppuTick = svcGetSystemTick();
+
 		if (PPU.HardwareRenderer)
 		{
 			PPU_VBlank_Hard(240);
 		}
 		else
 			PPU_VBlank_Soft();
-		
+
+		ppuTime += svcGetSystemTick() - ppuTick;	
 		RenderTopScreen();
 	}
 	else
 		RenderState = 4;
-	
+
 	PPU.OAMAddr = PPU.OAMReload;
 	
 	if (!PPU.ForcedBlank)
 		PPU.OBJOverflow = 0;
 		
 	if (SNES_AutoJoypad)
+	{
+		SNES_Joy16 = 0;
+		IO_ManualReadKeys();
 		SNES_JoyBit = 16;
+	}
+	
+	
 }

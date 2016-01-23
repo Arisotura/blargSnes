@@ -16,6 +16,8 @@
     with blargSnes. If not, see http://www.gnu.org/licenses/.
 */
 
+//#define REPORT_STATS
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -27,6 +29,7 @@
 #include "blargGL.h"
 #include "ui.h"
 #include "audio.h"
+#include "mixrate.h"
 
 #include "mem.h"
 #include "cpu.h"
@@ -47,8 +50,19 @@
 
 #include "version.h"
 
+u64 emuTick;
+u64 emuTime;
+u64 ppuTick;
+u64 ppuTime;
+
+u64 gpuTick;
+u64 gpuTime;
+u32 gpuFPS;
+
+u32 reportFrame;
+
+
 u32* gpuOut;
-u32* gpuDOut;
 u32* SNESFrame;
 
 DVLB_s* finalShader;
@@ -68,7 +82,8 @@ shaderProgram_s windowMaskShaderP;
 u8 finalUniforms[1];
 u8 softRenderUniforms[1];
 u8 hardRenderUniforms[2];
-u8 hard7RenderUniforms[4];
+u8 hard7RenderUniforms[3];
+
 u8 plainQuadUniforms[1];
 u8 windowMaskUniforms[1];
 
@@ -81,8 +96,6 @@ DVLB_s* CurShader = NULL;
 u32* BorderTex;
 u16* MainScreenTex;
 u16* SubScreenTex;
-
-FS_Archive sdmcArchive;
 
 
 int forceexit = 0;
@@ -103,25 +116,47 @@ extern Handle gspEventThread;
 extern Handle gspEvents[GSPGPU_EVENT_MAX];
 
 
-Handle spcthread = NULL;
-u8 spcthreadstack[0x4000] __attribute__((aligned(8)));
+#define SPC_THREAD_STACK_SIZE 0x4000
+Thread spcthread = NULL;
 Handle SPCSync;
+
 int exitspc = 0;
+
+
+void reportStats()
+{
+	if(running && !pause)
+	{
+		reportFrame++;
+		if(reportFrame == 60)
+		{
+			bprintf("%d\n", vramSpaceFree());
+			bprintf("E: %.2f, P: %.2f, G: %.2f, FPS: %02d\n", ((double)(emuTime / 60) / 4468724.0) * 100, ((double)(ppuTime / 60) / 4468724.0) * 100, ((double)(gpuTime / gpuFPS) / 4468724.0) * 100, gpuFPS);
+			bprintf(" \n");
+			reportFrame = 0;
+			emuTime = 0;
+			ppuTime = 0;
+			gpuTime = 0;
+			gpuFPS = 0;
+		}
+	}
+}
+
+
+
 
 // TODO: correction
 // mixes 127995 samples every 4 seconds, instead of 128000 (128038.1356)
 // +43 samples every 4 seconds
 // +1 sample every 32 second
-void SPCThread(u32 blarg)
+
+void SPCThread(void *arg)
 {
-	//const double samplerate = 67027964.0 / (double)((u32)(67027964.0 / 32000.0));
-	const double samplerate = 67030870.0 / (double)((u32)(67030870.0 / 32000.0));
-	const double SAMPLE512TICK = 268123480.0 / (double)(samplerate / 512.0);
-	const double SAMPLE16TICK = 268123480.0 / (double)(samplerate / 16.0);
-	int audCnt = 32;
-	int audExt = 0;
-	u64 lastmixtime = svcGetSystemTick();
-	double mixtimediff = 0.0f;
+
+	int audCnt = 512;
+	u32 lastpos = 0;
+
+
 	int i;
 	while (!exitspc)
 	{
@@ -133,68 +168,35 @@ void SPCThread(u32 blarg)
 			bool started = Audio_Begin();
 			if(started)
 			{
-				audCnt = 32;
-				audExt = 0;
-				mixtimediff = 0.0f;
+				audCnt = 512;
+				lastpos = 0;
 			}
-			for (i = 0; i < audCnt; i++)
-			{
-				DSP_ReplayWrites(i);
-				Audio_Mix();
-			}
-			for(i = audCnt; i < 32; i++)
-				DSP_ReplayWrites(i);
-			audCnt = 32;
-			for(i = 0; i < audExt; i++)
-				Audio_Mix();
-			audExt = 0;
- 
-			u64 curmixtime = svcGetSystemTick();
-			double diff = (double)(curmixtime - lastmixtime);
-			lastmixtime = curmixtime;
-			if(!started)
-			{
-				mixtimediff += diff - SAMPLE512TICK;
-				if(mixtimediff >= SAMPLE16TICK)
-				{
-					while(mixtimediff >= SAMPLE16TICK)
-					{
-						mixtimediff -= SAMPLE16TICK;
-						audExt++;
-					}
-				}
-				else
-				{
-					while(mixtimediff < 0)
-					{
-						mixtimediff += SAMPLE16TICK;
-						audCnt--;
-					}
-				}
-			}
+			u32 curpos = ndspChnGetSamplePos(0);
+
+			Audio_Mix(audCnt, started);
+
+			s32 diff = curpos - lastpos;
+			if(diff < 0) diff += MIXBUFSIZE;
+			lastpos = curpos;
+
+			audCnt = diff;
 		}
 		else
 			Audio_Pause();
-	}	
-	svcExitThread();
+	}
+
+	threadExit(0);
 }
 
 
 
 void dbg_save(char* path, void* buf, int size)
 {
-	Handle sram;
-	FS_Path sramPath;
-	sramPath.type = PATH_ASCII;
-	sramPath.size = strlen(path) + 1;
-	sramPath.data = (u8*)path;
-	
-	Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_WRITE, 0);
-	if ((res & 0xFFFC03FF) == 0)
+	FILE * pFile = fopen(path, "wb");
+	if(pFile != NULL)
 	{
-		u32 byteswritten = 0;
-		FSFILE_Write(sram, &byteswritten, 0, (u32*)buf, size, FS_WRITE_FLUSH);
-		FSFILE_Close(sram);
+		fwrite(buf, sizeof(char), size, pFile);
+		fclose(pFile);
 	}
 }
 
@@ -211,8 +213,8 @@ void SPC_ReportUnk(u8 op, u32 pc)
 	static bool unkreported = false;
 	if (unkreported) return;
 	unkreported = true;
-	bprintf("SPC UNK %02X @ %04X\n", op, pc);
-}
+ 	bprintf("SPC UNK %02X @ %04X\n", op, pc);
+ }	
 
 void ReportCrash()
 {
@@ -289,18 +291,12 @@ float snesProjMatrix[16] =
 	0, 0, 0, 1
 };
 
-
-float snesM7Matrix[16] = 
+float mode7ProjMatrix[16] = 
 {
-	1, 0, 0, 0,
-	0, 1, 0, 0,
-	0, 0, 1, 0,
+	2.0f/512.0f, 0, 0, -1,
+	0, 2.0f/512.0f, 0, -1,
+	0, 0, 1, -1,
 	0, 0, 0, 1
-};
-
-float snesM7Offset[4] =
-{
-	0.0625, 0.0625, 0.0625, 0.0625
 };
 
 float vertexList[] = 
@@ -326,6 +322,7 @@ void ApplyScaling()
 	int scalemode = Config.ScaleMode;
 	if (!running && scalemode == 2) scalemode = 1;
 	else if (!running && scalemode == 4) scalemode = 3;
+
 	
 	switch (scalemode)
 	{
@@ -374,6 +371,7 @@ void ApplyScaling()
 	screenVertices[5*1 + 0] = x2; screenVertices[5*1 + 1] = y2; 
 	
 	GSPGPU_FlushDataCache((u32*)screenVertices, 5*2*sizeof(float));
+
 }
 
 
@@ -409,11 +407,13 @@ void RenderTopScreen()
 {
 	bglUseShader(&finalShaderP);
 
-	bglOutputBuffers(gpuOut, gpuDOut, 240, 400);
+	bglOutputBuffers(0x2, 0x3, gpuOut, NULL, 240, 400);
 	bglViewport(0, 0, 240, 400);
+
+	bglOutputBufferAccess(0, 1, 0, 0);
 	
 	bglEnableDepthTest(false);
-	bglColorDepthMask(GPU_WRITE_ALL);
+	bglColorDepthMask(GPU_WRITE_COLOR);
 	
 	bglEnableTextures(GPU_TEXUNIT0);
 	
@@ -451,12 +451,12 @@ void RenderTopScreen()
 
 	if (!RenderState)
 	{
-		bglFlush();
 		//baderp = svcGetSystemTick();
+
+		bglFlush();
+		gpuTick = svcGetSystemTick();
 		RenderState = 1;
-		
-		
-		
+				
 		/*SafeWait(gspEvents[GSPEVENT_P3D]);
 		{u64 darp = svcGetSystemTick() - baderp;bprintf("GPU: %f\n", (float)darp/268123.480);}
 		GX_DisplayTransfer(gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
@@ -475,12 +475,17 @@ void ContinueRendering()
 			{
 				bglFlush();
 				RenderState = 1;
+
+				gpuTick = svcGetSystemTick();
 			}
 			break;
 			
 		case 1:
 			if (PeekEvent(gspEvents[GSPGPU_EVENT_P3D]))
 			{
+				gpuTime += svcGetSystemTick() - gpuTick;
+				gpuFPS++;
+
 				//{u64 darp = svcGetSystemTick() - baderp;bprintf("GPU: %f\n", (float)darp/268123.480);}
 				GX_DisplayTransfer(gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
 				RenderState = 2;
@@ -506,11 +511,17 @@ void FinishRendering()
 		SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
 		bglFlush();
 		RenderState = 1;
+
+		gpuTick = svcGetSystemTick();
 	}
 	if (RenderState == 1)
 	{
 		//gspWaitForP3D();
 		SafeWait(gspEvents[GSPGPU_EVENT_P3D]);
+
+		gpuTime += svcGetSystemTick() - gpuTick;
+		gpuFPS++;
+
 		//{u64 darp = svcGetSystemTick() - baderp;bprintf("GPU: %f\n", (float)darp/268123.480);}
 		GX_DisplayTransfer(gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
 		RenderState = 2;
@@ -585,23 +596,14 @@ bool TakeScreenshot(char* path)
 {
 	int x, y;
 	
-	Handle file;
-	FS_Path filePath;
-	filePath.type = PATH_ASCII;
-	filePath.size = strlen(path) + 1;
-	filePath.data = (u8*)path;
-	
-	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_CREATE|FS_OPEN_WRITE, 0);
-	if (res) 
+	FILE *pFile = fopen(path, "wb");
+	if(pFile == NULL)
 		return false;
-		
-	u32 byteswritten;
 	
 	u32 bitmapsize = 400*480*3;
-	u8* tempbuf = (u8*)MemAlloc(0x36 + bitmapsize);
+	u8* tempbuf = (u8*)linearAlloc(0x36 + bitmapsize);
 	memset(tempbuf, 0, 0x36 + bitmapsize);
-	
-	FSFILE_SetSize(file, (u16)(0x36 + bitmapsize));
+
 	
 	*(u16*)&tempbuf[0x0] = 0x4D42;
 	*(u32*)&tempbuf[0x2] = 0x36 + bitmapsize;
@@ -639,11 +641,11 @@ bool TakeScreenshot(char* path)
 			tempbuf[di++] = framebuf[si++];
 		}
 	}
-	
-	FSFILE_Write(file, &byteswritten, 0, (u32*)tempbuf, 0x36 + bitmapsize, 0x10001);
-	
-	FSFILE_Close(file);
-	MemFree(tempbuf);
+
+	fwrite(tempbuf, sizeof(char), 0x36 + bitmapsize, pFile);
+	fclose(pFile);
+
+	linearFree(tempbuf);
 	return true;
 }
 
@@ -685,69 +687,28 @@ void CopyBitmapToTexture(u8* src, void* dst, u32 width, u32 height, u32 alpha, u
 
 bool LoadBitmap(char* path, u32 width, u32 height, void* dst, u32 alpha, u32 startx, u32 stride, u32 flags)
 {
-	Handle file;
-	FS_Path filePath;
-	filePath.type = PATH_ASCII;
-	filePath.size = strlen(path) + 1;
-	filePath.data = (u8*)path;
-	
-	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_READ, 0);
-	if (res) 
+	u8 header[0x1E];
+	FILE *pFile = fopen(path, "rb");
+	if(pFile == NULL)
 		return false;
-		
-	u32 bytesread;
-	u32 temp;
-	
-	// magic
-	FSFILE_Read(file, &bytesread, 0, (u32*)&temp, 2);
-	if ((u16)temp != 0x4D42)
+
+	fread(header, sizeof(char), 0x1E, pFile);
+	if((*(u16*)&header[0] != 0x4D42) || (*(u32*)&header[0x12] != width) || (*(u32*)&header[0x16] != height) || (*(u16*)&header[0x1A] != 1) || (*(u16*)&header[0x1C] != 24))
 	{
-		FSFILE_Close(file);
+		fclose(pFile);
 		return false;
 	}
-	
-	// width
-	FSFILE_Read(file, &bytesread, 0x12, (u32*)&temp, 4);
-	if (temp != width)
-	{
-		FSFILE_Close(file);
-		return false;
-	}
-	
-	// height
-	FSFILE_Read(file, &bytesread, 0x16, (u32*)&temp, 4);
-	if (temp != height)
-	{
-		FSFILE_Close(file);
-		return false;
-	}
-	
-	// bitplanes
-	FSFILE_Read(file, &bytesread, 0x1A, (u32*)&temp, 2);
-	if ((u16)temp != 1)
-	{
-		FSFILE_Close(file);
-		return false;
-	}
-	
-	// bit depth
-	FSFILE_Read(file, &bytesread, 0x1C, (u32*)&temp, 2);
-	if ((u16)temp != 24)
-	{
-		FSFILE_Close(file);
-		return false;
-	}
-	
+
 	
 	u32 bufsize = width*height*3;
-	u8* buf = (u8*)MemAlloc(bufsize);
+	u8* buf = (u8*)linearAlloc(bufsize);
 	
-	FSFILE_Read(file, &bytesread, 0x36, buf, bufsize);
-	FSFILE_Close(file);
-	
+	fread(buf, sizeof(char), bufsize, pFile);
+	fclose(pFile);
+
 	CopyBitmapToTexture(buf, dst, width, height, alpha, startx, stride, flags);
 	
-	MemFree(buf);
+	linearFree(buf);
 	return true;
 }
 
@@ -759,6 +720,7 @@ bool LoadBorder(char* path)
 
 bool StartROM(char* path, char* dir)
 {
+	
 	char temppath[0x210];
 	Result res;
 	
@@ -767,7 +729,7 @@ bool StartROM(char* path, char* dir)
 		exitspc = 1; pause = 1;
 		svcSignalEvent(SPCSync);
 		svcWaitSynchronization(spcthread, U64_MAX);
-		svcCloseHandle(spcthread);
+		threadJoin(spcthread, U64_MAX);
 		exitspc = 0;
 	}
 	
@@ -785,6 +747,8 @@ bool StartROM(char* path, char* dir)
 	temppath[strlen(dir)+strlen(path)] = '\0';
 	bprintf("Loading %s...\n", path);
 	
+
+
 	if (!SNES_LoadROM(temppath))
 		return false;
 
@@ -797,13 +761,14 @@ bool StartROM(char* path, char* dir)
 	FramesSkipped = 0;
 	SkipThisFrame = false;
 	PALCount = 0;
+
 	
 	// SPC700 thread (running on syscore)
-	res = svcCreateThread(&spcthread, SPCThread, 0, (u32*)(spcthreadstack+0x4000), 0x18, 1);
-	if (res)
+
+	spcthread = threadCreate(SPCThread, 0x0, SPC_THREAD_STACK_SIZE, 0x18, 1, true);
+	if (!spcthread) 
 	{
-		bprintf("Failed to create SPC700 thread:\n -> %08X\n", res);
-		spcthread = NULL;
+		bprintf("Failed to create SPC700 thread:\n");
 	}
 	
 	bprintf("ROM loaded, running...\n");
@@ -847,6 +812,20 @@ void derpreport()
 	bprintf("passed NMI check\n");
 }
 
+static aptHookCookie apt_hook_sleepsuspend;
+
+static void apt_sleepsuspend_hook(APT_HookType hook, void *param)
+{
+	if(hook == APTHOOK_ONSLEEP || hook == APTHOOK_ONSUSPEND)
+	{
+		int * running = (int*)param;
+		if (*running) SNES_SaveSRAM();
+
+		// Should we do more? Ctrulib has matured quite a bit, so I dunno
+		//svcSignalEvent(SPCSync);
+		//FinishRendering();
+	}
+}
 
 int main() 
 {
@@ -874,10 +853,7 @@ int main()
 
 	gfxInitDefault();
 	
-	sdmcArchive = (FS_Archive){0x9, (FS_Path){PATH_EMPTY, 1, (u8*)""}};
-	FSUSER_OpenArchive(&sdmcArchive);
-	
-	Config.HardwareMode7 = -1;
+	Config.HardwareMode7Filter = -1;
 	LoadConfig(1);
 	
 	VRAM_Init();
@@ -894,9 +870,8 @@ int main()
 	
 	svcSetThreadPriority(gspEventThread, 0x30);
 	
-	gpuOut = (u32*)VRAM_Alloc(400*240*2*4);
-	gpuDOut = (u32*)VRAM_Alloc(400*240*2*4);
-	SNESFrame = (u32*)VRAM_Alloc(256*256*4);
+	gpuOut = (u32*)vramAlloc(400*240*2*4);
+	SNESFrame = (u32*)vramAlloc(256*256*4);
 
 	finalShader = DVLB_ParseFile((u32*)final_shbin, final_shbin_size);
 	softRenderShader = DVLB_ParseFile((u32*)render_soft_shbin, render_soft_shbin_size);
@@ -908,7 +883,7 @@ int main()
 	shaderProgramInit(&finalShaderP);		shaderProgramSetVsh(&finalShaderP, &finalShader->DVLE[0]);				shaderProgramSetGsh(&finalShaderP, &finalShader->DVLE[1], 4);
 	shaderProgramInit(&softRenderShaderP);	shaderProgramSetVsh(&softRenderShaderP, &softRenderShader->DVLE[0]);	shaderProgramSetGsh(&softRenderShaderP, &softRenderShader->DVLE[1], 4);
 	shaderProgramInit(&hardRenderShaderP);	shaderProgramSetVsh(&hardRenderShaderP, &hardRenderShader->DVLE[0]);	shaderProgramSetGsh(&hardRenderShaderP, &hardRenderShader->DVLE[1], 4);
-	shaderProgramInit(&hard7RenderShaderP);	shaderProgramSetVsh(&hard7RenderShaderP, &hard7RenderShader->DVLE[0]);	shaderProgramSetGsh(&hard7RenderShaderP, &hard7RenderShader->DVLE[1], 2);
+	shaderProgramInit(&hard7RenderShaderP);	shaderProgramSetVsh(&hard7RenderShaderP, &hard7RenderShader->DVLE[0]);	shaderProgramSetGsh(&hard7RenderShaderP, &hard7RenderShader->DVLE[1], 4);
 	shaderProgramInit(&plainQuadShaderP);	shaderProgramSetVsh(&plainQuadShaderP, &plainQuadShader->DVLE[0]);		shaderProgramSetGsh(&plainQuadShaderP, &plainQuadShader->DVLE[1], 4);
 	shaderProgramInit(&windowMaskShaderP);	shaderProgramSetVsh(&windowMaskShaderP, &windowMaskShader->DVLE[0]);	shaderProgramSetGsh(&windowMaskShaderP, &windowMaskShader->DVLE[1], 4);
 
@@ -919,16 +894,15 @@ int main()
 	hardRenderUniforms[0] = shaderInstanceGetUniformLocation(hardRenderShaderP.vertexShader, "projMtx");
 	hardRenderUniforms[1] = shaderInstanceGetUniformLocation(hardRenderShaderP.vertexShader, "scaler");
 
-	hard7RenderUniforms[0] = shaderInstanceGetUniformLocation(hard7RenderShaderP.vertexShader, "projMtx");
-	hard7RenderUniforms[1] = shaderInstanceGetUniformLocation(hard7RenderShaderP.vertexShader, "scaler");
-	hard7RenderUniforms[2] = shaderInstanceGetUniformLocation(hard7RenderShaderP.vertexShader, "m7Mtx");
-	hard7RenderUniforms[3] = shaderInstanceGetUniformLocation(hard7RenderShaderP.geometryShader, "snesM7Matrix");
+	hard7RenderUniforms[0] = shaderInstanceGetUniformLocation(hard7RenderShaderP.vertexShader, "scaler");
+	hard7RenderUniforms[1] = shaderInstanceGetUniformLocation(hard7RenderShaderP.geometryShader, "projMtx");
+	hard7RenderUniforms[2] = shaderInstanceGetUniformLocation(hard7RenderShaderP.geometryShader, "mode7Type");
 
 	plainQuadUniforms[0] = shaderInstanceGetUniformLocation(plainQuadShaderP.vertexShader, "projMtx");
 
 	windowMaskUniforms[0] = shaderInstanceGetUniformLocation(windowMaskShaderP.vertexShader, "projMtx");
 
-	GX_MemoryFill(gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
+	GX_MemoryFill(gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, NULL, 0, NULL, 0);
 	gspWaitForPSC0();
 	gfxSwapBuffersGpu();
 	
@@ -966,178 +940,160 @@ int main()
 	svcCreateEvent(&SPCSync, 0); 
 	
 	UI_Switch(&UI_ROMMenu);
+	
+	// Create a hook for when the system either goes into sleep mode or is suspended, so it'll do things.
+	aptHook(&apt_hook_sleepsuspend, apt_sleepsuspend_hook, &running);
 
-	APT_AppStatus status;
-	while (!forceexit && (status = aptGetStatus()) != APP_EXITING)
+	while(!forceexit && aptMainLoop())
 	{
-		if (status == APP_RUNNING)
-		{
-			hidScanInput();
-			u32 press = hidKeysDown();
-			u32 held = hidKeysHeld();
-			u32 release = hidKeysUp();
+		hidScanInput();
+		u32 press = hidKeysDown();
+		u32 held = hidKeysHeld();
+		u32 release = hidKeysUp();
 			
-			if (running && !pause)
-			{
-				// emulate
-				CPU_MainLoop(); // runs the SNES for one frame. Handles PPU rendering.
-				ContinueRendering();
+		if (running && !pause)
+		{
+			// emulate
+			emuTick = svcGetSystemTick();
+			CPU_MainLoop(); // runs the SNES for one frame. Handles PPU rendering.
+#ifdef REPORT_STATS
+			FinishRendering();
+			reportStats();
+#else
+			ContinueRendering();
+#endif
+		
 				
-				/*{
-					extern u32 dbgcycles, nruns;
-					bprintf("SPC: %d / 17066  %08X\n", dbgcycles, SNES_Status->SPC_CycleRatio);
-					dbgcycles = 0; nruns=0;
-				}*/
-				/*if (press & KEY_X) SNES_Status->SPC_CycleRatio+=0x1000;
-				if (press & KEY_Y) SNES_Status->SPC_CycleRatio-=0x1000;
-				SNES_Status->SPC_CyclesPerLine = SNES_Status->SPC_CycleRatio*1364;*/
+			/*{
+				extern u32 dbgcycles, nruns;
+				bprintf("SPC: %d / 17066  %08X\n", dbgcycles, SNES_Status->SPC_CycleRatio);
+				dbgcycles = 0; nruns=0;
+			}*/
+			/*if (press & KEY_X) SNES_Status->SPC_CycleRatio+=0x1000;
+			if (press & KEY_Y) SNES_Status->SPC_CycleRatio-=0x1000;
+			SNES_Status->SPC_CyclesPerLine = SNES_Status->SPC_CycleRatio*1364;*/
 				
-				// SRAM autosave check
-				// TODO: also save SRAM under certain circumstances (pausing, returning to home menu, etc)
-				framecount++;
-				if (!(framecount & 7))
-					SNES_SaveSRAM();
+			// SRAM autosave check
+			// TODO: also save SRAM under certain circumstances (pausing, returning to home menu, etc)
+			//framecount++;
+			//if (!(framecount & 7))
+			//	SNES_SaveSRAM();
 					
-				if (release & KEY_TOUCH) 
-				{
-					SNES_SaveSRAM();
-					bprintf("Pause.\n");
-					bprintf("Tap screen or press A to resume.\n");
-					bprintf("Press Select to load another game.\n");
-					bprintf("Press Start to enter the config.\n");
-					pause = 1;
-					svcSignalEvent(SPCSync);
-				}
-			}
-			else
+			if (release & KEY_TOUCH) 
 			{
-				// update UI
+				SNES_SaveSRAM();
+				bprintf("Pause.\n");
+				bprintf("Tap screen or press A to resume.\n");
+				bprintf("Press Select to load another game.\n");
+				bprintf("Press Start to enter the config.\n");
+				pause = 1;
+				svcSignalEvent(SPCSync);
+					
+			}
+		}
+		else
+		{
+			// update UI
 				
-				// TODO move this chunk of code somewhere else?
-				if (running && !UI_Level()) // only run this if not inside a child UI
+			// TODO move this chunk of code somewhere else?
+			if (running && !UI_Level()) // only run this if not inside a child UI
+			{
+				if (release & (KEY_TOUCH|KEY_A))
 				{
-					if (release & (KEY_TOUCH|KEY_A))
-					{
-						bprintf("Resume.\n");
-						pause = 0;
-					}
-					else if (release & KEY_SELECT)
-					{
-						running = 0;
-						UI_Switch(&UI_ROMMenu);
+					bprintf("Resume.\n");
+					pause = 0;
+				}
+				else if (release & KEY_SELECT)
+				{
+					running = 0;
+					UI_Switch(&UI_ROMMenu);
 						
-						// copy splashscreen
-						FinishRendering();
-						SNES_Status->ScreenHeight = 224;
-						ApplyScaling();
-						u32* tempbuf = (u32*)linearAlloc(256*256*4);
-						CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x0);
-						GSPGPU_FlushDataCache(tempbuf, 256*256*4);
+					// copy splashscreen
+					FinishRendering();
+					SNES_Status->ScreenHeight = 224;
+					ApplyScaling();
+					u32* tempbuf = (u32*)linearAlloc(256*256*4);
+					CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x0);
+					GSPGPU_FlushDataCache(tempbuf, 256*256*4);
 
-						GX_DisplayTransfer(tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
-						//gspWaitForPPF();
+					GX_DisplayTransfer(tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
+					//gspWaitForPPF();
 
-						SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
-						linearFree(tempbuf);
-					}
-					else if (release & KEY_START)
-					{
-						UI_SaveAndSwitch(&UI_Config);
-					}
-					else if (release & KEY_X)
-					{
-						bprintf("PC: CPU %02X:%04X  SPC %04X\n", CPU_Regs.PBR, CPU_Regs.PC, SPC_Regs.PC);
-						dbg_save("/snesram.bin", SNES_SysRAM, 128*1024);
-						dbg_save("/spcram.bin", SPC_RAM, 64*1024);
-						dbg_save("/vram.bin", PPU.VRAM, 64*1024);
-						dbg_save("/oam.bin", PPU.OAM, 0x220);
-						dbg_save("/cgram.bin", PPU.CGRAM, 512);
-					}
+					SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
+					linearFree(tempbuf);
+				}
+				else if (release & KEY_START)
+				{
+					UI_SaveAndSwitch(&UI_Config);
+				}
+				else if (release & KEY_X)
+				{
+					bprintf("PC: CPU %02X:%04X  SPC %04X\n", CPU_Regs.PBR, CPU_Regs.PC, SPC_Regs.PC);
+					dbg_save("/snesram.bin", SNES_SysRAM, 128*1024);
+					dbg_save("/spcram.bin", SPC_RAM, 64*1024);
+					dbg_save("/vram.bin", PPU.VRAM, 64*1024);
+					dbg_save("/oam.bin", PPU.OAM, 0x220);
+					dbg_save("/cgram.bin", PPU.CGRAM, 512);
+				}
 					
-					if ((held & (KEY_L|KEY_R)) == (KEY_L|KEY_R))
+				if ((held & (KEY_L|KEY_R)) == (KEY_L|KEY_R))
+				{
+					if (!shot)
 					{
-						if (!shot)
+						u32 timestamp = (u32)(svcGetSystemTick() / 446872);
+						char file[256];
+						snprintf(file, 256, "/blargSnes%08d.bmp", timestamp);
+						if (TakeScreenshot(file))
 						{
-							u32 timestamp = (u32)(svcGetSystemTick() / 446872);
-							char file[256];
-							snprintf(file, 256, "/blargSnes%08d.bmp", timestamp);
-							if (TakeScreenshot(file))
-							{
-								bprintf("Screenshot saved as:\n");
-								bprintf("SD:%s\n", file);
-							}
-							else
-								bprintf("Error saving screenshot\n");
-								
-							shot = 1;
+							bprintf("Screenshot saved as:\n");
+							bprintf("SD:%s\n", file);
 						}
-					}
-					else
-						shot = 0;
-				}
-				
-				RenderTopScreen();
-				FinishRendering();
-				
-				if (held & KEY_TOUCH)
-				{
-					hidTouchRead(&lastTouch);
-					UI_Touch((press & KEY_TOUCH) ? 1:2, lastTouch.px, lastTouch.py);
-					held &= ~KEY_TOUCH;
-				}
-				else if (release & KEY_TOUCH)
-				{
-					UI_Touch(0, lastTouch.px, lastTouch.py);
-					release &= ~KEY_TOUCH;
-				}
-				
-				if (press)
-				{
-					UI_ButtonPress(press);
-					
-					// key repeat
-					repeatkeys = press & (KEY_UP|KEY_DOWN|KEY_LEFT|KEY_RIGHT);
-					repeatstate = 1;
-					repeatcount = 15;
-				}
-				else if (held && held == repeatkeys)
-				{
-					repeatcount--;
-					if (!repeatcount)
-					{
-						repeatcount = 7;
-						if (repeatstate == 2)
-							UI_ButtonPress(repeatkeys);
 						else
-							repeatstate = 2;
+							bprintf("Error saving screenshot\n");
+								
+						shot = 1;
 					}
+				}
+				else
+					shot = 0;
+			}
+				
+			RenderTopScreen();
+			FinishRendering();
+				
+			if (held & KEY_TOUCH)
+			{
+				hidTouchRead(&lastTouch);
+				UI_Touch((press & KEY_TOUCH) ? 1:2, lastTouch.px, lastTouch.py);
+				held &= ~KEY_TOUCH;
+			}
+			else if (release & KEY_TOUCH)
+			{
+				UI_Touch(0, lastTouch.px, lastTouch.py);
+				release &= ~KEY_TOUCH;
+			}
+				
+			if (press)
+			{
+				UI_ButtonPress(press);
+					
+				// key repeat
+				repeatkeys = press & (KEY_UP|KEY_DOWN|KEY_LEFT|KEY_RIGHT);
+				repeatstate = 1;
+				repeatcount = 15;
+			}
+			else if (held && held == repeatkeys)
+			{
+				repeatcount--;
+				if (!repeatcount)
+				{
+					repeatcount = 7;
+					if (repeatstate == 2)
+						UI_ButtonPress(repeatkeys);
+					else
+						repeatstate = 2;
 				}
 			}
-		}
-		else if (status == APP_SUSPENDING)
-		{
-			int oldpause = pause; pause = 1;
-			svcSignalEvent(SPCSync);
-			
-			if (running) SNES_SaveSRAM();
-			FinishRendering();
-			 
-			aptReturnToMenu();
-			
-			pause = oldpause;
-		}
-		else if (status == APP_PREPARE_SLEEPMODE)
-		{
-			int oldpause = pause; pause = 1;
-			svcSignalEvent(SPCSync);
-			
-			if (running) SNES_SaveSRAM();
-			FinishRendering();
-			
-			aptSignalReadyForSleep();
-			aptWaitStatusEvent();
-			
-			pause = oldpause;
 		}
 	}
 	
@@ -1148,14 +1104,16 @@ int main()
 	if (spcthread) 
 	{
 		svcWaitSynchronization(spcthread, U64_MAX);
-		svcCloseHandle(spcthread);
+		threadJoin(spcthread, U64_MAX);
 	}
+	svcCloseHandle(SPCSync);
 
 	vramFree(SNESFrame);
-	vramFree(gpuDOut);
 	vramFree(gpuOut);
 
 	Audio_DeInit();
+
+
 	PPU_DeInit();
 
 	shaderProgramFree(&finalShaderP);
@@ -1176,7 +1134,7 @@ int main()
 	linearFree(screenVertices);
 	
 	linearFree(BorderTex);
-	
+
 	bglDeInit();
 
 	gfxExit();

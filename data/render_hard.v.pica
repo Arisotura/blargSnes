@@ -17,7 +17,7 @@
 ; -----------------------------------------------------------------------------
 
 ; setup constants
-.constf myconst (0.0, 0.0, 0.0078125, 1.0)
+.constf myconst (0.0, 0.0, 0.0, 1.0)
 
 ; setup outmap
 .out outpos position
@@ -46,7 +46,6 @@
 	dp4 outpos.w, projMtx[3], r1
 
 	; result.color = in.color * scaler
-	mul r1, scaler, v1
-	mov outclr, r1
+	mul outclr, scaler, v1
 	end
 .end

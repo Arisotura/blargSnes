@@ -1230,7 +1230,7 @@ OP_CMPW_YA_DP:
 	orrne spcPSW, spcPSW, #flagN
 	tst r12, #0x10000
 	orreq spcPSW, spcPSW, #flagC
-	AddCycles 5
+	AddCycles 4			@5
 	b op_return
 	
 @ --- DBNZ --------------------------------------------------------------------

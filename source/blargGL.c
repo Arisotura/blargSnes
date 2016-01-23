@@ -41,6 +41,8 @@ struct
 
 	shaderProgram_s* Shader;
 	
+	u32 ColorFormat;
+	u32 DepthFormat;
 	void* ColorBuffer;
 	void* DepthBuffer;
 	u32 BufferW, BufferH;
@@ -103,7 +105,6 @@ struct
 		u16 Width, Height;
 		u32 Parameters;
 		GPU_TEXCOLOR ColorType;
-		
 	} Texture[3];
 	
 	
@@ -115,6 +116,8 @@ struct
 		GPU_FORMATS DataType;
 		
 	} AttribBuffer[16];
+
+	u32 cread, cwrite, dsread, dswrite;
 	
 	
 	u32 DirtyFlags;
@@ -129,18 +132,20 @@ void* bglCommandBuffer;
 
 // dirty flags
 #define DIRTY_SHADERS			0x00000001
-#define DIRTY_ATTRIBTYPES		0x00000002 // attribute buffer types
-#define DIRTY_OUTBUFFERS		0x00000004 // output buffers
-#define DIRTY_VIEWPORT			0x00000008
-#define DIRTY_SCISSOR			0x00000010
-#define DIRTY_STENCILTEST		0x00000020
-#define DIRTY_DEPTHRANGE		0x00000040
-#define DIRTY_DEPTHTEST			0x00000080 // depth test & depth/color write mask (reg 0x0107)
-#define DIRTY_ALPHABLEND		0x00000100
-#define DIRTY_ALPHATEST			0x00000200
-#define DIRTY_TEXENABLE			0x00000400
-#define DIRTY_CULLING			0x00000800
-#define DIRTY_BLENDCOLOR		0x00001000
+#define DIRTY_ATTRIBTYPES1		0x00000002 // attribute buffer types
+#define DIRTY_ATTRIBTYPES2		0x00000004 // attribute buffer types (loc)
+#define DIRTY_OUTBUFFERS		0x00000008 // output buffers
+#define DIRTY_VIEWPORT			0x00000010
+#define DIRTY_SCISSOR			0x00000020
+#define DIRTY_STENCILTEST		0x00000040
+#define DIRTY_DEPTHRANGE		0x00000080
+#define DIRTY_DEPTHTEST			0x00000100 // depth test & depth/color write mask (reg 0x0107)
+#define DIRTY_ALPHABLEND		0x00000200
+#define DIRTY_ALPHATEST			0x00000400
+#define DIRTY_TEXENABLE			0x00000800
+#define DIRTY_CULLING			0x00001000
+#define DIRTY_BLENDCOLOR		0x00002000
+#define DIRTY_BUFFERACCESS		0x00004000
 #define DIRTY_TEXENV(n)			(0x00800000<<n)
 #define DIRTY_TEXUNITS(n)		(0x20000000<<n)
 #define DIRTY_ALL				0xFFFFFFFF // better take it to the laundry at this rate
@@ -161,12 +166,16 @@ void bglInit()
 	
 	// sane defaults
 	bglDepthRange(-1.0f, 0.0f);
-	bglFaceCulling(GPU_CULL_BACK_CCW);
+	bglFaceCulling(GPU_CULL_NONE);
 	bglEnableDepthTest(true);
 	bglDepthFunc(GPU_GREATER);
 	bglColorDepthMask(GPU_WRITE_ALL);
 	bglBlendEquation(GPU_BLEND_ADD, GPU_BLEND_ADD);
 	bglBlendFunc(GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+
+	bglOutputBufferAccess(1, 1, 1, 1);
+	
+	GPUCMD_AddWrite(GPUREG_TEXUNIT0_BORDER_COLOR, 0x0);	// Black transparent border color for Mode 7 transparent settings
 
 }
 
@@ -180,11 +189,17 @@ void bglDeInit()
 void _bglUpdateState()
 {
 	u32 i;
-	u32 temp[39];
+	u32 temp[38];
 	
 	u32 dirty = bglState.DirtyFlags;
 	if (!dirty) return;
 	bglState.DirtyFlags = 0;
+
+	if(dirty & (DIRTY_OUTBUFFERS | DIRTY_BUFFERACCESS))
+	{
+		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_FLUSH, 0x00000001);
+		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_INVALIDATE, 0x00000001);
+	}
 	
 	if (dirty & DIRTY_SHADERS)
 	{
@@ -193,8 +208,8 @@ void _bglUpdateState()
 	
 	if (dirty & DIRTY_OUTBUFFERS)
 	{
-		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_FLUSH, 0x00000001);
-		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_INVALIDATE, 0x00000001);
+		//GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_FLUSH, 0x00000001);
+		//GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_INVALIDATE, 0x00000001);
 		
 		temp[0] = (u32)bglState.DepthBuffer >> 3;
 		temp[1] = (u32)bglState.ColorBuffer >> 3;
@@ -202,14 +217,23 @@ void _bglUpdateState()
 		GPUCMD_AddIncrementalWrites(GPUREG_DEPTHBUFFER_LOC, temp, 3);
 		
 		GPUCMD_AddWrite(GPUREG_RENDERBUF_DIM, temp[2]);
-		GPUCMD_AddWrite(GPUREG_DEPTHBUFFER_FORMAT, 0x00000003); // depth 24 stencil 8
-		GPUCMD_AddWrite(GPUREG_COLORBUFFER_FORMAT, 0x00000002); // 32bit RGBA8
+		GPUCMD_AddWrite(GPUREG_DEPTHBUFFER_FORMAT, bglState.DepthFormat); // depth 24 stencil 8
+		GPUCMD_AddWrite(GPUREG_COLORBUFFER_FORMAT, bglState.ColorFormat); // 32bit RGBA8
 		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_BLOCK32, 0x00000000);
-		
-		temp[0] = 0x0000000F;
+
+		/*temp[0] = 0x0000000F;
 		temp[1] = 0x0000000F;
 		temp[2] = 0x00000002;
 		temp[3] = 0x00000002;
+		GPUCMD_AddIncrementalWrites(GPUREG_COLORBUFFER_READ, temp, 4);*/
+	}
+
+	if(dirty & DIRTY_BUFFERACCESS)
+	{
+		temp[0] = (bglState.cread ? 0x0000000F : 0);
+		temp[1] = (bglState.cwrite ? 0x0000000F : 0);
+		temp[2] = (bglState.dsread ? 0x00000003 : 0);
+		temp[3] = (bglState.dswrite ? 0x00000003 : 0);
 		GPUCMD_AddIncrementalWrites(GPUREG_COLORBUFFER_READ, temp, 4);
 	}
 	
@@ -289,6 +313,8 @@ void _bglUpdateState()
 											 (bglState.ColorDstFactor<<20) | 
 											 (bglState.AlphaSrcFactor<<24) | 
 											 (bglState.AlphaDstFactor<<28));
+
+		GPUCMD_AddWrite(GPUREG_LOGIC_OP, 0x00000000);
 		
 		GPUCMD_AddMaskedWrite(GPUREG_COLOR_OPERATION, 0x2, 0x00000100);
 	}
@@ -350,7 +376,7 @@ void _bglUpdateState()
 	}
 	
 	const u8 attribsize[4] = {1,1,2,4};
-	if (dirty & DIRTY_ATTRIBTYPES)
+	if (dirty & DIRTY_ATTRIBTYPES1)
 	{
 		// implementation for one buffer with multiple attributes interleaved
 		// works well enough for what we do
@@ -366,22 +392,24 @@ void _bglUpdateState()
 			stride += bglState.AttribBuffer[i].NumComponents * attribsize[bglState.AttribBuffer[i].DataType];
 		}
 		
-		memset(temp, 0, 39*4);
-		temp[0] = (u32)bglState.AttribBufferPtr >> 3;
-		temp[1] = (u32)attrib;
-		temp[2] = ((bglState.NumAttribBuffers-1)<<28) | (0xFFC<<16) | ((attrib>>32)&0xFFFF);
+		memset(temp, 0, 38*4);
+		temp[0] = (u32)attrib;
+		temp[1] = ((bglState.NumAttribBuffers-1)<<28) | (0xFFC<<16) | ((attrib>>32)&0xFFFF);
 		
-		temp[3] = 0;
-		temp[4] = (u32)permut;
-		temp[5] = (bglState.NumAttribBuffers<<28) | ((stride&0xFFF)<<16) | ((permut>>32)&0xFFFF);
+		temp[2] = 0;
+		temp[3] = (u32)permut;
+		temp[4] = (bglState.NumAttribBuffers<<28) | ((stride&0xFFF)<<16) | ((permut>>32)&0xFFFF);
 		
-		GPUCMD_AddIncrementalWrites(GPUREG_ATTRIBBUFFERS_LOC, temp, 39);
+		GPUCMD_AddIncrementalWrites(GPUREG_ATTRIBBUFFERS_FORMAT_LOW, temp, 39);
 
 		GPUCMD_AddMaskedWrite(GPUREG_VSH_INPUTBUFFER_CONFIG, 0xB, 0xA0000000|(bglState.NumAttribBuffers-1));
 		GPUCMD_AddWrite(GPUREG_VSH_NUM_ATTR, (bglState.NumAttribBuffers-1));
 
 		GPUCMD_AddIncrementalWrites(GPUREG_VSH_ATTRIBUTES_PERMUTATION_LOW, ((u32[]){(u32)permut, (permut>>32)&0xFFFF}), 2);
 	}
+
+	if (dirty & DIRTY_ATTRIBTYPES2)
+		GPUCMD_AddWrite(GPUREG_ATTRIBBUFFERS_LOC, (u32)bglState.AttribBufferPtr >> 3);
 }
 
 
@@ -423,22 +451,42 @@ void bglUniformMatrix(GPU_SHADER_TYPE type, u32 id, float* val)
 }
 
 
-void bglOutputBuffers(void* color, void* depth, u32 w, u32 h)
+void bglOutputBuffers(u32 colorF, u32 depthF, void* color, void* depth, u32 w, u32 h)
 {
 	color = (void*)osConvertVirtToPhys(color);
 	depth = (void*)osConvertVirtToPhys(depth);
 	
-	if (color == bglState.ColorBuffer && 
+	if (colorF == bglState.ColorFormat &&
+		depthF == bglState.DepthFormat &&
+		color == bglState.ColorBuffer && 
 		depth == bglState.DepthBuffer &&
 		w == bglState.BufferW &&
 		h == bglState.BufferH)
 		return;
 	
+	bglState.ColorFormat = colorF;
+	bglState.DepthFormat = depthF;
 	bglState.ColorBuffer = color;
 	bglState.DepthBuffer = depth;
 	bglState.BufferW = w;
 	bglState.BufferH = h;
 	bglState.DirtyFlags |= DIRTY_OUTBUFFERS;
+}
+
+void bglOutputBufferAccess(u32 colorR, u32 colorW, u32 depthstencilR, u32 depthstencilW)
+{
+	if(colorR == bglState.cread &&
+		colorW == bglState.cwrite &&
+		depthstencilR == bglState.dsread &&
+		depthstencilW == bglState.dswrite)
+		return;
+
+	bglState.cread = colorR;
+	bglState.cwrite = colorW;
+	bglState.dsread = depthstencilR;
+	bglState.dswrite = depthstencilW;
+
+	bglState.DirtyFlags |= DIRTY_BUFFERACCESS;
 }
 
 void bglViewport(u32 x, u32 y, u32 w, u32 h)
@@ -694,14 +742,13 @@ void bglTexImage(GPU_TEXUNIT unit, void* data, u32 width, u32 height, u32 param,
 	bglState.DirtyFlags |= DIRTY_TEXUNITS(id);
 }
 
-
 void bglNumAttribs(u32 num)
 {
 	if (num == bglState.NumAttribBuffers)
 		return;
 	
 	bglState.NumAttribBuffers = num;
-	bglState.DirtyFlags |= DIRTY_ATTRIBTYPES;
+	bglState.DirtyFlags |= DIRTY_ATTRIBTYPES1;
 }
 
 void bglAttribBuffer(void* data)
@@ -712,7 +759,7 @@ void bglAttribBuffer(void* data)
 		return;
 	
 	bglState.AttribBufferPtr = data;
-	bglState.DirtyFlags |= DIRTY_ATTRIBTYPES;
+	bglState.DirtyFlags |= DIRTY_ATTRIBTYPES2;
 }
 
 void bglAttribType(u32 id, GPU_FORMATS datatype, u32 numcomps)
@@ -723,7 +770,7 @@ void bglAttribType(u32 id, GPU_FORMATS datatype, u32 numcomps)
 		
 	bglState.AttribBuffer[id].NumComponents = numcomps;
 	bglState.AttribBuffer[id].DataType = datatype;
-	bglState.DirtyFlags |= DIRTY_ATTRIBTYPES;
+	bglState.DirtyFlags |= DIRTY_ATTRIBTYPES1;
 }
 
 

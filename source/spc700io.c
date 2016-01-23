@@ -59,8 +59,8 @@ u8 SPC_IORead8(u16 addr)
 	{
 		case 0xF2: ret = SPC_DSPAddr; break;
 		case 0xF3: ret = DSP_MEM[SPC_DSPAddr]; 
-			if ((SPC_DSPAddr&0x0F)==0x08 || (SPC_DSPAddr&0x0F)==0x09 || SPC_DSPAddr==0x7C) // those ports would require syncing the DSP thread
-				bprintf("!! DSP READ %02X\n", SPC_DSPAddr); 
+			/*if ((SPC_DSPAddr&0x0F)==0x08 || (SPC_DSPAddr&0x0F)==0x09 || SPC_DSPAddr==0x7C) // those ports would require syncing the DSP thread
+				bprintf("!! DSP READ %02X\n", SPC_DSPAddr); */
 			break;
 		
 		case 0xF4: ret = SPC_IOPorts[0]; break;

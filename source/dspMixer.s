@@ -1,4 +1,4 @@
-@ This code has been taken from SNemulDS which is licensed under GPLv2.
+@ This code has been taken and modified from SNemulDS which is licensed under GPLv2.
 @ Credits go to Archeide and whoever else participated in this.
 
 	.TEXT
@@ -261,7 +261,7 @@ doneDecodeCached:
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@
 @ Function called with:
 @ r0 - int Number of samples to mix
-@ r1 - u16* mix buffer (left first, right is always MIXBUFSIZE * 4 bytes ahead
+@ r1 - u16* mix buffer (left first, right second, channels interleaved for MIXBUFSIZE * 2 bytes)
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
 /*
@@ -318,7 +318,6 @@ u8 empty;				83
 #define ECHOENABLED_OFFSET 79
 #define NOISEENABLED_OFFSET 80
 #define PMODENABLED_OFFSET 81
-#define PMODWRITE_OFFSET 82
 
 @ r0 - channel structure base
 @ r1 - mix buffer
@@ -336,106 +335,118 @@ u8 empty;				83
 @ r13 - tmp
 @ r14 - tmp
 
-#define MIXBUFFER r1
-#define ECHOBUFFER r2
-#define SAMPLE_SPEED r4
-#define SAMPLE_POS r5
-#define ENV_COUNT r6
-#define ENV_SPEED r7
-#define SAMPLE_VALUE r8
-#define LEFT_CALC_VOL r10
-#define RIGHT_CALC_VOL r11
+#define CHAN_STRUCT		r0
+#define CHAN_CUR		r1
 
-.GLOBAL DspMixSamplesStereo
-.FUNC DspMixSamplesStereo
-DspMixSamplesStereo:
+#define SAMPLE_SPEED	r2
+#define SAMPLE_POS		r3
+#define ENV_COUNT		r2
+#define ENV_SPEED		r3
+
+#define SAMPLE_VALUE	r6
+
+#define LEFT_CALC_VOL	r7
+#define RIGHT_CALC_VOL	r8
+
+
+
+.GLOBAL DspMixSamplesStereoAsm
+.FUNC DspMixSamplesStereoAsm
+DspMixSamplesStereoAsm:
+
     stmfd sp!, {r4-r12, lr}
 
-	ldr r12, =numSamples
-    mov r3, #0
-    strb r3, [r12, #4]
-    str r0, [r12]
-
-    @ Store the original mix buffer for use later
-    stmfd sp!, {r1}
-
-    @ Clear the left and right mix buffers, saving their initial positions
-    ldr r1, =mixBuffer
-	ldr r2, =echoBuffer
-    mov r3, #0
-    mov r4, #0
-    mov r5, #0
-    mov r6, #0
-clearLoop:
-    stmia r1!, {r3-r6}
-    stmia r1!, {r3-r6}
-	stmia r2!, {r3-r6}
-    stmia r2!, {r3-r6}
-    subs r0, r0, #4
-    bne clearLoop
-
-    @ Load the initial mix buffer and echo position
-    ldr r1, =mixBuffer
-	ldr r2, =echoBuffer
-
-    ldr r0, =channels
-channelLoopback:
-    @ Check if active == 0, then next
-    ldrb r3, [r0, #ACTIVE_OFFSET]
-    cmp r3, #0
-    beq nextChannelNothingDone
-
-    @ Save the start position of the mix buffer & echo buffer
-    stmfd sp!, {r1,r2}
-
-	ldr r3, =numSamples
-	ldrb r3, [r3]
-	
-    @ Load the important variables into registers
-    ldmia r0, {r4-r7}
-
-	ldrsh LEFT_CALC_VOL, [r0, #LEFTCALCVOL_OFFSET]
-    ldrsh RIGHT_CALC_VOL, [r0, #RIGHTCALCVOL_OFFSET]
-
-	ldrb r14, [r0, #ECHOENABLED_OFFSET]
-
 mixLoopback:
-	/*
-	@ Have to reload the sample speed each time
-	ldr SAMPLE_SPEED, [r0]
 
-	@ Channel 0 will always have PMOD turned off, so no need to check for channel index
-	ldrb r9, [r0, #PMODENABLED_OFFSET]
-	cmp r9, #1
-	bne noPitchModUsed
+	@ Store the sample count and mix buffer, because we don't need them
+	@	until towards the end of each processed sample
+	stmfd sp!, {r0,r1}
+
+	@ Clear the L/R sample/echo values, as well as the PMOD value
+	mov r9, #0
+	mov r10, #0
+	mov r11, #0
+	mov r12, #0
+	mov r14, #0
+
+	stmfd sp!, {r9-r12}
+
+processNoise:		@ r0-r8
+
+	@ Is the noise flag set?
+	ldr r2, =DSP_MEM
+	ldrb r2, [r2, #0x6C]
+	and r2, r2, #0x1F
+	cmp r2, #0
+	beq channelStart
 	
-	ldr r8, =pmodTemp
-	add r8, r8, r3
-	ldrsb r9, [r8]
-	mov r9, r9, lsl #3
-	add r9, r9, #0x400
-	mul r12, SAMPLE_SPEED, r9
-	mov SAMPLE_SPEED, r12, asr #10
-	ldr r12, =0x3FFF
-	cmp SAMPLE_SPEED, r12
-	movgt SAMPLE_SPEED, r12
+	@ Skip new noise calculation if step equals 0
+	ldr r1, =noiseStep
+	ldrh r0, [r1]
+	cmp r0, #0
+	bne endNoise
 
-noPitchModUsed:
-	*/
+	@ Calculate new noise sample (from -4000h .. +3FFFh, but actual stored sample ranges -8000h .. +7FFE)
+	@ sample = ((sample >> 1) & 0x3FFF) | ((sample.bit0 ^ sample.bit1) << 14)
+	ldr r3, =noiseSample
+	ldrsh r4, [r3]
+
+	mov r4, r4, asr #1		@ (sample)
+	mov r5, r4, asr #1		@ (sample >> 1)
+	eor r4, r4, r5			
+	and r4, r4, #0x01		
+	mov r4, r4, lsl #14		@ ((sample.bit0 ^ sample.bit1) << 14)
+	ldr r6, =0x3FFF
+	and r5, r5, r6			@ ((sample >> 1) & 0x3FFF)
+	orr r4, r4, r5			@ ((sample >> 1) & 0x3FFF) | ((sample.bit0 ^ sample.bit1) << 14)
+
+	mov r4, r4, lsl #1		
+	strh r4, [r3]
+
+	@ Assign new noise step value
+	ldr r4, =noiseSteps
+	mov r2, r2, lsl #1
+	ldrh r0, [r4, r2]
+
+endNoise:		@ r2-r8
+
+	@ Decrement noise step
+	sub r0, r0, #1
+	strh r0, [r1]
+
+channelStart:
+
+	@ Load the starting channel structure
+	ldr CHAN_STRUCT, =channels
+	mov CHAN_CUR, #0
+
+channelLoopback:		@ r2-r8
+
+	@ Check if the channel itself is active
+	ldrb r2, [CHAN_STRUCT, #ACTIVE_OFFSET]
+	cmp r2, #0
+	moveq r14, #0
+	beq endChannel
+
+	@ Load Sample speed and position, Env count and speed, and volume calculations
+
+	ldrd ENV_COUNT, [CHAN_STRUCT, #ENVCOUNT_OFFSET]
+
+	ldrsh LEFT_CALC_VOL, [CHAN_STRUCT, #LEFTCALCVOL_OFFSET]		@ r7
+	ldrsh RIGHT_CALC_VOL, [CHAN_STRUCT, #RIGHTCALCVOL_OFFSET]	@ r8
+
+	@ Begin ENV calculations
+	subs ENV_COUNT, ENV_COUNT, ENV_SPEED
+	bpl noEnvelopeUpdate
+
+	mov ENV_COUNT, #0x7800
 	
+	ldrsh r4, [CHAN_STRUCT, #ENVX_OFFSET]
+	ldrb r6, [CHAN_STRUCT, #ENVSTATE_OFFSET]
 
-	@ Commence the mixing
-    subs ENV_COUNT, ENV_COUNT, ENV_SPEED
-    bpl noEnvelopeUpdate
+	ldr pc, [pc, r6, lsl #2]
+	nop
 
-    @ Update envelope
-    mov ENV_COUNT, #0x7800
-
-    ldrsh r9, [r0, #ENVX_OFFSET]
-    ldrb r12, [r0, #ENVSTATE_OFFSET]
-
-    ldr pc, [pc, r12, lsl #2]
-    nop
 @ Jump table for envelope handling
 .word noEnvelopeUpdate
 .word envStateAttack
@@ -448,136 +459,166 @@ noPitchModUsed:
 .word envStateDecrease
 .word envStateSustain       @ Actually decrease exponential, but it's the same code
 
-#define ENVX_SHIFT 8
-#define ENVX_MAX 0x7f00
+#define ENVX_SHIFT	8
+#define ENVX_MAX	0x7f00
 
 envStateAttack:
-    add r9, r9, #4 << ENVX_SHIFT
 
-    cmp r9, #ENVX_MAX
+    add r4, r4, #4 << ENVX_SHIFT
+    cmp r4, #ENVX_MAX
     ble storeEnvx
-    @ envx = 0x7f, state = decay, speed = decaySpeed
-    mov r9, #ENVX_MAX
-    mov r12, #ENVSTATE_DECAY
-    strb r12, [r0, #ENVSTATE_OFFSET]
-    ldrh ENV_SPEED, [r0, #DECAYSPEED_OFFSET]
-    b storeEnvx
-    
-envStateDecay:
-    rsb r9, r9, r9, lsl #8
-    mov r9, r9, asr #8
 
-    ldrb r12, [r0, #SUSTAINLEVEL_OFFSET]
-    cmp r9, r12, lsl #ENVX_SHIFT
+    @ envx = 0x7f, state = decay, speed = decaySpeed
+    mov r4, #ENVX_MAX
+    mov r6, #ENVSTATE_DECAY
+    strb r6, [CHAN_STRUCT, #ENVSTATE_OFFSET]
+    ldrh ENV_SPEED, [CHAN_STRUCT, #DECAYSPEED_OFFSET]
+    b storeEnvx
+
+envStateDecay:
+
+	rsb r4, r4, r4, lsl #8
+    mov r4, r4, asr #8
+
+    ldrb r6, [CHAN_STRUCT, #SUSTAINLEVEL_OFFSET]
+    cmp r4, r6, lsl #ENVX_SHIFT
     bge storeEnvx
+
     @ state = sustain, speed = sustainSpeed
-    mov r12, #ENVSTATE_SUSTAIN
-    strb r12, [r0, #ENVSTATE_OFFSET]
-    ldrh ENV_SPEED, [r0, #SUSTAINSPEED_OFFSET]
+    mov r6, #ENVSTATE_SUSTAIN
+    strb r6, [CHAN_STRUCT, #ENVSTATE_OFFSET]
+    ldrh ENV_SPEED, [CHAN_STRUCT, #SUSTAINSPEED_OFFSET]
     
     @ Make sure envx > 0
-    cmp r9, #0
+    cmp r4, #0
     bge storeEnvx
     
     @ If not, end channel, then go to next channel
     stmfd sp!, {r0-r3, r14}
-	ldr r0, =channelNum
-    ldrb r0, [r0]
+	mov r0, CHAN_CUR
     bl DspSetEndOfSample
     ldmfd sp!, {r0-r3, r14}
-    b nextChannel
-    
+	mov r14, #0
+    b finishChannel
+
 envStateSustain:
-    rsb r9, r9, r9, lsl #8
-    mov r9, r9, asr #8
+
+	rsb r4, r4, r4, lsl #8
+    mov r4, r4, asr #8
 
     @ Make sure envx > 0
-    cmp r9, #0
+    cmp r4, #0
     bge storeEnvx
 
     @ If not, end channel, then go to next channel
-    stmfd sp!, {r0-r3,r14}
-    ldr r0, =channelNum
-    ldrb r0, [r0]
+    stmfd sp!, {r0-r3, r14}
+	mov r0, CHAN_CUR
     bl DspSetEndOfSample
-    ldmfd sp!, {r0-r3,r14}
-    b nextChannel
+    ldmfd sp!, {r0-r3, r14}
+	mov r14, #0
+    b finishChannel
 
 envStateRelease:
-    sub r9, r9, #1 << ENVX_SHIFT
+
+    sub r4, r4, #1 << ENVX_SHIFT
 
     @ Make sure envx > 0
-    cmp r9, #0
+    cmp r4, #0
     bge storeEnvx
 
     @ If not, end channel, then go to next channel
-    stmfd sp!, {r0-r3,r14}
-    ldr r0, =channelNum
-    ldrb r0, [r0]
+    stmfd sp!, {r0-r3, r14}
+    mov r0, CHAN_CUR
     bl DspSetEndOfSample
-    ldmfd sp!, {r0-r3,r14}
-    b nextChannel
+    ldmfd sp!, {r0-r3, r14}
+	mov r14, #0
+    b finishChannel
 
 envStateIncrease:
-    add r9, r9, #4 << ENVX_SHIFT
 
-    cmp r9, #ENVX_MAX
+    add r4, r4, #4 << ENVX_SHIFT
+
+    cmp r4, #ENVX_MAX
     ble storeEnvx
+
     @ envx = 0x7f, state = direct, speed = 0
-    mov r9, #ENVX_MAX
-    mov r12, #ENVSTATE_DIRECT
-    strb r12, [r0, #ENVSTATE_OFFSET]
+    mov r4, #ENVX_MAX
+    mov r6, #ENVSTATE_DIRECT
+    strb r6, [CHAN_STRUCT, #ENVSTATE_OFFSET]
     mov ENV_SPEED, #0
     b storeEnvx
 
 envStateBentline:
-    cmp r9, #0x5f << ENVX_SHIFT
-    addgt r9, r9, #1 << ENVX_SHIFT
-    addle r9, r9, #4 << ENVX_SHIFT
 
-    cmp r9, #ENVX_MAX
+    cmp r4, #0x5f << ENVX_SHIFT
+    addgt r4, r4, #1 << ENVX_SHIFT
+    addle r4, r4, #4 << ENVX_SHIFT
+
+    cmp r4, #ENVX_MAX
     blt storeEnvx
+
     @ envx = 0x7f, state = direct, speed = 0
-    mov r9, #ENVX_MAX
-    mov r12, #ENVSTATE_DIRECT
-    strb r12, [r0, #ENVSTATE_OFFSET]
+    mov r4, #ENVX_MAX
+    mov r6, #ENVSTATE_DIRECT
+    strb r6, [CHAN_STRUCT, #ENVSTATE_OFFSET]
     mov ENV_SPEED, #0
     b storeEnvx
 
 envStateDecrease:
-    sub r9, r9, #4 << ENVX_SHIFT
+
+    sub r4, r4, #4 << ENVX_SHIFT
 
     @ Make sure envx > 0
-    cmp r9, #0
+    cmp r4, #0
     bge storeEnvx
     
     @ If not, end channel, then go to next channel
-    stmfd sp!, {r0-r3,r14}
-    ldr r0, =channelNum
-    ldrb r0, [r0]
+    stmfd sp!, {r0-r3, r14}
+	mov r0, CHAN_CUR
     bl DspSetEndOfSample
-    ldmfd sp!, {r0-r3,r14}
-    b nextChannel
+    ldmfd sp!, {r0-r3, r14}
+	mov r14, #0
+    b finishChannel
 
-storeEnvx:
-    strh r9, [r0, #ENVX_OFFSET]
+storeEnvx:		@ r5-r6
+
+	strh r4, [CHAN_STRUCT, #ENVX_OFFSET]
 
     @ Recalculate leftCalcVol and rightCalcVol
-    ldrsb LEFT_CALC_VOL, [r0, #LEFTVOL_OFFSET]
-    mul LEFT_CALC_VOL, r9, LEFT_CALC_VOL
+    ldrsb LEFT_CALC_VOL, [CHAN_STRUCT, #LEFTVOL_OFFSET]
+    mul LEFT_CALC_VOL, r4, LEFT_CALC_VOL
     mov LEFT_CALC_VOL, LEFT_CALC_VOL, asr #7
 
-    ldrsb RIGHT_CALC_VOL, [r0, #RIGHTVOL_OFFSET]
-    mul RIGHT_CALC_VOL, r9, RIGHT_CALC_VOL
+    ldrsb RIGHT_CALC_VOL, [CHAN_STRUCT, #RIGHTVOL_OFFSET]
+    mul RIGHT_CALC_VOL, r4, RIGHT_CALC_VOL
     mov RIGHT_CALC_VOL, RIGHT_CALC_VOL, asr #7
-    
-noEnvelopeUpdate:
 
-    add SAMPLE_POS, SAMPLE_POS, SAMPLE_SPEED
+
+noEnvelopeUpdate:		@ r4-r6, r14 (PMOD stuff gets written back with a new value later on)
+
+	strd ENV_COUNT, [r0, #ENVCOUNT_OFFSET]
+	ldrd SAMPLE_SPEED, [r0, #SAMPLESPEED_OFFSET]
+
+	ldrb r4, [r0, #PMODENABLED_OFFSET]
+	cmp r4, #1
+	bne sampleUpdate
+
+	mov r14, r14, asr #6
+	add r14, #0x400
+	mul SAMPLE_SPEED, r14, SAMPLE_SPEED
+	mov SAMPLE_SPEED, SAMPLE_SPEED, asr #10
+	ldr r14, =0x3FFF
+	cmp SAMPLE_SPEED, r14
+	movgt SAMPLE_SPEED, r14
+	mov r14, #0
+
+sampleUpdate:
+
+	add SAMPLE_POS, SAMPLE_POS, SAMPLE_SPEED
     cmp SAMPLE_POS, #16 << 12
     blo noSampleUpdate
-    
-    @ Decode next 16 bytes...
+
+	@ Decode next 16 bytes...
     sub SAMPLE_POS, SAMPLE_POS, #16 << 12
 
     @ Decode the sample block, r0 = DspChannel*
@@ -585,426 +626,315 @@ noEnvelopeUpdate:
     bl DecodeSampleBlock
     cmp r0, #1
     ldmfd sp!, {r0-r3, r14}
-    beq nextChannel
+    beq finishChannel
 
-noSampleUpdate:
-    @ This is really a >> 12 then << 1, but since samplePos bit 0 will never be set, it's safe.
-    @ Must ensure that sampleSpeed bit 0 is never set, and samplePos is never set to anything but 0
-    @ TODO - The speed up hack doesn't work.  Find out why
+noSampleUpdate:		@ r2, r4-r6, r14
+
+	str SAMPLE_POS, [CHAN_STRUCT, #SAMPLEPOS_OFFSET]
 
 	@ First, check if this channel uses noise
-	ldrb r9, [r0, #NOISEENABLED_OFFSET]
-	cmp  r9, #1
-	beq useNoise
+	ldrb r6, [CHAN_STRUCT, #NOISEENABLED_OFFSET]
+	cmp  r6, #1
+	bne gaussianInterpolation
 
-gaussianInterpolation:
-	 
-	stmfd sp!, {r6-r7,r9-r12}
-    
-	mov r12, SAMPLE_POS, lsr #12
-	ldr r10, =gaussian
-	add r12, r0, r12, lsl #1
-	and r6, SAMPLE_POS, #0xFF0
-	add r12, #DECODED_OFFSET
-	lsr r6, #3				/* originally "lsr r6, #4", but at #3 and using pre-defined gaussian masks one shift up allows for use when loading half-words from gaussian table */
-	sub r12, #6
-	
-	@ r6 = interpolation index, r7 interpolation data, r8 = out sample, r9 = tmp, r10 = gaussian pointer, r11 = current sample
-	@ r12 = sample pointer
-	
-	@ out =       ((gauss[0FFh-i] * oldest) SAR 10) ;-initial 16bit value
-	@ out = out + ((gauss[1FFh-i] * older)  SAR 10) ;-no 16bit overflow handling
-	@ out = out + ((gauss[100h+i] * old)    SAR 10) ;-no 16bit overflow handling
-	@ out = out + ((gauss[000h+i] * new)    SAR 10) ;-with 16bit overflow handling
-	@ out = out SAR 1                               ;-convert 16bit result to 15bit
-
-	ldr r9, =0x1FE			/* 0FFh ( << 1) */
-	rsb r9, r6, r9			/* 0FFh-i */
-	ldrh r7, [r10, r9]		/* gauss[0FFh-i] */
-	ldrsh r11, [r12], #2	/* oldest */
-	mul r8, r11, r7			/* gauss[0FFh-i] * oldest */
-	asr r8, #10				/* (gauss[0FFh-i] * oldest) SAR 10 */
-
-	ldr r9, =0x3FE
-	rsb r9, r6, r9
-	ldrh r7, [r10, r9]
-	ldrsh r11, [r12], #2
-	mul r9, r11, r7
-	add r8, r9, asr #10
-
-	ldrh r9, =0x200
-	add r9, r6
-	ldrh r7, [r10, r9]
-	ldrsh r11, [r12], #2
-	mul r9, r11, r7
-	add r8, r9, asr #10
-	
-	mov r9, r6
-	ldrh r7, [r10, r9]
-	ldrsh r11, [r12]
-	mul r9, r11, r7
-	add r8, r9, asr #10
-
-	mov r8, r8, asr #1
-	ssat r8, #16, r8
-	
-	ldmfd sp!, {r6-r7,r9-r12}
+	@ Take from the pre-processed noise sample
+	ldr r6, =noiseSample
+	ldrsh r6, [r6]
 
 	b finishSample
+
+gaussianInterpolation:		@ r2, r4-r6, r14 (SAMPLE_POS = r3)
+
+	mov r4, SAMPLE_POS, lsr #12
+	ldr r2, =gaussian
+	add r4, CHAN_STRUCT, r4, lsl #1
+	and r3, SAMPLE_POS, #0xFF0
+	add r4, #DECODED_OFFSET
+	lsr r3, #3
+	sub r4, #6
 	
-useNoise:
-	@ Noise is already computed, so grab from the noise table
+	@ r2 = gaussian pointer
+	@ r3 = interpolation index
+	@ r4 = sample pointer
+	@ r5 = tmp
+	@ r6 = out sample
+	@ r14 = interpolation data
 
-	ldr r12, =DSP_NoiseSamples
-	mov r9, r3, lsl #1
-	ldrsh r8, [r12, r9]
+
+	ldr r5, =0x1FE
+	rsb r5, r3, r5
+	ldrh r14, [r2, r5]
+	ldrsh r5, [r4], #2
+	mul r6, r14, r5
+	asr r6, #10
+
+	ldr r5, =0x3FE
+	rsb r5, r3, r5
+	ldrh r14, [r2, r5]
+	ldrsh r5, [r4], #2
+	mul r5, r14, r5
+	add r6, r5, asr #10
+
+	ldr r5, =0x200
+	add r5, r3
+	ldrh r14, [r2, r5]
+	ldrsh r5, [r4], #2
+	mul r5, r14, r5
+	add r6, r5, asr #10
+
+	mov r5, r3
+	ldrh r14, [r2, r5]
+	ldrsh r5, [r4]
+	mul r5, r14, r5
+	add r6, r5, asr #10
+
+	mov r6, r6, asr #1
+	ssat r6, #16, r6
+
+finishSample:		@ r2-r5, r14
+
+	ldmfd sp!, {r9-r12}
+	mla r11, r6,  LEFT_CALC_VOL, r11
+	mla r12, r6, RIGHT_CALC_VOL, r12
+
+	ldrb r2, [CHAN_STRUCT, #ECHOENABLED_OFFSET]
+	cmp r2, #1
+	mov r3, #0
+	moveq r3, r6
+
+	mla  r9, r3,  LEFT_CALC_VOL, r9
+	mla r10, r3, RIGHT_CALC_VOL, r10
+
+	stmfd sp!, {r9-r12}
+
+finishChannel:		@ r2-r5, r14
+
+	@ Set ENVX and OUTX
+	ldr r2, =DSP_MEM
+	add r2, r2, CHAN_CUR, lsl #4
+
+	@ Set ENVX
+	ldrsh r3, [CHAN_STRUCT, #ENVX_OFFSET]
+	mov r3, r3, asr #ENVX_SHIFT
+	strb r3, [r2, #0x8]
+
+	@ Set OUTX
+	mov r14, r6
+	mul r3, r6, r3
+	mov r3, r3, asr #15
+	strb r3, [r2, #0x9]
+
+	strh  LEFT_CALC_VOL, [CHAN_STRUCT,  #LEFTCALCVOL_OFFSET]
+	strh RIGHT_CALC_VOL, [CHAN_STRUCT, #RIGHTCALCVOL_OFFSET]
+
+endChannel:		@ r2-r8
 	
-finishSample:
+	add CHAN_STRUCT, CHAN_STRUCT, #DSPCHANNEL_SIZE
+	add CHAN_CUR, CHAN_CUR, #1
+	cmp CHAN_CUR, #8
+	blt channelLoopback
 
-    ldr r9, [r1]
-    mla r9, r8, LEFT_CALC_VOL, r9
-    str r9, [r1], #4
-
-    ldr r9, [r1]
-    mla r9, r8, RIGHT_CALC_VOL, r9
-    str r9, [r1], #4
-
-	cmp r14, #1
-	mov r12, #0
-	moveq r12, r8
-
-	ldr r9, [r2]
-	mla r9, r12, LEFT_CALC_VOL, r9
-	str r9, [r2], #4
-
-	ldr r9, [r2]
-	mla r9, r12, RIGHT_CALC_VOL, r9
-	str r9, [r2], #4
-
-	/*
-	ldrb r12, [r0, #PMODWRITE_OFFSET]
-	cmp r12, #1
-	bne skipPModWrite
-
-	ldr r12, =pmodTemp
-	add r12, r12, r3
-	ldrh r9, [r0, #ENVX_OFFSET]
-    mov r9, r9, lsr #ENVX_SHIFT
-	mul r9, r8, r9
-	@ Would think ASR #15 would be right, but that doesn't seem to be the case, unless precision sample-generation is required.....
-	mov r9, r9, asr #18
-	strb r9, [r12]
-	
-skipPModWrite:
-	*/
-
-    subs r3, r3, #1
-    bne mixLoopback
-
-nextChannel:
-
-    @ Set ENVX and OUTX
-    ldr r3, =channelNum
-    ldrb r3, [r3]
-    ldr r12, =DSP_MEM
-    add r12, r12, r3, lsl #4
-
-    @ Set ENVX
-    ldrsh r9, [r0, #ENVX_OFFSET]
-    mov r9, r9, asr #ENVX_SHIFT
-    strb r9, [r12, #0x8]
-
-    @ Set OUTX
-    mul r9, r8, r9
-    mov r9, r9, asr #15
-    strb r9, [r12, #0x9]
-    
-    strh LEFT_CALC_VOL, [r0, #LEFTCALCVOL_OFFSET]
-    strh RIGHT_CALC_VOL, [r0, #RIGHTCALCVOL_OFFSET]
-
-    @ Store changing values
-    stmia r0, {r4-r7}
-
-    @ Reload mix&echo buffer position
-    ldmfd sp!, {r1,r2}
-
-nextChannelNothingDone:
-    @ Move to next channel
-    add r0, r0, #DSPCHANNEL_SIZE
-
-    @ Increment channelNum
-	ldr r9, =channelNum
-    ldrb r3, [r9]
-    add r3, r3, #1
-    strb r3, [r9]
-    cmp r3, #8
-    blt channelLoopback
-
-	
 @ This is the end of normal mixing
 @ Onto the echo mixing
 
-processEcho:
 
-@ r0	Sample count
-@ r1	FIR Left/Right Sample & Normal Echo Sample
-@ r2	Echo Buffer
-@ r3	Left Sample
-@ r4	Right Sample
-@ r5	
-@ r6	
-@ r7	FIR 8Tap Count
-@ r8	FIR value / DSP_MEM
-@ r9	FIR Filter / tmp
-@ r10	FIR Offset
-@ r11	FIR Buffer
-@ r12	Echo Base / Echo Delay
-@ r14	APU_MEM
+processEcho:		@ r0-r8, r14
 
-	@ Save the start position of the mix buffer & echo buffer
-    stmfd sp!, {r1,r2}
+@ r0	FIR L/R sample / tmp
+@ r1	FIR Filter value / Echo Remain value / tmp
+@ r2	FIR 8Tap Count / Echo Remain / tmp
+@ r3	FIR Filter / DSP_MEM
+@ r4	Left Buffer Sample
+@ r5	Right Buffer Sample
+@ r6	FIR Offset
+@ r7	FIR Buffer
+@ r8	Echo Base / Echo Delay
+@ r9	Left Echo Sample
+@ r10	Right Echo Sample
+@ r11	RESERVED
+@ r12	RESERVED
 
-    ldr r0, =numSamples
-	ldr r0, [r0]
+@ r14	APU_MEM / Preamp
 
-	@ addr = (ESA*100h+ram_index*4) AND FFFFh 
+	ldmfd sp!, {r9-r12}
+
 
 	ldr r14, =SPC_RAM
-	ldr r12, =echoBase
-	ldr r12, [r12]
-	add r12, r14, r12
+	ldr  r8, =echoBase
+	ldr  r8, [r8]
+	add  r8, r14, r8
 
-	ldr r11, =firBuffer
-	ldr r10, =firOffset
-	ldrh r10, [r10]
+	ldr  r7, =firBuffer
+	ldr  r6, =firOffset
+	ldrh r6, [r6]
 
-processEchoLoop:
 
-	@ buf[(i-0) AND 7] = EchoRAM[addr] SAR 1
-
-	ldrsh r3, [r12]
-	mov r3, r3, asr #1
-	ldrsh r4, [r12, #2]
+	ldrsh r4, [r8]
 	mov r4, r4, asr #1
+	ldrsh r5, [r8, #2]
+	mov r5, r5, asr #1
 
-	strh r3, [r11, r10]
-	add r10, r10, #2
-	strh r4, [r11, r10]
-	add r10, r10, #2
+	strh r4, [r7, r6]
+	add r6, r6, #2
+	strh r5, [r7, r6]
+	add r6, r6, #2
 
-
-	@ sum = sum + buf[(i - %7->%0) AND 7]*FIR%0->%7 SAR 6
-	mov r3, #0
 	mov r4, #0
-	ldr r9, =firFilter
-	mov r7, #8
+	mov r5, #0
+	ldr r3, =firFilter
+	mov r2, #8
 
-echo8TapLoop:
-	and r10, r10, #0x1F
-	ldrsb r8, [r9], #1
 
-	ldrsh r1, [r11, r10]
-	mul r1, r8, r1
-	add r3, r3, r1, asr #6
-	add r10, r10, #2
+echo8TapLoop:		@ r0-r1
 
-	ldrsh r1, [r11, r10]
-	mul r1, r8, r1
-	add r4, r4, r1, asr #6
-	add r10, r10, #2
+	and r6, r6, #0x1F
+	ldrsb r1, [r3], #1
 
-	subs r7, r7, #1
+	ldrsh r0, [r7, r6]
+	mul r0, r1, r0
+	add r4, r4, r0, asr #6
+	add r6, r6, #2
+
+	ldrsh r0, [r7, r6]
+	mul r0, r1, r0
+	add r5, r5, r0, asr #6
+	add r6, r6, #2
+
+	subs r2, r2, #1
 	bne echo8TapLoop
 
-echo8TapEnd:
+echo8TapEnd:		@ r0-r3, r7
 
 	@ Wrap FIR Offset
-
-	and r10, r10, #0x1F
+	and r6, r6, #0x1F
 
 	@ I'ma give these samples....THE CLAMPS!!!
-
-	ssat r3, #16, r3
 	ssat r4, #16, r4
+	ssat r5, #16, r5
 
-	ldr r8, =DSP_MEM
-
-	@ echo_input=EchoVoices+((sum*EFB) SAR 7)
-	@ echo_input=echo_input AND FFFEh
-	@ if echo write enabled: EchoRAM[addr]=echo_input
-
-	ldrb r9, [r8, #0x6C]
-	and r9, r9, #0x20
-	cmp r9, #0x20
+	ldr r3, =DSP_MEM
+	
+	ldrb r2, [r3, #0x6C]
+	and r2, r2, #0x20
+	cmp r2, #0x20
 	beq echoSkipWrite
 
-echoWrite:
-	ldrsb r7, [r8, #0x0D]
+echoWrite:		@ r0-r2, r7
 
-	ldr r1, [r2]
-	mov r1, r1, asr #15
-	mul r9, r7, r3
-	add r1, r1, r9, asr #7
+	ldrsb r2, [r3, #0x0D]
+
+	mov r1, r9, asr #15
+	mul r0, r2, r4
+	add r1, r1, r0, asr #7
 	ssat r1, #16, r1
-	strh r1, [r12]
+	strh r1, [r8]
 
-	ldr r1, [r2, #4]
-	mov r1, r1, asr #15
-	mul r9, r7, r4
-	add r1, r1, r9, asr #7
+	mov r1, r10, asr #15
+	mul r0, r2, r5
+	add r1, r1, r0, asr #7
 	ssat r1, #16, r1
-	strh r1, [r12, #2]
+	strh r1, [r8, #2]
 
-echoSkipWrite:
+echoSkipWrite:		@ r0-r2, r7
 
-	@ audio_output=NormalVoices+((sum*EVOLx) SAR 7)
-	@ mixing will be done when normal audio is adjusted by master volume
-	
-	str r3, [r2], #4
-	str r4, [r2], #4
+	mov r9, r4
+	mov r10, r5
 
 	@ Wrap Echo Base
-
-	add r12, r12, #4
-	sub r9, r12, r14
-	cmp r9, #0x10000
-	subge r12, r12, #0x10000
+	add r8, r8, #4
+	sub r2, r8, r14
+	cmp r2, #0x10000
+	subge r8, r8, #0x10000
 
 	@ Reload Echo Base and Remain if needed
 
-	ldr r4, =echoRemain
-	ldrh r3, [r4]
-	subs r3, r3, #1
+	ldr r2, =echoRemain
+	ldrh r1, [r2]
+	subs r1, r1, #1
 	bne echoSkipReset
 
-echoResetBase:
+echoResetBase:		@ r0-r1, r4-r5, r7
 
-	ldr r12, =echoDelay
-	ldrh r3, [r12]
-	mov r3, r3, lsr #2
+	ldr r8, =echoDelay
+	ldrh r1, [r8]
+	mov r1, r1, lsr #2
 
-	ldrb r12, [r8, #0x6D]
-	add r12, r14, r12, lsl #8
+	ldrb r8, [r3, #0x6D]
+	add r8, r14, r8, lsl #8
 
-echoSkipReset:
+echoSkipReset:		@ r0, r3-r5, r7
 
-	strh r3, [r4]
+	strh r1, [r2]
 
-	subs r0, r0, #1
-	bne processEchoLoop
-	
-	@ Save various stuff, and continue to mixing
+	ldr r7, =firOffset
+	strh r6, [r7]
 
-	ldr r11, =firOffset
-	strh r10, [r11]
-
-	sub r12, r12, r14
+	sub r8, r8, r14
 	ldr r14, =echoBase
-	str r12, [r14]
+	str r8, [r14]
 
-	@ Reload mix&echo buffer position
-    ldmfd sp!, {r1,r2}
+clipAndMix:		@ r0-r2, r4-r8, r14
 
-    
-clipAndMix:
+	@ Reload the sample count and mix buffer, and test if not equal to 0
+	ldmfd sp!, {r0,r1}
+
+	ldr r14, =dspPreamp
+	ldrh r14, [r14]
+
+	ldr r3, =DSP_MEM
+	ldrsb r5, [r3, #0x0C]
+	ldrsb r6, [r3, #0x1C]
+	ldrsb r7, [r3, #0x2C]
+	ldrsb r8, [r3, #0x3C]
 	
+	mul r5, r14, r5
+	mov r5, r5, asr #7
+	mul r6, r14, r6
+	mov r6, r6, asr #7
 
-    @ Put the original output buffer into r3
-    ldmfd sp!, {r3}
-    
-    @ Set up the preamp & overall volume
-    ldr r8, =dspPreamp
-    ldrh r8, [r8]
+	mul r7, r14, r7
+	mov r7, r7, asr #7
+	mul r8, r14, r8
+	mov r8, r8, asr #7
 
-    ldr r9, =DSP_MEM
-    ldrsb r4, [r9, #0x0C] @ Main left volume
-    ldrsb r6, [r9, #0x1C] @ Main right volume
-	ldrsb r11, [r9, #0x2C] @ Main left echo volume
-	ldrsb r12, [r9, #0x3C] @ Main right echo volume
-    
-    mul r4, r8, r4
-    mov r4, r4, asr #7
-    mul r6, r8, r6
-    mov r6, r6, asr #7
-	
-	mul r11, r8, r11
+	@ Load and scale by volume (LEFT)
+	mov r11, r11, asr #15
+	mul r11, r5, r11
 	mov r11, r11, asr #7
-	mul r12, r8, r12
+	mul r9, r7, r9
+	add r11, r11, r9, asr #7
+
+	ssat r11, #16, r11
+	strh r11, [r1], #2
+
+	@ Load and scale by volume (RIGHT)
+	mov r12, r12, asr #15
+	mul r12, r6, r12
 	mov r12, r12, asr #7
+	mul r10, r8, r10
+	add r12, r12, r10, asr #7
 
-    @ r0 - numSamples
-    @ r1 - mix buffer
-    @ r2 - echo buffer
-    @ r3 - output buffer
-    @ r4 - left volume
-    @ r5 - TMP (assigned to sample value)
-    @ r6 - right volume
-    @ r7 - TMP (assigned to echo sample value)
-    @ r8 - preamp
-    @ r9 - 
-    @ r10 - 
-    @ r11 - echo left volume
-    @ r12 - echo right volume
-    @ r14 - 
+	ssat r12, #16, r12
+	strh r12, [r1], #2
 
-    @ Do volume multiplication, mix in echo buffer and clipping here
-    ldr r0, =numSamples
-	ldr r0, [r0]
+	@ Are we done yet?
+	subs r0, r0, #1
+	bne mixLoopback
 
+mixDone:
 
-mixClipLoop:
-	@ TODO: all that junk could take advantage of ARMv6 SIMD?
-
-    @ Load and scale by volume (LEFT)
-    ldr r5, [r1], #4
-    mov r5, r5, asr #15
-    mul r5, r4, r5
-	mov r5, r5, asr #7
-	ldr r7, [r2], #4
-	mul r7, r11, r7
-	add r5, r5, r7, asr #7	
-	
-	@ Clip and store
-	ssat r5, #16, r5
-    strh r5, [r3]
-    add r3, r3, #MIXBUFSIZE * 4
-
-    @ Load and scale by volume (RIGHT)
-    ldr r5, [r1], #4
-    mov r5, r5, asr #15
-    mul r5, r6, r5
-	mov r5, r5, asr #7
-    ldr r7, [r2], #4
-	mul r7, r12, r7
-	add r5, r5, r7, asr #7
-		
-
-    @ Clip and store
-	ssat r5, #16, r5
-    strh r5, [r3], #2
-    sub r3, r3, #MIXBUFSIZE * 4
-
-    subs r0, r0, #1
-    bne mixClipLoop
-
-doneMix:
+	@ We are done
     ldmfd sp!, {r4-r12, lr}
     bx lr
+
 .ENDFUNC
 
-.GLOBAL channelNum
 .GLOBAL firOffset
+.GLOBAL noiseSample
+.GLOBAL noiseStep
 
 .data
 
-echoBufferStart:
-.word 0
-numSamples:
-.word 0
-channelNum:
-.byte 0
-echoEnabled:
-.byte 0
 firOffset:
 .hword 0
 firBuffer:
@@ -1042,8 +972,16 @@ gaussian:
 .hword 0x4E5,0x4E7,0x4E9,0x4EB,0x4ED,0x4EF,0x4F1,0x4F3,0x4F5,0x4F6,0x4F8,0x4FA,0x4FB,0x4FD,0x4FF,0x500
 .hword 0x502,0x503,0x504,0x506,0x507,0x508,0x50A,0x50B,0x50C,0x50D,0x50E,0x50F,0x510,0x511,0x511,0x512
 .hword 0x513,0x514,0x514,0x515,0x516,0x516,0x517,0x517,0x517,0x518,0x518,0x518,0x518,0x518,0x519,0x519
-pmodTemp:
-.byte 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+noiseSample:
+.hword 0x8000
+noiseStep:
+.hword 1
+noiseSteps:
+.hword 0xFFFF,0x0800,0x0600,0x0500,0x0400,0x0300,0x0280,0x0200
+.hword 0x0180,0x0140,0x0100,0x00C0,0x00A0,0x0080,0x0060,0x0050
+.hword 0x0040,0x0030,0x0028,0x0020,0x0018,0x0014,0x0010,0x000C
+.hword 0x000A,0x0008,0x0006,0x0005,0x0004,0x0003,0x0002,0x0001
+
 
 .align
 .pool

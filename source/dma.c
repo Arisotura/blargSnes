@@ -126,10 +126,9 @@ void DMA_Enable(u8 flag)
 					u32 newaddr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
 					if (newval != *(u16*)&PPU.VRAM[newaddr])
 					{
+						if(PPU.HardwareRenderer)
+							PPU_ConvertVRAM16(newaddr, newval);
 						*(u16*)&PPU.VRAM[newaddr] = newval;
-						PPU.VRAMUpdateCount[newaddr >> 4]++;
-						PPU.VRAM7[newaddr >> 1] = newval >> 8;
-						PPU.VRAM7UpdateCount[newaddr >> 7]++;
 					}
 					memaddr += maddrinc<<1;
 					bytecount -= 2;
