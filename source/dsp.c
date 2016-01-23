@@ -1,7 +1,9 @@
 // This code has been taken from SNemulDS which is licensed under GPLv2.
 // Credits go to Archeide and whoever else participated in this.
 
+#include <string.h>
 
+#include "main.h"
 #include "dsp.h"
 
 
@@ -12,9 +14,14 @@
 // * double-buffered
 // -> 8192 entries (16K)
 
-u16 DSP_WriteBuffer[2][32*128];
-u16* DSP_WritingWriteBuffer;
-u16* DSP_PlayingWriteBuffer;
+
+u16 DSP_WriteDSPBuffer[2][8192];
+u16* DSP_WritingWriteDSPBuffer;
+u16* DSP_PlayingWriteDSPBuffer;
+
+u16 DSP_WriteTimeBuffer[2][8192];
+u16* DSP_WritingWriteTimeBuffer;
+u16* DSP_PlayingWriteTimeBuffer;
 
 // Envelope timing table.  Number of counts that should be subtracted from the counter
 // The counter starts at 30720 (0x7800).
@@ -26,16 +33,6 @@ static const s16 ENVCNT[0x20] = {
 	0x0C00,0x0F00,0x1400,0x1800,0x1E00,0x2800,0x3C00,0x7800
 };
 
-s16 DSP_NoiseSample;
-s16 DSP_NoiseSamples[17];
-u16 DSP_NoiseStep;
-static const u16 NOISESTEP[0x20] = {
-	0xFFFF,0x0800,0x0600,0x0500,0x0400,0x0300,0x0280,0x0200,
-	0x0180,0x0140,0x0100,0x00C0,0x00A0,0x0080,0x0060,0x0050,
-	0x0040,0x0030,0x0028,0x0020,0x0018,0x0014,0x0010,0x000C,
-	0x000A,0x0008,0x0006,0x0005,0x0004,0x0003,0x0002,0x0001
-};
-
 void DspSetEndOfSample(u32 channel);
 
 #define APU_MEM SPC_RAM
@@ -43,8 +40,6 @@ void DspSetEndOfSample(u32 channel);
 DspChannel channels[8];
 u8 DSP_MEM[0x100];
 
-s32 mixBuffer[DSPMIXBUFSIZE * 2];
-s32 echoBuffer[DSPMIXBUFSIZE * 2];
 s8 firFilter[16];
 s16 brrTab[16 * 16];
 u32 echoBase;
@@ -55,10 +50,16 @@ u16 echoRemain ALIGNED;
 
 // externs from dspmixer.S
 u32 DecodeSampleBlockAsm(u8 *blockPos, s16 *samplePos, DspChannel *channel);
-extern u8 channelNum;
+void DspMixSamplesStereoAsm(u32 samples, s16 *mixBuf);
 extern u16 firOffset;
+extern s16 noiseSample;
+extern u16 noiseStep;
 
-u32 DecodeSampleBlock(DspChannel *channel) {
+u32 playSamples;
+u32 writeSamples;
+
+
+u32 DecodeSampleBlock(DspChannel *channel, u32 channelNum) {
     u8 *cur = (u8*)&(APU_MEM[channel->blockPos]);
     s16 *sample = channel->decoded;
 
@@ -94,26 +95,6 @@ u32 DecodeSampleBlock(DspChannel *channel) {
     return 0;
 }
 
-void DspGenerateNoise()
-{
-	int i = DSPMIXBUFSIZE;
-	if(DSP_MEM[DSP_FLAG] & 0x1F)
-	{
-		for(; i > 0; i--)
-		{
-			DSP_NoiseSamples[i] = DSP_NoiseSample << 1;
-			DSP_NoiseStep--;
-			if(!DSP_NoiseStep)
-			{
-				DSP_NoiseSample = ((DSP_NoiseSample >> 1) & 0x3FFF) | (((DSP_NoiseSample ^ (DSP_NoiseSample >> 1)) & 0x1) << 14);
-				DSP_NoiseStep = NOISESTEP[DSP_MEM[DSP_FLAG] & 0x1F];
-			}
-		}
-	}
-	else
-		for(; i > 0; i--)
-			DSP_NoiseSamples[i] = DSP_NoiseSample << 1;
-}
 
 void DspReset() {
     // Delay for 1 sample
@@ -122,10 +103,14 @@ void DspReset() {
     echoBase = 0;
 	int i=0,c=0;
 	
-	memset(DSP_WriteBuffer, 0, sizeof(DSP_WriteBuffer));
+	memset(DSP_WriteDSPBuffer, 0, sizeof(DSP_WriteDSPBuffer));
+	memset(DSP_WriteTimeBuffer, 0, sizeof(DSP_WriteTimeBuffer));
 	
-	DSP_WritingWriteBuffer = DSP_WriteBuffer[0];
-	DSP_PlayingWriteBuffer = DSP_WriteBuffer[1];
+	DSP_WritingWriteDSPBuffer = DSP_WriteDSPBuffer[0];
+	DSP_PlayingWriteDSPBuffer = DSP_WriteDSPBuffer[1];
+
+	DSP_WritingWriteTimeBuffer = DSP_WriteTimeBuffer[0];
+	DSP_PlayingWriteTimeBuffer = DSP_WriteTimeBuffer[1];
 
     firOffset = 0;
 	for(i = 0; i > 8; i++)
@@ -136,8 +121,8 @@ void DspReset() {
     // Disable echo emulation
 	DSP_MEM[DSP_FLAG] = 0x60;
 
-	DSP_NoiseSample = 0x4000;
-	DSP_NoiseStep = 1;
+	noiseSample = 0x8000;
+	noiseStep = 1;
 
 	for (i = 0; i < 8; i++)
 		memset(&channels[i], 0, sizeof(DspChannel));
@@ -402,45 +387,106 @@ void DspReplayWriteByte(u8 val, u8 address);
 
 void DSP_BufferSwap()
 {
-	int i;
 	
-	u16* tmp = DSP_WritingWriteBuffer;
-	DSP_WritingWriteBuffer = DSP_PlayingWriteBuffer;
-	DSP_PlayingWriteBuffer = tmp;
+	u16* tmp = DSP_WritingWriteDSPBuffer;
+	DSP_WritingWriteDSPBuffer = DSP_PlayingWriteDSPBuffer;
+	DSP_PlayingWriteDSPBuffer = tmp;
 	
-	for (i = 0; i < 32; i++)
-		DSP_WritingWriteBuffer[(i << 7) + 127] = 0;
-	
+	tmp = DSP_WritingWriteTimeBuffer;
+	DSP_WritingWriteTimeBuffer = DSP_PlayingWriteTimeBuffer;
+	DSP_PlayingWriteTimeBuffer = tmp;
+
+	DSP_WritingWriteDSPBuffer[8191] = 0;
+
 	svcSignalEvent(SPCSync);
 }
 
 void DspWriteByte(u8 val, u8 address)
 {
 	if (address > 0x7f) return;
-	
-	u16* buffer = &DSP_WritingWriteBuffer[(SPC_ElapsedCycles & 0x3E00) >> 2];
-	
-	if (buffer[127] >= 127) 
+
+	u16* dsp = DSP_WritingWriteDSPBuffer;
+
+	if(dsp[8191] >= 8191)
 	{
 		bprintf("!! DSP WRITEBUFFER OVERFLOW\n");
 		return;
 	}
-	
-	buffer[buffer[127]] = (address << 8) | val;
-	buffer[127]++;
+
+	DSP_WritingWriteTimeBuffer[dsp[8191]] = SPC_ElapsedCycles;
+	dsp[dsp[8191]] = (address << 8) | val;
+	dsp[8191]++;
 }
 
-void DSP_ReplayWrites(u32 idx)
+u32 DspMixSamplesStereo(u32 samples, s16 *mixBuf, u32 length, u32 curpos, bool restart)
 {
-	u16* buffer = &DSP_PlayingWriteBuffer[idx << 7];
-	u16 i;
-	
-	u16 num = buffer[127];
-	for (i = 0; i < num; i++)
+	if(!samples)
+		return curpos;
+
+	u32 newlen = length << 1;
+	u32 newpos = (curpos << 1) % newlen;
+
+	if(restart)
 	{
-		u16 val = buffer[i];
-		DspReplayWriteByte(val & 0xFF, val >> 8);
+		playSamples = samples;
+		writeSamples = 512;
 	}
+	else
+	{
+		playSamples += samples;
+		writeSamples += 512;
+	}
+
+	if(playSamples >= 0x10000 && writeSamples >= 0x10000)
+	{
+		playSamples -= 0x10000;
+		writeSamples -= 0x10000;
+	}
+
+	u32 procSamples = 512;
+	if(playSamples > writeSamples) {
+		procSamples += (playSamples - writeSamples);
+		writeSamples = playSamples;
+	}
+
+	s16 *mix = &mixBuf[newpos];
+	s16 *mixend = &mixBuf[newlen];
+	u16 *dsp = DSP_PlayingWriteDSPBuffer;
+	u16 *dspend = &dsp[dsp[8191]];
+	u16 *time = DSP_PlayingWriteTimeBuffer;
+
+	u32 totCycle = procSamples * 32;
+	u32 curCycle = 0;
+	bool loop;
+
+	do
+	{
+		loop = false;
+
+		// We work with one sample each time. We could try and group up a bunch of samples together, but then we'd need to deal with ring buffer wrap-around
+		if(curCycle < totCycle)
+		{
+			loop = true;
+			DspMixSamplesStereoAsm(1, mix);
+			mix += 2;
+			if(mix == mixend)
+				mix = mixBuf;
+			curCycle += 32;
+		}
+
+		// Only process DSP writes if we have any left and either if they are within the correct cycle period or all samples are accounted for
+		while((dsp < dspend) && ((*time < curCycle) || (curCycle == totCycle)))
+		{
+			loop = true;
+			u16 val = *dsp;
+			DspReplayWriteByte(val & 0xFF, val >> 8);
+			dsp++;
+			time++;			
+		}
+
+	} while(loop);
+
+	return ((curpos + procSamples) % length);
 }
 
 void DspReplayWriteByte(u8 val, u8 address) 
@@ -508,8 +554,8 @@ void DspReplayWriteByte(u8 val, u8 address)
 					if(val & 0x80)
 					{
 						DSP_MEM[DSP_FLAG] = 0x60;
-						DSP_NoiseSample = 0x4000;
-						DSP_NoiseStep = 1;
+						noiseSample = 0x8000;
+						noiseStep = 1;
 					}
 					else
 						DSP_MEM[DSP_FLAG] = val;
@@ -538,10 +584,7 @@ void DspReplayWriteByte(u8 val, u8 address)
 				{
 					int i=1;
 					for (; i<8; i++)
-					{
 						channels[i].pmodEnabled = (val >> i) & 0x1;
-						channels[i-1].pmodWrite = channels[i].pmodEnabled;
-					}
 				}
 				break;
 
@@ -549,7 +592,7 @@ void DspReplayWriteByte(u8 val, u8 address)
 				{
 					int i=0;
 					for (; i<8; i++)
-						channels[i].noiseEnabled = (val >> i ) & 0x1;
+						channels[i].noiseEnabled = (val >> i) & 0x1;
 				}
                 break;
 

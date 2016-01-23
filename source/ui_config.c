@@ -52,7 +52,7 @@ void Config_Render(bool force)
 
 	y += 26;
 
-	DrawCheckBox(26, y, RGB(255,255,255), "Hardware-assisted Mode7 (WIP)", Config.HardwareMode7);
+	DrawCheckBox(26, y, RGB(255,255,255), "Mode 7 Hardware filter", Config.HardwareMode7Filter);
 	
 	y += 26;
 	
@@ -86,7 +86,7 @@ void Config_Touch(int touch, u32 x, u32 y)
 	}
 	else if (y >= 50 && y < 70)
 	{
-		Config.HardwareMode7 = !Config.HardwareMode7;
+		Config.HardwareMode7Filter = !Config.HardwareMode7Filter;
 		configdirty = 2;
 	}
 	else if (y >= 76 && y < 96)

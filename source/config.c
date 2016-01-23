@@ -18,6 +18,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <dirent.h>
 #include <string.h>
 #include <3ds.h>
 
@@ -26,7 +27,6 @@
 
 Config_t Config;
 
-extern FS_Archive sdmcArchive;
 const char* configFilePath = "/blargSnes.ini";
 
 const char* configFileL = 
@@ -51,84 +51,75 @@ void LoadConfig(u8 init)
 		strncpy(Config.DirPath,"/\0",2);
 		strncpy(lastDir,"/\0",2);
 	}
-		
-	Handle file;
-	FS_Path filePath;
-	filePath.type = PATH_ASCII;
-	filePath.size = strlen(configFilePath) + 1;
-	filePath.data = (u8*)configFilePath;
-	
-	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_READ, 0);
-	if (res) return;
-	
-	u64 size64 = 0;
-	FSFILE_GetSize(file, &size64);
-	u32 size = (u32)size64;
-	if (!size) return;
-	
-	char* tempbuf = (char*)malloc(size+1);
-	u32 bytesread = 0;
-	FSFILE_Read(file, &bytesread, 0, (u32*)tempbuf, size);
+
+	FILE *pFile = fopen(configFilePath, "rb");
+	if(pFile == NULL)
+		return;
+
+	fseek(pFile, 0, SEEK_END);
+	u32 size = ftell(pFile);
+	if(!size)
+	{
+		fclose(pFile);
+		return;
+	}
+
+	char* tempbuf = (char*)linearAlloc(size + 1);
+	fseek(pFile, 0, SEEK_SET);
+	fread(tempbuf, sizeof(char), size, pFile);
 	tempbuf[size] = '\0';
-	
+
 	sscanf(tempbuf, configFileL, 
 		&Config.HardwareRenderer,
 		&Config.ScaleMode,
 		tempDir);
 
-	if(Config.HardwareMode7 == -1)
-		Config.HardwareMode7 = 0;
+	if(Config.HardwareMode7Filter == -1)
+		Config.HardwareMode7Filter = 0;
 
 	if(init && strlen(tempDir) > 0 && tempDir[0] == '/')
 	{
-		Handle dirHandle;
-		FS_Path dirPath = (FS_Path){PATH_ASCII, strlen(tempDir)+1, (u8*)tempDir};
-		Result resDir = FSUSER_OpenDirectory(&dirHandle, sdmcArchive, dirPath);
-		if (!resDir)
+		DIR *pDir = opendir(tempDir);
+		if(pDir != NULL)
 		{
 			strncpy(Config.DirPath, tempDir, 0x106);
 			strncpy(lastDir, tempDir, 0x106);
-			FSDIR_Close(dirHandle);
+			closedir(pDir);
 		}
+
 	}
 	
-	FSFILE_Close(file);
-	free(tempbuf);
+	fclose(pFile);
+	linearFree(tempbuf);
 }
 
 void SaveConfig(u8 saveCurDir)
 {
-	Handle file;
-	FS_Path filePath;
-	filePath.type = PATH_ASCII;
-	filePath.size = strlen(configFilePath) + 1;
-	filePath.data = (u8*)configFilePath;
 	char tempDir[0x106];
 	if(!saveCurDir)
 		strncpy(tempDir,lastDir,0x106);
 	else
 		strncpy(tempDir,Config.DirPath,0x106);
-	
-	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_CREATE|FS_OPEN_WRITE, 0);
-	if (res)
+
+	FILE *pFile = fopen(configFilePath, "wb");
+	if(pFile == NULL)
 	{
-		bprintf("Error %08X while saving config\n", res);
+		bprintf("Error while saving config\n");
 		return;
 	}
+
 	
-	char* tempbuf = (char*)malloc(1024);
+	char* tempbuf = (char*)linearAlloc(1024);
 	u32 size = snprintf(tempbuf, 1024, configFileS, 
 		Config.HardwareRenderer,
 		Config.ScaleMode,
 		tempDir);
-		
-	FSFILE_SetSize(file, (u64)size);
 	
-	u32 byteswritten = 0;
-	FSFILE_Write(file, &byteswritten, 0, (u32*)tempbuf, size, FS_WRITE_FLUSH);
-	
-	FSFILE_Close(file);
-	free(tempbuf);
+	fwrite(tempbuf, sizeof(char), size, pFile);
+	fclose(pFile);
+
+
+	linearFree(tempbuf);
 
 	if(saveCurDir)
 		strncpy(lastDir,Config.DirPath,0x106);

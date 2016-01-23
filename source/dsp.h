@@ -14,17 +14,14 @@ void DspPrepareStateAfterReload();
 extern u8 DSP_MEM[0x100];
 extern u16 dspPreamp;
 
-extern s16 DSP_NoiseSamples[17];
-
 extern u32 echoBase;
 extern u16 echoRemain;
 extern s8 firFilter[16];
 
-void DspMixSamplesStereo(u32 samples, s16 *mixBuf);
+u32 DspMixSamplesStereo(u32 samples, s16 *mixBuf, u32 length, u32 curpos, bool restart);
 void DspWriteByte(u8 val, u8 address);
 
 void DSP_BufferSwap();
-void DSP_ReplayWrites(u32 idx);
 
 struct _DspChannel {
     int sampleSpeed;
@@ -50,8 +47,8 @@ struct _DspChannel {
     bool echoEnabled;
 	bool noiseEnabled;
 	bool pmodEnabled;
-	bool pmodWrite;
-	u8 empty;
+	u8 empty1;
+	u8 empty2;
 } ALIGNED;
 typedef struct _DspChannel DspChannel;
 

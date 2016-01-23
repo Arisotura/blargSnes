@@ -33,14 +33,13 @@ extern shaderProgram_s softRenderShaderP;
 extern u8 finalUniforms[1];
 extern u8 softRenderUniforms[1];
 extern u8 hardRenderUniforms[2];
-extern u8 hard7RenderUniforms[4];
 extern u8 plainQuadUniforms[1];
 extern u8 windowMaskUniforms[1];
 
 extern float snesProjMatrix[16];
 
 extern u32* gpuOut;
-extern u32* gpuDOut;
+//extern u32* gpuDOut;
 extern u32* SNESFrame;
 extern u16* MainScreenTex;
 extern u16* SubScreenTex;
@@ -49,13 +48,13 @@ extern u16* SubScreenTex;
 void PPU_Init_Soft()
 {
 	// main/sub screen buffers, RGBA5551
-	MainScreenTex = (u16*)VRAM_Alloc(256*512*2);
+	MainScreenTex = (u16*)vramAlloc(256*512*2);
 	SubScreenTex = &MainScreenTex[256*256];
 }
 
 void PPU_DeInit_Soft()
 {
-	VRAM_Free(MainScreenTex);
+	vramFree(MainScreenTex);
 }
 
 
@@ -1407,9 +1406,11 @@ void PPU_BlendScreens(u32 colorformat)
 
 	bglUseShader(&softRenderShaderP);
 	
-	bglOutputBuffers(SNESFrame, gpuDOut, 256, 256); // depth buffer doesn't matter
+	bglOutputBuffers(0x2, 0x3, SNESFrame, NULL, 256, 256); // depth buffer doesn't matter
 	bglViewport(0, 0, 256, 256);
 	
+	bglOutputBufferAccess(0, 1, 0, 0);
+
 	bglEnableDepthTest(false);
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	bglEnableAlphaTest(false);
@@ -1524,7 +1525,7 @@ void PPU_BlendScreens(u32 colorformat)
 		ADDVERTEX(0, startoffset,       0, startoffset);
 		ADDVERTEX(256, s->EndOffset,    256, s->EndOffset);
 		
-		vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
+		vptr = (u16*)((((u32)vptr) + 0x1F) & ~0x1F);
 		vertexPtr = vptr;
 		
 		bglDrawArrays(GPU_GEOMETRY_PRIM, 2);
