@@ -38,19 +38,12 @@
 #include "defaultborder.h"
 #include "screenfill.h"
 
-#include "vfinal_vsh_shbin.h"
-#include "vrender_soft_vsh_shbin.h"
-#include "vrender_hard_vsh_shbin.h"
-#include "vrender_hard7_vsh_shbin.h"
-#include "vplain_quad_vsh_shbin.h"
-#include "vwindow_mask_vsh_shbin.h"
-
-#include "gfinal_vsh_shbin.h"
-#include "grender_soft_vsh_shbin.h"
-#include "grender_hard_vsh_shbin.h"
-#include "grender_hard7_vsh_shbin.h"
-#include "gplain_quad_vsh_shbin.h"
-#include "gwindow_mask_vsh_shbin.h"
+#include "final_shbin.h"
+#include "render_soft_shbin.h"
+#include "render_hard_shbin.h"
+#include "render_hard7_shbin.h"
+#include "plain_quad_shbin.h"
+#include "window_mask_shbin.h"
 
 #include "version.h"
 
@@ -58,19 +51,12 @@ u32* gpuOut;
 u32* gpuDOut;
 u32* SNESFrame;
 
-DVLB_s* vfinalShader;
-DVLB_s* vsoftRenderShader;
-DVLB_s* vhardRenderShader;
-DVLB_s* vhard7RenderShader;
-DVLB_s* vplainQuadShader;
-DVLB_s* vwindowMaskShader;
-
-DVLB_s* gfinalShader;
-DVLB_s* gsoftRenderShader;
-DVLB_s* ghardRenderShader;
-DVLB_s* ghard7RenderShader;
-DVLB_s* gplainQuadShader;
-DVLB_s* gwindowMaskShader;
+DVLB_s* finalShader;
+DVLB_s* softRenderShader;
+DVLB_s* hardRenderShader;
+DVLB_s* hard7RenderShader;
+DVLB_s* plainQuadShader;
+DVLB_s* windowMaskShader;
 
 shaderProgram_s finalShaderP;
 shaderProgram_s softRenderShaderP;
@@ -79,6 +65,12 @@ shaderProgram_s hard7RenderShaderP;
 shaderProgram_s plainQuadShaderP;
 shaderProgram_s windowMaskShaderP;
 
+u8 finalUniforms[1];
+u8 softRenderUniforms[1];
+u8 hardRenderUniforms[2];
+u8 hard7RenderUniforms[4];
+u8 plainQuadUniforms[1];
+u8 windowMaskUniforms[1];
 
 void* vertexBuf;
 void* vertexPtr;
@@ -90,7 +82,7 @@ u32* BorderTex;
 u16* MainScreenTex;
 u16* SubScreenTex;
 
-FS_archive sdmcArchive;
+FS_Archive sdmcArchive;
 
 
 int forceexit = 0;
@@ -108,7 +100,7 @@ u32 ntriangles = 0;
 
 // hax
 extern Handle gspEventThread;
-extern Handle gspEvents[GSPEVENT_MAX];
+extern Handle gspEvents[GSPGPU_EVENT_MAX];
 
 
 Handle spcthread = NULL;
@@ -192,12 +184,12 @@ void SPCThread(u32 blarg)
 void dbg_save(char* path, void* buf, int size)
 {
 	Handle sram;
-	FS_path sramPath;
-	sramPath.type = PATH_CHAR;
+	FS_Path sramPath;
+	sramPath.type = PATH_ASCII;
 	sramPath.size = strlen(path) + 1;
 	sramPath.data = (u8*)path;
 	
-	Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_WRITE, 0);
 	if ((res & 0xFFFC03FF) == 0)
 	{
 		u32 byteswritten = 0;
@@ -440,7 +432,7 @@ void RenderTopScreen()
 	
 	bglTexImage(GPU_TEXUNIT0, BorderTex,512,256,0,GPU_RGBA8);
 	
-	bglUniformMatrix(GPU_VERTEX_SHADER, 0, screenProjMatrix);
+	bglUniformMatrix(GPU_VERTEX_SHADER, finalUniforms[0], screenProjMatrix);
 	
 	bglNumAttribs(2);
 	bglAttribType(0, GPU_FLOAT, 3);	// vertex
@@ -479,7 +471,7 @@ void ContinueRendering()
 		case 0: return;
 		
 		case 3:
-			if (PeekEvent(gspEvents[GSPEVENT_PPF]))
+			if (PeekEvent(gspEvents[GSPGPU_EVENT_PPF]))
 			{
 				bglFlush();
 				RenderState = 1;
@@ -487,7 +479,7 @@ void ContinueRendering()
 			break;
 			
 		case 1:
-			if (PeekEvent(gspEvents[GSPEVENT_P3D]))
+			if (PeekEvent(gspEvents[GSPGPU_EVENT_P3D]))
 			{
 				//{u64 darp = svcGetSystemTick() - baderp;bprintf("GPU: %f\n", (float)darp/268123.480);}
 				GX_DisplayTransfer(gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
@@ -497,7 +489,7 @@ void ContinueRendering()
 			break;
 			
 		case 2:
-			if (PeekEvent(gspEvents[GSPEVENT_PPF]))
+			if (PeekEvent(gspEvents[GSPGPU_EVENT_PPF]))
 			{
 				RenderState = 0;
 				VSyncAndFrameskip();
@@ -511,14 +503,14 @@ void FinishRendering()
 	if (RenderState == 3)
 	{
 		//gspWaitForPPF();
-		SafeWait(gspEvents[GSPEVENT_PPF]);
+		SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
 		bglFlush();
 		RenderState = 1;
 	}
 	if (RenderState == 1)
 	{
 		//gspWaitForP3D();
-		SafeWait(gspEvents[GSPEVENT_P3D]);
+		SafeWait(gspEvents[GSPGPU_EVENT_P3D]);
 		//{u64 darp = svcGetSystemTick() - baderp;bprintf("GPU: %f\n", (float)darp/268123.480);}
 		GX_DisplayTransfer(gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
 		RenderState = 2;
@@ -527,7 +519,7 @@ void FinishRendering()
 	if (RenderState == 2)
 	{
 		//gspWaitForPPF();
-		SafeWait(gspEvents[GSPEVENT_PPF]);
+		SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
 		VSyncAndFrameskip();
 	}
 	if (RenderState == 4)
@@ -542,7 +534,7 @@ u32 PALCount = 0;
 
 void VSyncAndFrameskip()
 {
-	if (running && !pause && PeekEvent(gspEvents[GSPEVENT_VBlank0]) && FramesSkipped<5)
+	if (running && !pause && PeekEvent(gspEvents[GSPGPU_EVENT_VBlank0]) && FramesSkipped<5)
 	{
 		// we missed the VBlank
 		// skip the next frames to compensate
@@ -572,7 +564,7 @@ void VSyncAndFrameskip()
 		}
 		
 		gfxSwapBuffersGpu();
-		gspWaitForEvent(GSPEVENT_VBlank0, false);
+		gspWaitForEvent(GSPGPU_EVENT_VBlank0, false);
 		//LastVBlank = svcGetSystemTick();
 	}
 	
@@ -594,12 +586,12 @@ bool TakeScreenshot(char* path)
 	int x, y;
 	
 	Handle file;
-	FS_path filePath;
-	filePath.type = PATH_CHAR;
+	FS_Path filePath;
+	filePath.type = PATH_ASCII;
 	filePath.size = strlen(path) + 1;
 	filePath.data = (u8*)path;
 	
-	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_CREATE|FS_OPEN_WRITE, 0);
 	if (res) 
 		return false;
 		
@@ -694,12 +686,12 @@ void CopyBitmapToTexture(u8* src, void* dst, u32 width, u32 height, u32 alpha, u
 bool LoadBitmap(char* path, u32 width, u32 height, void* dst, u32 alpha, u32 startx, u32 stride, u32 flags)
 {
 	Handle file;
-	FS_path filePath;
-	filePath.type = PATH_CHAR;
+	FS_Path filePath;
+	filePath.type = PATH_ASCII;
 	filePath.size = strlen(path) + 1;
 	filePath.data = (u8*)path;
 	
-	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_READ, 0);
 	if (res) 
 		return false;
 		
@@ -873,13 +865,16 @@ int main()
 	
 	ClearConsole();
 	
+	// Enable 804Mhz mode on New 3DS
+	osSetSpeedupEnable(true);
+
 	aptOpenSession();
-	APT_SetAppCpuTimeLimit(30); // enables syscore usage -- TODO: new3DS fast mode
+	APT_SetAppCpuTimeLimit(30); // enables syscore usage
 	aptCloseSession();
 
 	gfxInitDefault();
 	
-	sdmcArchive = (FS_archive){0x9, (FS_path){PATH_EMPTY, 1, (u8*)""}};
+	sdmcArchive = (FS_Archive){0x9, (FS_Path){PATH_EMPTY, 1, (u8*)""}};
 	FSUSER_OpenArchive(&sdmcArchive);
 	
 	Config.HardwareMode7 = -1;
@@ -903,19 +898,35 @@ int main()
 	gpuDOut = (u32*)VRAM_Alloc(400*240*2*4);
 	SNESFrame = (u32*)VRAM_Alloc(256*256*4);
 
-	vfinalShader = DVLB_ParseFile((u32*)vfinal_vsh_shbin, vfinal_vsh_shbin_size);					gfinalShader = DVLB_ParseFile((u32*)gfinal_vsh_shbin, gfinal_vsh_shbin_size);
-	vsoftRenderShader = DVLB_ParseFile((u32*)vrender_soft_vsh_shbin, vrender_soft_vsh_shbin_size);	gsoftRenderShader = DVLB_ParseFile((u32*)grender_soft_vsh_shbin, grender_soft_vsh_shbin_size);
-	vhardRenderShader = DVLB_ParseFile((u32*)vrender_hard_vsh_shbin, vrender_hard_vsh_shbin_size);	ghardRenderShader = DVLB_ParseFile((u32*)grender_hard_vsh_shbin, grender_hard_vsh_shbin_size);
-	vhard7RenderShader = DVLB_ParseFile((u32*)vrender_hard7_vsh_shbin, vrender_hard7_vsh_shbin_size);	ghard7RenderShader = DVLB_ParseFile((u32*)grender_hard7_vsh_shbin, grender_hard7_vsh_shbin_size);
-	vplainQuadShader = DVLB_ParseFile((u32*)vplain_quad_vsh_shbin, vplain_quad_vsh_shbin_size);		gplainQuadShader = DVLB_ParseFile((u32*)gplain_quad_vsh_shbin, gplain_quad_vsh_shbin_size);
-	vwindowMaskShader = DVLB_ParseFile((u32*)vwindow_mask_vsh_shbin, vwindow_mask_vsh_shbin_size);	gwindowMaskShader = DVLB_ParseFile((u32*)gwindow_mask_vsh_shbin, gwindow_mask_vsh_shbin_size);
+	finalShader = DVLB_ParseFile((u32*)final_shbin, final_shbin_size);
+	softRenderShader = DVLB_ParseFile((u32*)render_soft_shbin, render_soft_shbin_size);
+	hardRenderShader = DVLB_ParseFile((u32*)render_hard_shbin, render_hard_shbin_size);
+	hard7RenderShader = DVLB_ParseFile((u32*)render_hard7_shbin, render_hard7_shbin_size);
+	plainQuadShader = DVLB_ParseFile((u32*)plain_quad_shbin, plain_quad_shbin_size);
+	windowMaskShader = DVLB_ParseFile((u32*)window_mask_shbin, window_mask_shbin_size);
 
-	shaderProgramInit(&finalShaderP);		shaderProgramSetVsh(&finalShaderP, &vfinalShader->DVLE[0]);				shaderProgramSetGsh(&finalShaderP, &gfinalShader->DVLE[0], 4);
-	shaderProgramInit(&softRenderShaderP);	shaderProgramSetVsh(&softRenderShaderP, &vsoftRenderShader->DVLE[0]);	shaderProgramSetGsh(&softRenderShaderP, &gsoftRenderShader->DVLE[0], 4);
-	shaderProgramInit(&hardRenderShaderP);	shaderProgramSetVsh(&hardRenderShaderP, &vhardRenderShader->DVLE[0]);	shaderProgramSetGsh(&hardRenderShaderP, &ghardRenderShader->DVLE[0], 4);
-	shaderProgramInit(&hard7RenderShaderP);	shaderProgramSetVsh(&hard7RenderShaderP, &vhard7RenderShader->DVLE[0]);	shaderProgramSetGsh(&hard7RenderShaderP, &ghard7RenderShader->DVLE[0], 2);
-	shaderProgramInit(&plainQuadShaderP);	shaderProgramSetVsh(&plainQuadShaderP, &vplainQuadShader->DVLE[0]);		shaderProgramSetGsh(&plainQuadShaderP, &gplainQuadShader->DVLE[0], 4);
-	shaderProgramInit(&windowMaskShaderP);	shaderProgramSetVsh(&windowMaskShaderP, &vwindowMaskShader->DVLE[0]);	shaderProgramSetGsh(&windowMaskShaderP, &gwindowMaskShader->DVLE[0], 4);
+	shaderProgramInit(&finalShaderP);		shaderProgramSetVsh(&finalShaderP, &finalShader->DVLE[0]);				shaderProgramSetGsh(&finalShaderP, &finalShader->DVLE[1], 4);
+	shaderProgramInit(&softRenderShaderP);	shaderProgramSetVsh(&softRenderShaderP, &softRenderShader->DVLE[0]);	shaderProgramSetGsh(&softRenderShaderP, &softRenderShader->DVLE[1], 4);
+	shaderProgramInit(&hardRenderShaderP);	shaderProgramSetVsh(&hardRenderShaderP, &hardRenderShader->DVLE[0]);	shaderProgramSetGsh(&hardRenderShaderP, &hardRenderShader->DVLE[1], 4);
+	shaderProgramInit(&hard7RenderShaderP);	shaderProgramSetVsh(&hard7RenderShaderP, &hard7RenderShader->DVLE[0]);	shaderProgramSetGsh(&hard7RenderShaderP, &hard7RenderShader->DVLE[1], 2);
+	shaderProgramInit(&plainQuadShaderP);	shaderProgramSetVsh(&plainQuadShaderP, &plainQuadShader->DVLE[0]);		shaderProgramSetGsh(&plainQuadShaderP, &plainQuadShader->DVLE[1], 4);
+	shaderProgramInit(&windowMaskShaderP);	shaderProgramSetVsh(&windowMaskShaderP, &windowMaskShader->DVLE[0]);	shaderProgramSetGsh(&windowMaskShaderP, &windowMaskShader->DVLE[1], 4);
+
+	finalUniforms[0] = shaderInstanceGetUniformLocation(finalShaderP.vertexShader, "projMtx");
+
+	softRenderUniforms[0] = shaderInstanceGetUniformLocation(softRenderShaderP.vertexShader, "projMtx");
+
+	hardRenderUniforms[0] = shaderInstanceGetUniformLocation(hardRenderShaderP.vertexShader, "projMtx");
+	hardRenderUniforms[1] = shaderInstanceGetUniformLocation(hardRenderShaderP.vertexShader, "scaler");
+
+	hard7RenderUniforms[0] = shaderInstanceGetUniformLocation(hard7RenderShaderP.vertexShader, "projMtx");
+	hard7RenderUniforms[1] = shaderInstanceGetUniformLocation(hard7RenderShaderP.vertexShader, "scaler");
+	hard7RenderUniforms[2] = shaderInstanceGetUniformLocation(hard7RenderShaderP.vertexShader, "m7Mtx");
+	hard7RenderUniforms[3] = shaderInstanceGetUniformLocation(hard7RenderShaderP.geometryShader, "snesM7Matrix");
+
+	plainQuadUniforms[0] = shaderInstanceGetUniformLocation(plainQuadShaderP.vertexShader, "projMtx");
+
+	windowMaskUniforms[0] = shaderInstanceGetUniformLocation(windowMaskShaderP.vertexShader, "projMtx");
 
 	GX_MemoryFill(gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
 	gspWaitForPSC0();
@@ -948,7 +959,7 @@ int main()
 	GX_DisplayTransfer(tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
 	//gspWaitForPPF();
 
-	SafeWait(gspEvents[GSPEVENT_PPF]);
+	SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
 	linearFree(tempbuf);
 	
 	Audio_Init();
@@ -956,7 +967,7 @@ int main()
 	
 	UI_Switch(&UI_ROMMenu);
 
-	APP_STATUS status;
+	APT_AppStatus status;
 	while (!forceexit && (status = aptGetStatus()) != APP_EXITING)
 	{
 		if (status == APP_RUNNING)
@@ -1026,7 +1037,7 @@ int main()
 						GX_DisplayTransfer(tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
 						//gspWaitForPPF();
 
-						SafeWait(gspEvents[GSPEVENT_PPF]);
+						SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
 						linearFree(tempbuf);
 					}
 					else if (release & KEY_START)
@@ -1154,13 +1165,12 @@ int main()
 	shaderProgramFree(&plainQuadShaderP);
 	shaderProgramFree(&windowMaskShaderP);
 
-	DVLB_Free(vfinalShader);		DVLB_Free(gfinalShader);
-	DVLB_Free(vsoftRenderShader);	DVLB_Free(gsoftRenderShader);
-	DVLB_Free(vhardRenderShader);	DVLB_Free(ghardRenderShader);
-	DVLB_Free(vhard7RenderShader);	DVLB_Free(ghard7RenderShader);
-	DVLB_Free(vplainQuadShader);	DVLB_Free(gplainQuadShader);
-	DVLB_Free(vwindowMaskShader);	DVLB_Free(gwindowMaskShader);
-
+	DVLB_Free(finalShader);
+	DVLB_Free(softRenderShader);
+	DVLB_Free(hardRenderShader);
+	DVLB_Free(hard7RenderShader);
+	DVLB_Free(plainQuadShader);
+	DVLB_Free(windowMaskShader);
 
 	linearFree(borderVertices);
 	linearFree(screenVertices);

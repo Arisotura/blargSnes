@@ -47,6 +47,13 @@ extern shaderProgram_s hard7RenderShaderP;
 extern shaderProgram_s plainQuadShaderP;
 extern shaderProgram_s windowMaskShaderP;
 
+extern u8 finalUniforms[1];
+extern u8 softRenderUniforms[1];
+extern u8 hardRenderUniforms[2];
+extern u8 hard7RenderUniforms[4];
+extern u8 plainQuadUniforms[1];
+extern u8 windowMaskUniforms[1];
+
 extern float snesProjMatrix[16];
 extern float snesM7Matrix[16];
 extern float snesM7Offset[4];
@@ -652,7 +659,7 @@ void PPU_StartBG(u32 hi)
 	
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	
-	SET_UNIFORM(GPU_VERTEX_SHADER, 4, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
+	SET_UNIFORM(GPU_VERTEX_SHADER, hardRenderUniforms[1], 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
 	
 	bglEnableTextures(GPU_TEXUNIT0);
 	
@@ -700,7 +707,7 @@ void PPU_ClearMainScreen()
 	
 	bglColorDepthMask(GPU_WRITE_ALL);
 	
-	bglUniformMatrix(GPU_VERTEX_SHADER, 0, snesProjMatrix);
+	bglUniformMatrix(GPU_VERTEX_SHADER, plainQuadUniforms[0], snesProjMatrix);
 	
 	bglEnableTextures(0);
 	
@@ -791,7 +798,7 @@ void PPU_ClearSubScreen()
 	
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	
-	bglUniformMatrix(GPU_VERTEX_SHADER, 0, snesProjMatrix);
+	bglUniformMatrix(GPU_VERTEX_SHADER, plainQuadUniforms[0], snesProjMatrix);
 	
 	bglEnableTextures(0);
 	
@@ -877,7 +884,7 @@ void PPU_DrawWindowMask(u32 snum)
 	
 	bglColorDepthMask(GPU_WRITE_RED);
 	
-	bglUniformMatrix(GPU_VERTEX_SHADER, 0, snesProjMatrix);
+	bglUniformMatrix(GPU_VERTEX_SHADER, windowMaskUniforms[0], snesProjMatrix);
 	
 	bglNumAttribs(2);
 	bglAttribType(0, GPU_SHORT, 2);	// vertex
@@ -952,7 +959,7 @@ void PPU_ClearAlpha(u32 snum)
 	
 	bglColorDepthMask(GPU_WRITE_ALPHA);
 	
-	bglUniformMatrix(GPU_VERTEX_SHADER, 0, snesProjMatrix);
+	bglUniformMatrix(GPU_VERTEX_SHADER, plainQuadUniforms[0], snesProjMatrix);
 	
 	bglEnableTextures(0);
 	
@@ -1913,10 +1920,10 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend, u32 prio)
 				snesM7Matrix[7] = (snesM7Matrix[4] * -s->RefX) + (snesM7Matrix[5] * -s->RefY) + flipY - s->YScroll;
 			
 
-				bglUniformMatrix(GPU_VERTEX_SHADER, 0, snesProjMatrix);
-				bglUniformMatrix(GPU_VERTEX_SHADER, 5, snesM7Matrix);
-				SET_UNIFORM(GPU_GEOMETRY_SHADER, 14, snesM7Matrix[0] * 0.0628f, snesM7Matrix[4] * 0.0628f, 0.0f, 0.0f);
-				SET_UNIFORM(GPU_GEOMETRY_SHADER, 15, snesM7Matrix[1] * 0.0628f, snesM7Matrix[5] * 0.0628f, 0.0f, 0.0f);
+				bglUniformMatrix(GPU_VERTEX_SHADER, hard7RenderUniforms[0], snesProjMatrix);
+				bglUniformMatrix(GPU_VERTEX_SHADER, hard7RenderUniforms[2], snesM7Matrix);
+				SET_UNIFORM(GPU_GEOMETRY_SHADER, hard7RenderUniforms[3],   snesM7Matrix[0] * 0.0628f, snesM7Matrix[4] * 0.0628f, 0.0f, 0.0f);
+				SET_UNIFORM(GPU_GEOMETRY_SHADER, hard7RenderUniforms[3]+1, snesM7Matrix[1] * 0.0628f, snesM7Matrix[5] * 0.0628f, 0.0f, 0.0f);
 				
 				bglScissor(0, systart, 256, syend);
 			
@@ -1981,7 +1988,7 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend, u32 prio)
 	
 			bglColorDepthMask(GPU_WRITE_COLOR);
 	
-			SET_UNIFORM(GPU_VERTEX_SHADER, 4, 1.0f/256.0f, 1.0f/256.0f, 1.0f, 1.0f);
+			SET_UNIFORM(GPU_VERTEX_SHADER, hard7RenderUniforms[1], 1.0f/256.0f, 1.0f/256.0f, 1.0f, 1.0f);
 	
 			bglEnableTextures(GPU_TEXUNIT0);
 	
@@ -2215,8 +2222,8 @@ void PPU_HardRenderOBJs()
 	
 	bglColorDepthMask(GPU_WRITE_ALL);
 	
-	bglUniformMatrix(GPU_VERTEX_SHADER, 0, snesProjMatrix);
-	SET_UNIFORM(GPU_VERTEX_SHADER, 4, 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
+	bglUniformMatrix(GPU_VERTEX_SHADER, hardRenderUniforms[0], snesProjMatrix);
+	SET_UNIFORM(GPU_VERTEX_SHADER, hardRenderUniforms[1], 1.0f/128.0f, 1.0f/128.0f, 1.0f, 1.0f);
 	//SET_UNIFORM(GPU_VERTEX_SHADER, 5, 1.0f, 0.0f, 0.0f, 0.0f);
 	
 	bglEnableTextures(GPU_TEXUNIT0);
@@ -2277,7 +2284,7 @@ void PPU_HardRenderOBJLayer(u32 setalpha, u32 prio, int ystart, int yend)
 	
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	
-	SET_UNIFORM(GPU_VERTEX_SHADER, 4, 1.0f/256.0f, 1.0f/256.0f, 1.0f, 1.0f);
+	SET_UNIFORM(GPU_VERTEX_SHADER, hardRenderUniforms[1], 1.0f/256.0f, 1.0f/256.0f, 1.0f, 1.0f);
 	//SET_UNIFORM(GPU_VERTEX_SHADER, 5, 1.0f, 0.0f, 0.0f, 0.0f);
 	
 	bglEnableTextures(GPU_TEXUNIT0);

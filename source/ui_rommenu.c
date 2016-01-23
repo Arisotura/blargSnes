@@ -21,7 +21,7 @@
 #include "config.h"
 
 
-extern FS_archive sdmcArchive;
+extern FS_Archive sdmcArchive;
 
 int nfiles;
 int menusel = 0;
@@ -166,9 +166,9 @@ struct LIST * SortList(struct LIST * pList) {
 }
 
 
-bool IsGoodFile(FS_dirent* entry)
+bool IsGoodFile(FS_DirectoryEntry* entry)
 {
-	if (entry->isDirectory) return true;
+	if (entry->attributes & FS_ATTRIBUTE_DIRECTORY) return true;
 	
 	char* ext = (char*)entry->shortExt;
 	if (strncmp(ext, "SMC", 3) && strncmp(ext, "SFC", 3)) return false;
@@ -267,8 +267,8 @@ void DrawROMList()
 void ROMMenu_Init()
 {
 	Handle dirHandle;
-	FS_path dirPath = (FS_path){PATH_CHAR, strlen(Config.DirPath)+1, (u8*)Config.DirPath};
-	FS_dirent entry;
+	FS_Path dirPath = (FS_Path){PATH_ASCII, strlen(Config.DirPath)+1, (u8*)Config.DirPath};
+	FS_DirectoryEntry entry;
 	int i;
 	
 	FSUSER_OpenDirectory(&dirHandle, sdmcArchive, dirPath);
@@ -300,7 +300,7 @@ void ROMMenu_Init()
 
 		struct LISTITEM * newItem = (struct LISTITEM *)MemAlloc(sizeof(struct LISTITEM));
 		newItem->name = (char*)MemAlloc(0x106);
-		newItem->type = (entry.isDirectory ? 1 : 0);
+		newItem->type = ((entry.attributes & FS_ATTRIBUTE_DIRECTORY) ? 1 : 0);
 		if(newItem->type)
 		{
 			newItem->name[0] = '/';

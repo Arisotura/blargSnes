@@ -26,7 +26,7 @@
 
 Config_t Config;
 
-extern FS_archive sdmcArchive;
+extern FS_Archive sdmcArchive;
 const char* configFilePath = "/blargSnes.ini";
 
 const char* configFileL = 
@@ -53,12 +53,12 @@ void LoadConfig(u8 init)
 	}
 		
 	Handle file;
-	FS_path filePath;
-	filePath.type = PATH_CHAR;
+	FS_Path filePath;
+	filePath.type = PATH_ASCII;
 	filePath.size = strlen(configFilePath) + 1;
 	filePath.data = (u8*)configFilePath;
 	
-	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_READ, 0);
 	if (res) return;
 	
 	u64 size64 = 0;
@@ -82,7 +82,7 @@ void LoadConfig(u8 init)
 	if(init && strlen(tempDir) > 0 && tempDir[0] == '/')
 	{
 		Handle dirHandle;
-		FS_path dirPath = (FS_path){PATH_CHAR, strlen(tempDir)+1, (u8*)tempDir};
+		FS_Path dirPath = (FS_Path){PATH_ASCII, strlen(tempDir)+1, (u8*)tempDir};
 		Result resDir = FSUSER_OpenDirectory(&dirHandle, sdmcArchive, dirPath);
 		if (!resDir)
 		{
@@ -99,8 +99,8 @@ void LoadConfig(u8 init)
 void SaveConfig(u8 saveCurDir)
 {
 	Handle file;
-	FS_path filePath;
-	filePath.type = PATH_CHAR;
+	FS_Path filePath;
+	filePath.type = PATH_ASCII;
 	filePath.size = strlen(configFilePath) + 1;
 	filePath.data = (u8*)configFilePath;
 	char tempDir[0x106];
@@ -109,7 +109,7 @@ void SaveConfig(u8 saveCurDir)
 	else
 		strncpy(tempDir,Config.DirPath,0x106);
 	
-	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_CREATE|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_CREATE|FS_OPEN_WRITE, 0);
 	if (res)
 	{
 		bprintf("Error %08X while saving config\n", res);
