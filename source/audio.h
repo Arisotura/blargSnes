@@ -21,7 +21,7 @@
 
 #include "mixrate.h"
 
-void Audio_Init();
+bool Audio_Init();
 void Audio_DeInit();
 
 void Audio_Pause();

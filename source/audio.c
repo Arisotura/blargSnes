@@ -35,13 +35,13 @@ s32 cursample = 0;
 bool isPlaying = false;
 
 
-void Audio_Init()
+bool Audio_Init()
 {
 	if (Audio_Type)
-		return;
+		return true;
 
 	if(R_FAILED(ndspInit()))
-		return;
+		return false;
 
 	ndspSetOutputMode(NDSP_OUTPUT_STEREO);
 	ndspSetOutputCount(1);
@@ -55,7 +55,8 @@ void Audio_Init()
 	cursample = 0;
 
 	isPlaying = false;
-	
+
+	return true;
 }
 
 void Audio_DeInit()
