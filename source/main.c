@@ -122,6 +122,8 @@ Handle SPCSync;
 
 int exitspc = 0;
 
+bool AudioEnabled = false;
+
 
 void reportStats()
 {
@@ -740,6 +742,9 @@ bool StartROM(char* path, char* dir)
 	ClearConsole();
 	bprintf("blargSNES %s\n", BLARGSNES_VERSION);
 	bprintf("http://blargsnes.kuribo64.net/\n");
+
+	if(!AudioEnabled)
+		bprintf("NDSP cannot initialize\n");
 	
 	// load the ROM
 	strcpy(temppath, dir);
@@ -821,9 +826,15 @@ static void apt_sleepsuspend_hook(APT_HookType hook, void *param)
 		int * running = (int*)param;
 		if (*running) SNES_SaveSRAM();
 
-		// Should we do more? Ctrulib has matured quite a bit, so I dunno
-		//svcSignalEvent(SPCSync);
-		//FinishRendering();
+		// Should we do this? Ctrulib has matured quite a bit, so I dunno
+		svcSignalEvent(SPCSync);
+		FinishRendering();
+		bglDeInit();
+	}
+	else if(hook == APTHOOK_ONWAKEUP || hook == APTHOOK_ONRESTORE)
+	{
+		bglInit();
+		FinishRendering();
 	}
 }
 
@@ -936,7 +947,7 @@ int main()
 	SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
 	linearFree(tempbuf);
 	
-	Audio_Init();
+	AudioEnabled = Audio_Init();
 	svcCreateEvent(&SPCSync, 0); 
 	
 	UI_Switch(&UI_ROMMenu);
