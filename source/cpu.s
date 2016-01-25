@@ -1118,19 +1118,29 @@ frame_end:
 @ --- ADC ---------------------------------------------------------------------
 
 .macro ADC_8
+	tst snesP, #flagD
+	beq 1f
+		and r1, snesA, #0xF
+		and r2, r0, #0xF
+		add r1, r1, r2
+		tst snesP, #flagC
+		addne r1, r1, #0x1
+		cmp r1, #0xA
+		addge r1, r1, #0x6
+
+		and r2, snesA, #0xF0
+		add r1, r1, r2
+		and r2, r0, #0xF0
+		add r1, r1, r2
+		cmp r1, #0xA0
+		addge r1, r1, #0x60
+		b 2f
+1:
 	and r1, snesA, #0xFF
 	add r1, r1, r0
 	tst snesP, #flagC
 	addne r1, r1, #0x1
-	tst snesP, #flagD
-	beq 1f
-		and r2, r1, #0xF
-		cmp r2, #0xA
-		addge r1, r1, #0x6
-		and r2, r1, #0xF0
-		cmp r2, #0xA0
-		addge r1, r1, #0x60
-1:
+2:
 	bic snesP, snesP, #flagNVZC
 	tst r1, #0x80
 	orrne snesP, snesP, #flagN
@@ -1138,11 +1148,11 @@ frame_end:
 	orrne snesP, snesP, #flagC
 	eor r2, snesA, r0
 	tst r2, #0x80
-	bne 2f
+	bne 3f
 	eor r2, snesA, r1
 	tst r2, #0x80
 	orrne snesP, snesP, #flagV
-2:
+3:
 	and r1, r1, #0xFF
 	bic snesA, snesA, #0xFF
 	orr snesA, snesA, r1
@@ -1152,24 +1162,42 @@ frame_end:
 .endm
 
 .macro ADC_16
+	tst snesP, #flagD
+	beq 1f
+		and r1, snesA, #0xF
+		and r2, r0, #0xF
+		add r1, r1, r2
+		tst snesP, #flagC
+		addne r1, r1, #0x1
+		cmp r1, #0xA
+		addge r1, r1, #0x6
+
+		and r2, snesA, #0xF0
+		add r1, r1, r2
+		and r2, r0, #0xF0
+		add r1, r1, r2
+		cmp r1, #0xA0
+		addge r1, r1, #0x60
+
+		and r2, snesA, #0xF00
+		add r1, r1, r2
+		and r2, r0, #0xF00
+		add r1, r1, r2
+		cmp r1, #0xA00
+		addge r1, r1, #0x600
+
+		and r2, snesA, #0xF000
+		add r1, r1, r2
+		and r2, r0, #0xF000
+		add r1, r1, r2
+		cmp r1, #0xA000
+		addge r1, r1, #0x6000
+		b 2f
+1:
 	add r1, snesA, r0
 	tst snesP, #flagC
 	addne r1, r1, #0x1
-	tst snesP, #flagD
-	beq 1f
-		and r2, r1, #0xF
-		cmp r2, #0xA
-		addge r1, r1, #0x6
-		and r2, r1, #0xF0
-		cmp r2, #0xA0
-		addge r1, r1, #0x60
-		and r2, r1, #0xF00
-		cmp r2, #0xA00
-		addge r1, r1, #0x600
-		and r2, r1, #0xF000
-		cmp r2, #0xA000
-		addge r1, r1, #0x6000
-1:
+2:
 	bic snesP, snesP, #flagNVZC
 	tst r1, #0x8000
 	orrne snesP, snesP, #flagN
@@ -1177,11 +1205,11 @@ frame_end:
 	orrne snesP, snesP, #flagC
 	eor r2, snesA, r0
 	tst r2, #0x8000
-	bne 2f
+	bne 3f
 	eor r2, snesA, r1
 	tst r2, #0x8000
 	orrne snesP, snesP, #flagV
-2:
+3:
 	mov r1, r1, lsl #0x10
 	movs snesA, r1, lsr #0x10
 	orreq snesP, snesP, #flagZ
@@ -3667,19 +3695,30 @@ OP_RTS:
 @ --- SBC ---------------------------------------------------------------------
 
 .macro SBC_8
+	tst snesP, #flagD
+	beq 1f
+		and r1, snesA, #0xF
+		and r2, r0, #0xF
+		sub r1, r1, r2
+		tst snesP, #flagC
+		subeq r1, r1, #0x1
+		cmp r1, #0x0
+		sublt r1, r1, #0x6
+
+		and r2, snesA, #0xF0
+		add r1, r1, r2
+		and r2, r0, #0xF0
+		sub r1, r1, r2
+		cmp r1, #0x0
+		sublt r1, r1, #0x60
+
+		b 2f
+1:
 	and r1, snesA, #0xFF
 	sub r1, r1, r0
 	tst snesP, #flagC
 	subeq r1, r1, #0x1
-	tst snesP, #flagD
-	beq 1f
-		and r2, r1, #0xF
-		cmp r2, #0xA
-		subge r1, r1, #0x6
-		and r2, r1, #0xF0
-		cmp r2, #0xA0
-		subge r1, r1, #0x60
-1:
+2:
 	bic snesP, snesP, #flagNVZC
 	tst r1, #0x80
 	orrne snesP, snesP, #flagN
@@ -3687,11 +3726,11 @@ OP_RTS:
 	orreq snesP, snesP, #flagC
 	eor r2, snesA, r0
 	tst r2, #0x80
-	beq 2f
+	beq 3f
 	eor r2, snesA, r1
 	tst r2, #0x80
 	orrne snesP, snesP, #flagV
-2:
+3:
 	and r1, r1, #0xFF
 	bic snesA, snesA, #0xFF
 	orr snesA, snesA, r1
@@ -3701,24 +3740,43 @@ OP_RTS:
 .endm
 
 .macro SBC_16
+	tst snesP, #flagD
+	beq 1f
+		and r1, snesA, #0xF
+		and r2, r0, #0xF
+		sub r1, r1, r2
+		tst snesP, #flagC
+		subeq r1, r1, #0x1
+		cmp r1, #0x0
+		sublt r1, r1, #0x6
+
+		and r2, snesA, #0xF0
+		add r1, r1, r2
+		and r2, r0, #0xF0
+		sub r1, r1, r2
+		cmp r1, #0x0
+		sublt r1, r1, #0x60
+
+		and r2, snesA, #0xF00
+		add r1, r1, r2
+		and r2, r0, #0xF00
+		sub r1, r1, r2
+		cmp r1, #0x0
+		sublt r1, r1, #0x600
+
+		and r2, snesA, #0xF000
+		add r1, r1, r2
+		and r2, r0, #0xF000
+		sub r1, r1, r2
+		cmp r1, #0x0
+		sublt r1, r1, #0x6000
+
+		b 2f
+1:
 	sub r1, snesA, r0
 	tst snesP, #flagC
 	subeq r1, r1, #0x1
-	tst snesP, #flagD
-	beq 1f
-		and r2, r1, #0xF
-		cmp r2, #0xA
-		subge r1, r1, #0x6
-		and r2, r1, #0xF0
-		cmp r2, #0xA0
-		subge r1, r1, #0x60
-		and r2, r1, #0xF00
-		cmp r2, #0xA00
-		subge r1, r1, #0x600
-		and r2, r1, #0xF000
-		cmp r2, #0xA000
-		subge r1, r1, #0x6000
-1:
+2:
 	bic snesP, snesP, #flagNVZC
 	tst r1, #0x8000
 	orrne snesP, snesP, #flagN
@@ -3726,11 +3784,11 @@ OP_RTS:
 	orreq snesP, snesP, #flagC
 	eor r2, snesA, r0
 	tst r2, #0x8000
-	beq 2f
+	beq 3f
 	eor r2, snesA, r1
 	tst r2, #0x8000
 	orrne snesP, snesP, #flagV
-2:
+3:
 	mov r1, r1, lsl #0x10
 	movs snesA, r1, lsr #0x10
 	orreq snesP, snesP, #flagZ
