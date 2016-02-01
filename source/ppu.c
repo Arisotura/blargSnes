@@ -39,7 +39,7 @@ extern u64 ppuTick;
 extern u64 ppuTime;
 
 
-const u8 PPU_OBJWidths[16] = 
+u8 PPU_OBJWidths[16] = 
 {
 	8, 16,
 	8, 32,
@@ -50,7 +50,8 @@ const u8 PPU_OBJWidths[16] =
 	16, 32,
 	16, 32
 };
-const u8 PPU_OBJHeights[16] = 
+
+u8 PPU_OBJHeights[16] = 
 {
 	8, 16,
 	8, 32,
@@ -81,7 +82,7 @@ const u8 PPU_OBJHeights[16] =
 // E 11:10 == outside, all disabled
 // F 11:11 == outside, all disabled
 
-const u16 PPU_WindowCombine[] = 
+u16 PPU_WindowCombine[] = 
 {
 	/* OR
 	1 1 1 1
@@ -361,6 +362,7 @@ u32 PPU_TranslateVRAMAddress(u32 addr)
 				  ((addr & 0x00700) >> 7) |
 				  ((addr & 0x000FE) << 3);
 	}
+	return 0x0;
 }
 
 

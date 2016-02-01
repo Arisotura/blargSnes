@@ -2125,7 +2125,7 @@ void PPU_RenderScanline_Hard(u32 line)
 		PPU.Mode7Dirty = 0;
 		
 		PPU.CurWindowSection = &PPU.WindowSections[0];
-		PPU_ComputeWindows_Hard(&PPU.CurWindowSection->Window);
+		PPU_ComputeWindows_Hard(PPU.CurWindowSection->Window);
 		PPU.WindowDirty = 0;
 		
 		PPU.CurColorEffect = &PPU.ColorEffectSections[0];
@@ -2247,7 +2247,7 @@ void PPU_RenderScanline_Hard(u32 line)
 			PPU.CurWindowSection->EndOffset = line;
 			PPU.CurWindowSection++;
 			
-			PPU_ComputeWindows_Hard(&PPU.CurWindowSection->Window);
+			PPU_ComputeWindows_Hard(PPU.CurWindowSection->Window);
 			PPU.WindowDirty = 0;
 		}
 		

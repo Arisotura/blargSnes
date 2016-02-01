@@ -728,7 +728,7 @@ bool StartROM(char* path, char* dir)
 	{
 		exitspc = 1; pause = 1;
 		svcSignalEvent(SPCSync);
-		svcWaitSynchronization(spcthread, U64_MAX);
+		svcWaitSynchronization(threadGetHandle(spcthread), U64_MAX);
 		threadJoin(spcthread, U64_MAX);
 		exitspc = 0;
 	}
@@ -1112,7 +1112,7 @@ int main()
 	svcSignalEvent(SPCSync);
 	if (spcthread) 
 	{
-		svcWaitSynchronization(spcthread, U64_MAX);
+		svcWaitSynchronization(threadGetHandle(spcthread), U64_MAX);
 		threadJoin(spcthread, U64_MAX);
 	}
 	svcCloseHandle(SPCSync);
