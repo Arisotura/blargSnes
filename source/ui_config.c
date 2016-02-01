@@ -114,10 +114,10 @@ void Config_Touch(int touch, u32 x, u32 y)
 
 UIController UI_Config = 
 {
-	Config_Init,
-	Config_DeInit,
+	(void *)Config_Init,
+	(void *)Config_DeInit,
 	
-	Config_Render,
-	Config_ButtonPress,
-	Config_Touch
+	(void *)Config_Render,
+	(void *)Config_ButtonPress,
+	(void *)Config_Touch
 };

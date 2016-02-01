@@ -329,7 +329,7 @@ void ROMMenu_Init()
 
 	head = SortList(head);
 
-	fileIdx = (char**)linearAlloc(nfiles * sizeof(char*));
+	fileIdx = (struct LISTITEM**)linearAlloc(nfiles * sizeof(struct LISTITEM *));
 
 	curr = head;
 	for(i = 0; i < nfiles; i++)
@@ -533,10 +533,10 @@ void ROMMenu_Touch(int touch, u32 x, u32 y)
 
 UIController UI_ROMMenu = 
 {
-	ROMMenu_Init,
-	ROMMenu_DeInit,
+	(void *)ROMMenu_Init,
+	(void *)ROMMenu_DeInit,
 	
-	ROMMenu_Render,
-	ROMMenu_ButtonPress,
-	ROMMenu_Touch
+	(void *)ROMMenu_Render,
+	(void *)ROMMenu_ButtonPress,
+	(void *)ROMMenu_Touch
 };
