@@ -18,6 +18,7 @@
 
 #include <3ds.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "main.h"
 #include "mem.h"

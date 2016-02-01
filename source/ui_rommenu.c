@@ -20,8 +20,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <dirent.h>
+
 #include "ui.h"
 #include "config.h"
+#include "main.h"
 
 
 int nfiles;

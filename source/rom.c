@@ -25,6 +25,7 @@
 
 #include "cpu.h"
 #include "snes.h"
+#include "main.h"
 
 
 u8* ROM_Buffer = NULL;

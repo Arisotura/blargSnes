@@ -17,10 +17,12 @@
 */
 
 #include <3ds.h>
+#include <string.h>
 
 #include "config.h"
 #include "snes.h"
 #include "ppu.h"
+#include "main.h"
 
 
 u32 Mem_WRAMAddr = 0;

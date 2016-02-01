@@ -19,8 +19,10 @@
 // ui.c -- generic bottomscreen UI functions
 
 #include <3ds.h>
+
 #include "ui.h"
 #include "font.h"
+#include "main.h"
 
 
 UIController* CurrentUI = NULL;

@@ -17,10 +17,12 @@
 */
 
 #include <3ds/types.h>
+#include <string.h>
 
 #include "snes.h"
 #include "spc700.h"
 #include "dsp.h"
+#include "main.h"
 
 
 u8 SPC_ROMAccess;
