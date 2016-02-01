@@ -20,6 +20,7 @@
 #include "ui.h"
 #include "config.h"
 #include "ppu.h"
+#include "ui_console.h"
 #include "main.h"
 
 int configdirty = 0;

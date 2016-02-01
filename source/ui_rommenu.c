@@ -23,7 +23,7 @@
 
 #include "ui.h"
 #include "config.h"
-#include "main.h"
+#include "ui_console.h"
 
 
 int nfiles;

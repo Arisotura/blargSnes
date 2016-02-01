@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "main.h"
+#include "ui_console.h"
 #include "mem.h"
 #include "snes.h"
 #include "cpu.h"

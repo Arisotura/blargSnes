@@ -22,6 +22,7 @@
 #include "config.h"
 #include "snes.h"
 #include "ppu.h"
+#include "ui_console.h"
 #include "main.h"
 #include "spc700.h"
 

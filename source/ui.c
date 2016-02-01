@@ -22,7 +22,7 @@
 
 #include "ui.h"
 #include "font.h"
-#include "main.h"
+#include "ui_console.h"
 
 
 UIController* CurrentUI = NULL;

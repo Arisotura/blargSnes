@@ -22,10 +22,11 @@
 #include <3ds/types.h>
 #include <3ds/services/fs.h>
 #include <3ds/svc.h>
+#include <3ds/allocator/linear.h>
 
 #include "cpu.h"
 #include "snes.h"
-#include "main.h"
+#include "ui_console.h"
 
 
 u8* ROM_Buffer = NULL;

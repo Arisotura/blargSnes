@@ -24,7 +24,7 @@
 #include "mem.h"
 #include "snes.h"
 #include "ppu.h"
-#include "main.h"
+#include "ui_console.h"
 #include "config.h"
 
 

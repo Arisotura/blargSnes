@@ -23,7 +23,7 @@
 #include <string.h>
 #include <3ds.h>
 
-#include "main.h"
+#include "ui_console.h"
 #include "config.h"
 
 #include "blargGL.h"

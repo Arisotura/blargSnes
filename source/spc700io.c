@@ -22,7 +22,7 @@
 #include "snes.h"
 #include "spc700.h"
 #include "dsp.h"
-#include "main.h"
+#include "ui_console.h"
 
 
 u8 SPC_ROMAccess;
