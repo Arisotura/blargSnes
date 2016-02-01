@@ -1937,7 +1937,6 @@ void PPU_UpdateMode7()
 	else
 	{
 		//Examine each tile, update as necessary, then start updating all necessary layer sections
-		bool tileUpd = false;
 		for(i = 0; i < 256; i++)
 		{
 			if(PPU_M7TileFlg[i])

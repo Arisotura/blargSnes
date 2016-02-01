@@ -191,7 +191,7 @@ bool IsGoodEntry(struct dirent *entry)
 
 void DrawROMList()
 {
-	int i, x, y, y2;
+	int i, y;
 	int maxfile;
 	int menuy;
 	

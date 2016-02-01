@@ -159,7 +159,6 @@ void SPCThread(void *arg)
 	u32 lastpos = 0;
 
 
-	int i;
 	while (!exitspc)
 	{
 		svcWaitSynchronization(SPCSync, U64_MAX);
@@ -724,7 +723,6 @@ bool StartROM(char* path, char* dir)
 {
 	
 	char temppath[0x210];
-	Result res;
 	
 	if (spcthread)
 	{
@@ -1053,7 +1051,7 @@ int main()
 					{
 						u32 timestamp = (u32)(svcGetSystemTick() / 446872);
 						char file[256];
-						snprintf(file, 256, "/blargSnes%08d.bmp", timestamp);
+						snprintf(file, 256, "/blargSnes%08lu.bmp", timestamp);
 						if (TakeScreenshot(file))
 						{
 							bprintf("Screenshot saved as:\n");

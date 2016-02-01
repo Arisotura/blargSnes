@@ -803,7 +803,7 @@ void PPU_Write8(u32 addr, u8 val)
 			break;
 			
 		case 0x2B:
-			if(PPU.WinCombine[1] != val & 0xF)
+			if((PPU.WinCombine[1] != val) & 0xF)
 			{
 				PPU.WinCombine[1] = val & 0xF;
 				PPU.OBJWindowCombine = PPU_WindowCombine[(val & 0x03)];
@@ -906,7 +906,7 @@ void PPU_Write8(u32 addr, u8 val)
 				SPC_IOPorts[addr&0x03] = val;
 			}
 			else
-				iprintf("PPU_Write8(%08X, %08X)\n", addr, val);
+				iprintf("PPU_Write8(%08lX, %08X)\n", addr, val);
 			break;
 	}
 }
@@ -1186,7 +1186,6 @@ void PPU_VBlank()
 {
 	emuTime += svcGetSystemTick() - emuTick;
 
-	int i;
 	FinishRendering();
 	
 	if (!SkipThisFrame)

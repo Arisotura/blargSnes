@@ -20,8 +20,6 @@
 #include "ui.h"
 #include "config.h"
 
-extern badShader;
-
 int configdirty = 0;
 
 
