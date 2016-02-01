@@ -94,7 +94,7 @@ u8 SNES_ExecTrap[8192] __attribute__((aligned(256)));
 void SNES_Init()
 {
 	// TODO get rid of this junk!
-	SNES_Status = &_Mem_PtrTable[0];
+	SNES_Status = (SNES_StatusData *)&_Mem_PtrTable[0];
 	Mem_PtrTable = &_Mem_PtrTable[SNESSTATUS_SIZE >> 2];
 }
 

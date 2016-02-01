@@ -946,8 +946,8 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 pal, u32 prio, in
 		o = &obg->Sections[0];
 		oxoff = o->XScroll & 0xF8;
 		oyoff = o->YScroll >> yshift;
-		tilemapx = PPU.VRAM + o->TilemapOffset + ((oyoff & 0xF8) << 3);
-		tilemapy = PPU.VRAM + o->TilemapOffset + (((oyoff + 8) & 0xF8) << 3);
+		tilemapx = (u16 *)(PPU.VRAM + o->TilemapOffset + ((oyoff & 0xF8) << 3));
+		tilemapy = (u16 *)(PPU.VRAM + o->TilemapOffset + (((oyoff + 8) & 0xF8) << 3));
 		if(opt)
 		{
 			oyend = o->EndOffset;
@@ -977,7 +977,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 pal, u32 prio, in
 				y = syend - 1;
 			}
 
-			tilemap = PPU.VRAM + s->TilemapOffset + ((yoff & 0xF8) << 3);
+			tilemap = (u16 *)(PPU.VRAM + s->TilemapOffset + ((yoff & 0xF8) << 3));
 			if (yoff & 0x100)
 			{
 				if (s->Size & 0x2)
@@ -1019,7 +1019,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 pal, u32 prio, in
 						vval = tilemapy[idx];
 					if (hval & validBit) hofs = ox + (hval & 0x1F8) - (hval & 0x200);
 					if (vval & validBit) vofs = y + (vval & 0x1FF) - (vval & 0x200);
-					tilemap = PPU.VRAM + s->TilemapOffset + ((vofs & 0xF8) << 3);
+					tilemap = (u16 *)(PPU.VRAM + s->TilemapOffset + ((vofs & 0xF8) << 3));
 					if(vofs & 0x100) if(s->Size & 0x2) tilemap += (s->Size & 0x1) ? 2048 : 1024;
 					idx = (hofs & 0xF8) >> 3;
 					if (hofs & 0x100) if (s->Size & 0x1) idx += 1024;
@@ -1180,7 +1180,7 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 pal, u32 prio, 
 		
 		for (y = systart - (yoff&15); y < syend; y += yincr, yoff += 16)
 		{
-			tilemap = PPU.VRAM + s->TilemapOffset + ((yoff & 0x1F0) << 2);
+			tilemap = (u16 *)(PPU.VRAM + s->TilemapOffset + ((yoff & 0x1F0) << 2));
 			if (yoff & 0x200)
 			{
 				if (s->Size & 0x2)
