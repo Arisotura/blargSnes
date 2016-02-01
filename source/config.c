@@ -22,7 +22,7 @@
 #include <string.h>
 #include <3ds.h>
 
-#include "main.h"
+#include "ui_console.h"
 #include "config.h"
 
 Config_t Config;
@@ -39,7 +39,7 @@ const char* configFileS =
 	"ScaleMode=%d\n"
 	"DirPath=%s\n";
 
-char * lastDir[0x106];
+char lastDir[0x106];
 
 
 void LoadConfig(u8 init)

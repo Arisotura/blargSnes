@@ -16,16 +16,11 @@
     with blargSnes. If not, see http://www.gnu.org/licenses/.
 */
 
-#ifndef MAIN_H
-#define MAIN_H
+#ifndef UI_CONSOLE_H
+#define UI_CONSOLE_H
 
 void DrawConsole();
 void ClearConsole();
 void bprintf(char* fmt, ...)  __attribute__((format(printf, 1, 2)));
-
-void ContinueRendering();
-void FinishRendering();
-void RenderTopScreen();
-void ApplyScaling();
 
 #endif

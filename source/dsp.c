@@ -3,7 +3,7 @@
 
 #include <string.h>
 
-#include "main.h"
+#include "ui_console.h"
 #include "dsp.h"
 
 

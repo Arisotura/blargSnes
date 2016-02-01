@@ -127,10 +127,10 @@ void Console_Touch(int touch, u32 x, u32 y)
 
 UIController UI_Console = 
 {
-	Console_Init,
-	Console_DeInit,
+	(void *)Console_Init,
+	(void *)Console_DeInit,
 	
-	Console_Render,
-	Console_ButtonPress,
-	Console_Touch
+	(void *)Console_Render,
+	(void *)Console_ButtonPress,
+	(void *)Console_Touch
 };

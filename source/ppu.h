@@ -422,6 +422,8 @@ void PPU_SwitchRenderers();
 void PPU_Reset();
 void PPU_DeInit();
 
+void PPU_ComputeWindows(PPU_WindowSegment *s);
+
 void PPU_SetColor(u32 num, u16 val);
 
 void PPU_LatchHVCounters();
@@ -434,6 +436,7 @@ void PPU_Write16(u32 addr, u16 val);
 void PPU_RenderScanline(u32 line);
 void PPU_VBlank();
 
+u32 PPU_TranslateVRAMAddress(u32 addr);
 
 void PPU_Init_Soft();
 void PPU_DeInit_Soft();
@@ -441,6 +444,11 @@ void PPU_DeInit_Soft();
 void PPU_RenderScanline_Soft(u32 line);
 void PPU_VBlank_Soft();
 
+void PPU_ConvertVRAM8(u32 addr, u8 val);
+void PPU_ConvertVRAM16(u32 addr, u16 val);
+void PPU_ConvertVRAMAll();
+
+void PPU_BlendScreens(u32 colorformat);
 
 void PPU_Init_Hard();
 void PPU_DeInit_Hard();

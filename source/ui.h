@@ -35,7 +35,9 @@ void DrawText(int x, int y, u32 color, char* str);
 
 void DrawButton(int x, int y, int width, u32 color, char* text);
 void DrawCheckBox(int x, int y, u32 color, char* text, bool check);
+void DrawToolbar(char* dir);
 
+bool HandleToolbar(u32 x, u32 y);
 
 typedef struct
 {

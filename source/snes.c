@@ -18,8 +18,9 @@
 
 #include <3ds.h>
 #include <stdio.h>
+#include <string.h>
 
-#include "main.h"
+#include "ui_console.h"
 #include "mem.h"
 #include "snes.h"
 #include "cpu.h"
@@ -93,7 +94,7 @@ u8 SNES_ExecTrap[8192] __attribute__((aligned(256)));
 void SNES_Init()
 {
 	// TODO get rid of this junk!
-	SNES_Status = &_Mem_PtrTable[0];
+	SNES_Status = (SNES_StatusData *)&_Mem_PtrTable[0];
 	Mem_PtrTable = &_Mem_PtrTable[SNESSTATUS_SIZE >> 2];
 }
 
@@ -127,7 +128,7 @@ bool SNES_LoadROM(char* path)
 	
 	SNES_SRAMMask = sramsize ? ((1024 << sramsize) - 1) : 0;
 	SNES_SRAMMask &= 0x000FFFFF;
-	bprintf("SRAM size: %dKB\n", (SNES_SRAMMask+1) >> 10);
+	bprintf("SRAM size: %luKB\n", (SNES_SRAMMask+1) >> 10);
 	
 	if (SNES_SRAMMask)
 	{

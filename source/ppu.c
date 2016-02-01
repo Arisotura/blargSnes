@@ -17,10 +17,14 @@
 */
 
 #include <3ds.h>
+#include <string.h>
 
 #include "config.h"
 #include "snes.h"
 #include "ppu.h"
+#include "ui_console.h"
+#include "main.h"
+#include "spc700.h"
 
 
 u32 Mem_WRAMAddr = 0;
@@ -35,7 +39,7 @@ extern u64 ppuTick;
 extern u64 ppuTime;
 
 
-const u8 PPU_OBJWidths[16] = 
+u8 PPU_OBJWidths[16] = 
 {
 	8, 16,
 	8, 32,
@@ -46,7 +50,8 @@ const u8 PPU_OBJWidths[16] =
 	16, 32,
 	16, 32
 };
-const u8 PPU_OBJHeights[16] = 
+
+u8 PPU_OBJHeights[16] = 
 {
 	8, 16,
 	8, 32,
@@ -77,7 +82,7 @@ const u8 PPU_OBJHeights[16] =
 // E 11:10 == outside, all disabled
 // F 11:11 == outside, all disabled
 
-const u16 PPU_WindowCombine[] = 
+u16 PPU_WindowCombine[] = 
 {
 	/* OR
 	1 1 1 1
@@ -357,6 +362,7 @@ u32 PPU_TranslateVRAMAddress(u32 addr)
 				  ((addr & 0x00700) >> 7) |
 				  ((addr & 0x000FE) << 3);
 	}
+	return 0x0;
 }
 
 
@@ -488,7 +494,7 @@ u8 PPU_Read8(u32 addr)
 				ret = SPC_IOPorts[4 + (addr&0x03)];
 			}
 			else
-				bprintf("Open bus 21%02X\n", addr); 
+				bprintf("Open bus 21%02lX\n", addr); 
 			break;
 	}
 
@@ -801,7 +807,7 @@ void PPU_Write8(u32 addr, u8 val)
 			break;
 			
 		case 0x2B:
-			if(PPU.WinCombine[1] != val & 0xF)
+			if((PPU.WinCombine[1] != val) & 0xF)
 			{
 				PPU.WinCombine[1] = val & 0xF;
 				PPU.OBJWindowCombine = PPU_WindowCombine[(val & 0x03)];
@@ -904,7 +910,7 @@ void PPU_Write8(u32 addr, u8 val)
 				SPC_IOPorts[addr&0x03] = val;
 			}
 			else
-				iprintf("PPU_Write8(%08X, %08X)\n", addr, val);
+				iprintf("PPU_Write8(%08lX, %08X)\n", addr, val);
 			break;
 	}
 }
@@ -937,7 +943,7 @@ void PPU_Write16(u32 addr, u16 val)
 		case 0x42: SPC_Compensate(); *(u16*)&SPC_IOPorts[2] = val; break;
 		
 		case 0x3F:
-		case 0x43: bprintf("!! write $21%02X %04X\n", addr, val); break;
+		case 0x43: bprintf("!! write $21%02lX %04X\n", addr, val); break;
 		
 		case 0x81: Mem_WRAMAddr = (Mem_WRAMAddr & 0x00010000) | val; break;
 		
@@ -1184,7 +1190,6 @@ void PPU_VBlank()
 {
 	emuTime += svcGetSystemTick() - emuTick;
 
-	int i;
 	FinishRendering();
 	
 	if (!SkipThisFrame)

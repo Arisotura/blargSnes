@@ -22,9 +22,11 @@
 #include <3ds/types.h>
 #include <3ds/services/fs.h>
 #include <3ds/svc.h>
+#include <3ds/allocator/linear.h>
 
 #include "cpu.h"
 #include "snes.h"
+#include "ui_console.h"
 
 
 u8* ROM_Buffer = NULL;
@@ -160,7 +162,6 @@ int ROM_ScoreHeader(FILE *pFile, u32 offset)
 		
 	int score = 0;
 	int i;
-	u32 bytesread;
 	
 	// 1. check opcodes at reset vector
 	
@@ -243,7 +244,7 @@ bool ROM_LoadFile(char* name)
 	if((size < 16) || (size >= 0x100000000ULL))
 	{
 		fclose(pFile);
-		bprintf("File size bad: size=%lld\n", size);
+		bprintf("File size bad: size=%ld\n", size);
 		return false;
 	}
 	ROM_FileSize = size;
@@ -287,7 +288,7 @@ bool ROM_LoadFile(char* name)
 	ROM_NumBanks = 1;
 	while (ROM_NumBanks < nbanks) ROM_NumBanks <<= 1;
 	
-	bprintf("ROM size: %dKB / %d banks\n", ((u32)size) >> 10, ROM_NumBanks);
+	bprintf("ROM size: %luKB / %lu banks\n", ((u32)size) >> 10, ROM_NumBanks);
 	
 	if (ROM_Buffer)
 	{
