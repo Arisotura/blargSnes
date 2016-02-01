@@ -943,19 +943,19 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 pal, u32 prio, in
 		yoff = (s->YScroll + systart) >> yshift;
 		ntiles = 0;
 
+		o = &obg->Sections[0];
+		oxoff = o->XScroll & 0xF8;
+		oyoff = o->YScroll >> yshift;
+		tilemapx = PPU.VRAM + o->TilemapOffset + ((oyoff & 0xF8) << 3);
+		tilemapy = PPU.VRAM + o->TilemapOffset + (((oyoff + 8) & 0xF8) << 3);
 		if(opt)
 		{
-			o = &obg->Sections[0];
 			oyend = o->EndOffset;
 			while(systart >= oyend)
 			{
 				o++;
 				oyend = o->EndOffset;
 			}
-			oxoff = o->XScroll & 0xF8;
-			oyoff = o->YScroll >> yshift;
-			tilemapx = PPU.VRAM + o->TilemapOffset + ((oyoff & 0xF8) << 3);
-			tilemapy = PPU.VRAM + o->TilemapOffset + (((oyoff + 8) & 0xF8) << 3);
 			if (oyoff & 0x100) if (o->Size & 0x2) tilemapx += (o->Size & 0x1) ? 2048 : 1024;
 			if ((oyoff+8) & 0x100) if (o->Size & 0x2) tilemapy += (o->Size & 0x1) ? 2048 : 1024;
 			syend1 = syend + (hi && PPU.Interlace ? 3 : 7);
@@ -1517,7 +1517,7 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, u32 num, int ystart, int yend, u32 pri
 	if(!prio)
 	{
 		found->vertexLen = nlines;
-		vptr = (u16*)((((u32)vptr) + 0x1F) & ~0x1F);
+		vptr = (float *)((((u32)vptr) + 0x1F) & ~0x1F);
 		vertexPtr = vptr;
 	}
 
@@ -2552,7 +2552,7 @@ void PPU_VBlank_Hard(int endLine)
 {
 	int i;
 
-	GX_MemoryFill(PPU_LayerGroup, 0x0000, &PPU_LayerGroup[256*256*4], GX_FILL_TRIGGER | GX_FILL_16BIT_DEPTH, &PPU_LayerGroup[256*256*4], 0x0000, &PPU_LayerGroup[256*256*8], GX_FILL_TRIGGER | GX_FILL_16BIT_DEPTH);
+	GX_MemoryFill((u32 *)PPU_LayerGroup, 0x0000, (u32 *)&PPU_LayerGroup[256*256*4], GX_FILL_TRIGGER | GX_FILL_16BIT_DEPTH, (u32 *)&PPU_LayerGroup[256*256*4], 0x0000, (u32 *)&PPU_LayerGroup[256*256*8], GX_FILL_TRIGGER | GX_FILL_16BIT_DEPTH);
 
 	PPU.CurModeSection->EndOffset = endLine;
 	
