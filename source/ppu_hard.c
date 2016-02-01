@@ -357,12 +357,12 @@ void PPU_ConvertVRAMAll()
 	PPU_M7PalUpdate = PPU.PaletteUpdateCount256;
 }
 
-void PPU_DecodeTile(u8* src, u16* pal, u32 *dst)
+void PPU_DecodeTile(u8* src, u16* pal, u16 *dst)
 {
 	int i;
 	u16 oldcolor0 = pal[0];
 	pal[0] = 0;
-	for(i = 0; i < 64; i += 2)
+	for(i = 0; i < 64; i++)
 		*dst++ = pal[src[i]] | (pal[src[i+1]] << 16);
 	pal[0] = oldcolor0;
 }
