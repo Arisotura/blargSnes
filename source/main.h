@@ -19,7 +19,13 @@
 #ifndef MAIN_H
 #define MAIN_H
 
+void DrawConsole();
 void ClearConsole();
 void bprintf(char* fmt, ...)  __attribute__((format(printf, 1, 2)));
+
+void ContinueRendering();
+void FinishRendering();
+void RenderTopScreen();
+void ApplyScaling();
 
 #endif

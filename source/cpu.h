@@ -61,6 +61,7 @@ extern CPU_Regs_t CPU_Regs;
 	
 void CPU_Reset();
 void CPU_Run();
+void CPU_MainLoop();
 
 void CPU_TriggerIRQ();
 void CPU_TriggerNMI();

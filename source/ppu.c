@@ -23,6 +23,7 @@
 #include "snes.h"
 #include "ppu.h"
 #include "main.h"
+#include "spc700.h"
 
 
 u32 Mem_WRAMAddr = 0;

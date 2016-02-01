@@ -19,6 +19,8 @@
 #include <3ds.h>
 #include "ui.h"
 #include "config.h"
+#include "ppu.h"
+#include "main.h"
 
 int configdirty = 0;
 

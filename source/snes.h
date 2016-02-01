@@ -138,4 +138,6 @@ void SPC_IORead(int side);
 void SPC_IOWrite(int side);
 void SPC_IOWriteDone(int side);
 
+void IO_ManualReadKeys();
+
 #endif
