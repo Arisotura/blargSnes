@@ -132,8 +132,8 @@ void reportStats()
 		reportFrame++;
 		if(reportFrame == 60)
 		{
-			bprintf("%d\n", vramSpaceFree());
-			bprintf("E: %.2f, P: %.2f, G: %.2f, FPS: %02d\n", ((double)(emuTime / 60) / 4468724.0) * 100, ((double)(ppuTime / 60) / 4468724.0) * 100, ((double)(gpuTime / gpuFPS) / 4468724.0) * 100, gpuFPS);
+			bprintf("%lu\n", vramSpaceFree());
+			bprintf("E: %.2f, P: %.2f, G: %.2f, FPS: %02lu\n", ((double)(emuTime / 60) / 4468724.0) * 100, ((double)(ppuTime / 60) / 4468724.0) * 100, ((double)(gpuTime / gpuFPS) / 4468724.0) * 100, gpuFPS);
 			bprintf(" \n");
 			reportFrame = 0;
 			emuTime = 0;
@@ -203,7 +203,7 @@ void dbg_save(char* path, void* buf, int size)
 
 void debugcrapo(u32 op, u32 op2)
 {
-	bprintf("DBG: %08X %08X\n", op, op2);
+	bprintf("DBG: %08lX %08lX\n", op, op2);
 	DrawConsole();
 	//SwapBottomBuffers(0);
 	//ClearBottomBuffer();
@@ -214,7 +214,7 @@ void SPC_ReportUnk(u8 op, u32 pc)
 	static bool unkreported = false;
 	if (unkreported) return;
 	unkreported = true;
- 	bprintf("SPC UNK %02X @ %04X\n", op, pc);
+ 	bprintf("SPC UNK %02X @ %04lX\n", op, pc);
  }	
 
 void ReportCrash()
@@ -226,9 +226,9 @@ void ReportCrash()
 	bprintf("Game has crashed (STOP)\n");
 	
 	extern u32 debugpc;
-	bprintf("PC: %02X:%04X (%06X)\n", CPU_Regs.PBR, CPU_Regs.PC, debugpc);
+	bprintf("PC: %02X:%04X (%06lX)\n", CPU_Regs.PBR, CPU_Regs.PC, debugpc);
 	bprintf("P: %02X | M=%d X=%d E=%d\n", CPU_Regs.P.val&0xFF, CPU_Regs.P.M, CPU_Regs.P.X, CPU_Regs.P.E);
-	bprintf("A: %04X X: %04X Y: %04X\n", CPU_Regs.A, CPU_Regs.X, CPU_Regs.Y);
+	bprintf("A: %04lX X: %04lX Y: %04lX\n", CPU_Regs.A, CPU_Regs.X, CPU_Regs.Y);
 	bprintf("S: %04X D: %02X DBR: %02X\n", CPU_Regs.S, CPU_Regs.D, CPU_Regs.DBR);
 	
 	bprintf("Stack\n");
@@ -260,7 +260,7 @@ void ReportCrash()
 	
 	u32 pc = (CPU_Regs.PBR<<16)|CPU_Regs.PC;
 	u32 ptr = Mem_PtrTable[pc >> 13];
-	bprintf("Ptr table entry: %08X\n", ptr);
+	bprintf("Ptr table entry: %08lX\n", ptr);
 	
 	bprintf("Tell StapleButter\n");
 	
@@ -796,7 +796,7 @@ void reportshit(u32 pc, u32 a, u32 y)
 	//bprintf("TSX S=%04X X=%04X P=%04X  %04X\n", pc>>16, a, y&0xFFFF, y>>16);
 	if (reported) return;
 	//bprintf("!! %08X -> %08X | %08X\n", pc, a, y);
-	bprintf("!! A=%02X X=%02X Y=%02X\n", pc, a, y);
+	bprintf("!! A=%02lX X=%02lX Y=%02lX\n", pc, a, y);
 	reported=1;
 	//running=0; pause=1;
 }
@@ -806,7 +806,7 @@ void reportshit2(u32 pc, u32 a, u32 y)
 {
 	//bprintf("TSC S=%04X A=%04X P=%04X  %04X\n", pc>>16, a, y&0xFFFF, y>>16);
 	if (SNES_SysRAM[0x3C8] == 0 && reported2 != 0)
-		bprintf("[%06X] 3C8=0\n", debugpc);
+		bprintf("[%06lX] 3C8=0\n", debugpc);
 	reported2 = SNES_SysRAM[0x3C8];
 }
 

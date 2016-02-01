@@ -128,7 +128,7 @@ bool SNES_LoadROM(char* path)
 	
 	SNES_SRAMMask = sramsize ? ((1024 << sramsize) - 1) : 0;
 	SNES_SRAMMask &= 0x000FFFFF;
-	bprintf("SRAM size: %dKB\n", (SNES_SRAMMask+1) >> 10);
+	bprintf("SRAM size: %luKB\n", (SNES_SRAMMask+1) >> 10);
 	
 	if (SNES_SRAMMask)
 	{

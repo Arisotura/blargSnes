@@ -20,6 +20,6 @@
 #define MAIN_H
 
 void ClearConsole();
-void bprintf(char* fmt, ...);
+void bprintf(char* fmt, ...)  __attribute__((format(printf, 1, 2)));
 
 #endif

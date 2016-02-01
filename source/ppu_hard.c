@@ -237,7 +237,7 @@ inline int bitcount(u32 val)
 {
 	val = val - ((val >> 1) & 0x55555555);                    // reuse input as temporary
 	val = (val & 0x33333333) + ((val >> 2) & 0x33333333);     // temp
-	return ((val + (val >> 4) & 0xF0F0F0F) * 0x1010101) >> 24; // count
+	return (((val + (val >> 4)) & 0xF0F0F0F) * 0x1010101) >> 24; // count
 }
 
 void PPU_ConvertVRAM8(u32 addr, u8 val)
@@ -420,7 +420,7 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 			break;
 		
 		default:
-			bprintf("unknown tile type %d\n", type);
+			bprintf("unknown tile type %lu\n", type);
 			return 0xFFFF;
 	}
 	
@@ -2618,7 +2618,7 @@ void PPU_VBlank_Hard(int endLine)
 	u32 taken = ((u32)vertexPtr - (u32)vertexBuf);
 	GSPGPU_FlushDataCache(vertexBuf, taken);
 	if (taken > 0x200000)
-		bprintf("OVERFLOW %06X/200000 (%d%%)\n", taken, (taken*100)/0x200000);
+		bprintf("OVERFLOW %06lX/200000 (%lu%%)\n", taken, (taken*100)/0x200000);
 		
 	
 	GSPGPU_FlushDataCache(PPU_TileCache, 1024*1024*sizeof(u16));
