@@ -17,6 +17,7 @@
 */
 
 #include <3ds.h>
+#include <string.h>
 
 #include "dsp.h"
 #include "mixrate.h"
@@ -82,7 +83,7 @@ void Audio_Pause()
 		}
 	
 		memset(Audio_Buffer, 0, MIXBUFSIZE*4*2);
-		GSPGPU_FlushDataCache(NULL, Audio_Buffer, MIXBUFSIZE*4*2);
+		CSND_FlushDataCache(Audio_Buffer, MIXBUFSIZE*4*2);
 		isPlaying = false;
 	}
 }
@@ -109,8 +110,8 @@ void myCSND_SetSound(u32 chn, u32 flags, u32 sampleRate, void* data0, void *data
 
 	if (encoding != CSND_ENCODING_PSG)
 	{
-		if (data0) paddr0 = osConvertVirtToPhys((u32)data0);
-		if (data1) paddr1 = osConvertVirtToPhys((u32)data1);
+		if (data0) paddr0 = osConvertVirtToPhys(data0);
+		if (data1) paddr1 = osConvertVirtToPhys(data1);
 
 		if (encoding == CSND_ENCODING_ADPCM)
 		{
@@ -144,7 +145,7 @@ bool Audio_Begin()
 	    return 0;
  
 	memset(Audio_Buffer, 0, MIXBUFSIZE*4*2);
-	GSPGPU_FlushDataCache(NULL, Audio_Buffer, MIXBUFSIZE*4*2);
+	CSND_FlushDataCache(Audio_Buffer, MIXBUFSIZE*4*2);
  
 	if (Audio_Type == 1)
 	{

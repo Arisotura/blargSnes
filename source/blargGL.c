@@ -140,7 +140,7 @@ void bglInit()
 	bglCommandBufferSize = 0x80000;
 	bglCommandBuffer = linearAlloc(bglCommandBufferSize * 4);
 	
-	GPU_Reset(NULL, bglCommandBuffer, bglCommandBufferSize);
+	//GPU_Reset(NULL, bglCommandBuffer, bglCommandBufferSize);
 	//GPUCMD_SetBuffer(bglCommandBuffer, bglCommandBufferSize, 0);
 	
 	// sane defaults
@@ -178,7 +178,7 @@ void _bglUpdateState()
 		bglState.DrawnSomething = false;
 	}
 	
-	if (dirty & ~0x2)
+	/*if (dirty & ~0x2)
 	{
 		dirty |= 0x2;
 			
@@ -260,7 +260,7 @@ void _bglUpdateState()
 			(u32[]){0}, // buffer offsets
 			(u64[]){permut},
 			(u8[]){bglState.NumAttribBuffers});
-	}
+	}*/
 }
 
 
@@ -274,7 +274,7 @@ void bglUseShader(shaderProgram_s* shader)
 void bglUniform(GPU_SHADER_TYPE type, u32 id, float* val)
 {
 	float pancake[4] = {val[3], val[2], val[1], val[0]};
-	GPU_SetFloatUniform(type, id, (u32*)pancake, 1);
+	//GPU_SetFloatUniform(type, id, (u32*)pancake, 1);
 }
 
 void bglUniformMatrix(GPU_SHADER_TYPE type, u32 id, float* val)
@@ -285,7 +285,7 @@ void bglUniformMatrix(GPU_SHADER_TYPE type, u32 id, float* val)
 		val[11], val[10], val[9], val[8],
 		val[15], val[14], val[13], val[12]
 	};
-	GPU_SetFloatUniform(type, id, (u32*)pancake, 4);
+	//GPU_SetFloatUniform(type, id, (u32*)pancake, 4);
 }
 
 

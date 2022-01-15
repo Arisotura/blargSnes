@@ -1538,8 +1538,8 @@ void PPU_VBlank_Soft()
 	// copy new screen textures
 	// SetDisplayTransfer with flags=2 converts linear graphics to the tiled format used for textures
 	// since the two sets of buffers are contiguous, we can transfer them as one 256x512 texture
-	GSPGPU_FlushDataCache(NULL, (u8*)PPU.MainBuffer, 256*512*2);
-	GX_SetDisplayTransfer(NULL, (u32*)PPU.MainBuffer, 0x02000100, (u32*)MainScreenTex, 0x02000100, 0x3302);
+	GSPGPU_FlushDataCache((u8*)PPU.MainBuffer, 256*512*2);
+	GX_DisplayTransfer((u32*)PPU.MainBuffer, 0x02000100, (u32*)MainScreenTex, 0x02000100, 0x3302);
 	
 	PPU.CurColorEffect->EndOffset = 240;
 	

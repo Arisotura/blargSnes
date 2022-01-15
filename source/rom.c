@@ -34,7 +34,7 @@ u32 ROM_BaseOffset;
 u32 ROM_HeaderOffset;
 u32 ROM_NumBanks;
 
-extern FS_archive sdmcArchive;
+extern FS_Archive sdmcArchive;
 
 
 // TODO find a better way to do speedhacks
@@ -227,12 +227,12 @@ int ROM_ScoreHeader(Handle file, u32 offset)
 bool ROM_LoadFile(char* name)
 {
 	Handle fileHandle;
-	FS_path filePath;
-	filePath.type = PATH_CHAR;
+	FS_Path filePath;
+	filePath.type = PATH_ASCII;
 	filePath.size = strlen(name) + 1;
 	filePath.data = (u8*)name;
 	
-	Result res = FSUSER_OpenFile(NULL, &fileHandle, sdmcArchive, filePath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
+	Result res = FSUSER_OpenFile(&fileHandle, sdmcArchive, filePath, FS_OPEN_READ, 0);
 	if ((res & 0xFFFC03FF) != 0)
 	{
 		bprintf("Error %08X while opening file\n", res);

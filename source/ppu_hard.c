@@ -2944,17 +2944,17 @@ void PPU_VBlank_Hard(int endLine)
 	PPU_BlendScreens(GPU_RGBA8);
 
 	u32 taken = ((u32)vertexPtr - (u32)vertexBuf);
-	GSPGPU_FlushDataCache(NULL, vertexBuf, taken);
+	GSPGPU_FlushDataCache(vertexBuf, taken);
 	if (taken > 0x200000)
 		bprintf("OVERFLOW %06X/200000 (%d%%)\n", taken, (taken*100)/0x200000);
 		
 	
-	GSPGPU_FlushDataCache(NULL, PPU_TileCache, 1024*1024*sizeof(u16));
-	//GX_SetDisplayTransfer(NULL, (u32*)PPU_TileCacheRAM, 0x04000400, (u32*)PPU_TileCache, 0x04000400, 0x3308);
+	GSPGPU_FlushDataCache(PPU_TileCache, 1024*1024*sizeof(u16));
+	//GX_DisplayTransfer((u32*)PPU_TileCacheRAM, 0x04000400, (u32*)PPU_TileCache, 0x04000400, 0x3308);
 	//gspWaitForPPF();
-	//GX_RequestDma(NULL, (u32*)PPU_TileCacheRAM, (u32*)PPU_TileCache, 1024*1024*sizeof(u16));
+	//GX_RequestDma((u32*)PPU_TileCacheRAM, (u32*)PPU_TileCache, 1024*1024*sizeof(u16));
 	//gspWaitForDMA();
 	
-	GSPGPU_FlushDataCache(NULL, Mode7ColorBuffer, 256*512*sizeof(u16));
+	GSPGPU_FlushDataCache(Mode7ColorBuffer, 256*512*sizeof(u16));
 }
 

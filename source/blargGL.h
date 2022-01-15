@@ -30,6 +30,10 @@
 // blargGL -- thin wrapper around the ctrulib GPU API
 // Not meant to be on par with OpenGL, just meant to be somewhat sane~
 
+// REMVOE ME
+#define GPU_UNKPRIM 0
+#define GPU_KEEP 0
+
 void bglInit();
 void bglDeInit();
 
