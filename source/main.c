@@ -93,8 +93,8 @@ u64 LastVBlank = 0;
 u32 ntriangles = 0;
 
 // hax
-extern Handle gspEventThread;
-extern Handle gspEvents[GSPGPU_EVENT_MAX];
+//extern Handle gspEventThread;
+//extern Handle gspEvents[GSPGPU_EVENT_MAX];
 
 
 Handle spcthread = NULL;
@@ -448,13 +448,13 @@ void RenderTopScreen()
 }
 
 void ContinueRendering()
-{
+{return;
 	switch (RenderState)
 	{
 		case 0: return;
 		
 		case 3:
-			if (PeekEvent(gspEvents[GSPGPU_EVENT_PPF]))
+			//if (PeekEvent(gspEvents[GSPGPU_EVENT_PPF]))
 			{
 				bglFlush();
 				RenderState = 1;
@@ -462,7 +462,7 @@ void ContinueRendering()
 			break;
 			
 		case 1:
-			if (PeekEvent(gspEvents[GSPGPU_EVENT_P3D]))
+			//if (PeekEvent(gspEvents[GSPGPU_EVENT_P3D]))
 			{
 				GX_DisplayTransfer(gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
 				RenderState = 2;
@@ -470,7 +470,7 @@ void ContinueRendering()
 			break;
 			
 		case 2:
-			if (PeekEvent(gspEvents[GSPGPU_EVENT_PPF]))
+			//if (PeekEvent(gspEvents[GSPGPU_EVENT_PPF]))
 			{
 				RenderState = 0;
 				VSyncAndFrameskip();
@@ -483,22 +483,22 @@ void FinishRendering()
 {
 	if (RenderState == 3)
 	{
-		//gspWaitForPPF();
-		SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
+		gspWaitForPPF();
+		//SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
 		bglFlush();
 		RenderState = 1;
 	}
 	if (RenderState == 1)
 	{
-		//gspWaitForP3D();
-		SafeWait(gspEvents[GSPGPU_EVENT_P3D]);
+		gspWaitForP3D();
+		//SafeWait(gspEvents[GSPGPU_EVENT_P3D]);
 		GX_DisplayTransfer(gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
 		RenderState = 2;
 	}
 	if (RenderState == 2)
 	{
-		//gspWaitForPPF();
-		SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
+		gspWaitForPPF();
+		//SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
 		VSyncAndFrameskip();
 	}
 	if (RenderState == 4)
@@ -513,7 +513,8 @@ u32 PALCount = 0;
 
 void VSyncAndFrameskip()
 {
-	if (running && !pause && PeekEvent(gspEvents[GSPGPU_EVENT_VBlank0]) && FramesSkipped<5)
+	//if (running && !pause && PeekEvent(gspEvents[GSPGPU_EVENT_VBlank0]) && FramesSkipped<5)
+	if (false)
 	{
 		// we missed the VBlank
 		// skip the next frames to compensate
@@ -851,7 +852,7 @@ int main()
 	SNES_Init();
 	PPU_Init();
 	
-	GPU_Init(NULL);
+	//GPU_Init(NULL);
 	gfxSet3D(false);
 	bglInit();
 	RenderState = 0;
@@ -859,7 +860,7 @@ int main()
 	vertexBuf = linearAlloc(0x80000 * 4);
 	vertexPtr = vertexBuf;
 	
-	svcSetThreadPriority(gspEventThread, 0x30);
+	//svcSetThreadPriority(gspEventThread, 0x30);
 	
 	gpuOut = (u32*)VRAM_Alloc(400*240*2*4);
 	gpuDOut = (u32*)VRAM_Alloc(400*240*2*4);
@@ -908,9 +909,9 @@ int main()
 	GSPGPU_FlushDataCache(tempbuf, 256*256*4);
 
 	GX_DisplayTransfer(tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
-	//gspWaitForPPF();
+	gspWaitForPPF();
 
-	SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
+	//SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
 	linearFree(tempbuf);
 	
 	Audio_Init();
@@ -988,9 +989,9 @@ int main()
 						GSPGPU_FlushDataCache(tempbuf, 256*256*4);
 
 						GX_DisplayTransfer(tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
-						//gspWaitForPPF();
+						gspWaitForPPF();
 
-						SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
+						//SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
 						linearFree(tempbuf);
 					}
 					else if (release & KEY_START)

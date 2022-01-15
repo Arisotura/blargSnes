@@ -291,8 +291,8 @@ void bglUniformMatrix(GPU_SHADER_TYPE type, u32 id, float* val)
 
 void bglOutputBuffers(void* color, void* depth)
 {
-	bglState.ColorBuffer = (void*)osConvertVirtToPhys((u32)color);
-	bglState.DepthBuffer = (void*)osConvertVirtToPhys((u32)depth);
+	bglState.ColorBuffer = (void*)osConvertVirtToPhys(color);
+	bglState.DepthBuffer = (void*)osConvertVirtToPhys(depth);
 	bglState.DirtyFlags |= 0x4;
 }
 
@@ -452,7 +452,7 @@ void bglTexImage(GPU_TEXUNIT unit, void* data, u32 width, u32 height, u32 param,
 {
 	u32 id = (unit==4) ? 2:(unit-1);
 	
-	bglState.Texture[id].Data = (void*)osConvertVirtToPhys((u32)data);
+	bglState.Texture[id].Data = (void*)osConvertVirtToPhys(data);
 	bglState.Texture[id].Width = width;
 	bglState.Texture[id].Height = height;
 	bglState.Texture[id].Parameters = param;
@@ -469,7 +469,7 @@ void bglNumAttribs(u32 num)
 
 void bglAttribBuffer(void* data)
 {
-	bglState.AttribBufferPtr = (void*)osConvertVirtToPhys((u32)data);
+	bglState.AttribBufferPtr = (void*)osConvertVirtToPhys(data);
 	bglState.DirtyFlags |= 0x2;
 }
 
@@ -484,7 +484,7 @@ void bglAttribType(u32 id, GPU_FORMATS datatype, u32 numcomps)
 void bglDrawArrays(GPU_Primitive_t type, u32 numvertices)
 {
 	_bglUpdateState();
-	GPU_DrawArray(type, numvertices);
+	//GPU_DrawArray(type, numvertices);
 	bglState.DrawnSomething = true;
 }
 
@@ -493,11 +493,11 @@ void bglFlush()
 {
 	if (bglState.DrawnSomething)
 	{
-		GPU_FinishDrawing();
+		//GPU_FinishDrawing();
 		bglState.DrawnSomething = false;
 	}
 	
-	GPUCMD_Finalize();
+	/*GPUCMD_Finalize();
 	GPUCMD_Run(NULL);
-	GPUCMD_SetBuffer(bglCommandBuffer, bglCommandBufferSize, 0);
+	GPUCMD_SetBuffer(bglCommandBuffer, bglCommandBufferSize, 0);*/
 }
