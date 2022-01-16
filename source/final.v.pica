@@ -21,15 +21,15 @@
 
 ; setup outmap
 .out o0 position
-.out o1 color
+.out o1 texcoord0
 
 ; setup uniform map (not required)
-.alias projMtx c0-c3
+.fvec projMtx[4]
 
 .entry vmain
 .proc vmain
-	mov r1.xyz, v0.xyz
-	mov r1.w, myconst.w
+	mov r1.xy, v0.xy
+	mov r1.zw, myconst.zw
 
 	; result.pos = projMtx * in.pos
 	dp4 o0.x, projMtx[0].xyzw, r1.xyzw

@@ -639,7 +639,7 @@ void PPU_StartBG(u32 hi)
 	//bglEnableStencilTest(true);
 	//bglStencilFunc(GPU_ALWAYS, 0x00, 0xFF, 0x02);
 	bglEnableStencilTest(false);
-	bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	bglStencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_KEEP);
 	
 	bglEnableDepthTest(false);
 	bglEnableAlphaTest(true);
@@ -688,10 +688,10 @@ void PPU_ClearMainScreen()
 
 	bglUseShader(&plainQuadShaderP);
 
-	bglOutputBuffers(MainScreenTex, OBJDepthBuffer);
+	bglOutputBuffers(MainScreenTex, OBJDepthBuffer, 256, 256);
 	
 	bglEnableStencilTest(false);
-	bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	bglStencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_KEEP);
 	
 	bglEnableDepthTest(false);
 	bglEnableAlphaTest(false);
@@ -741,11 +741,11 @@ void PPU_ClearMainScreen()
 		s++;
 	}
 	
-	bglDrawArrays(GPU_UNKPRIM, nvtx);
+	bglDrawArrays(GPU_GEOMETRY_PRIM, nvtx);
 	
 	// clear the OBJ buffer
 
-	bglOutputBuffers(OBJColorBuffer, OBJDepthBuffer);
+	bglOutputBuffers(OBJColorBuffer, OBJDepthBuffer, 256, 256);
 	
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	
@@ -756,7 +756,7 @@ void PPU_ClearMainScreen()
 	ADDVERTEX(256, 256, 0,  255, 0, 255, 0);
 	vptr = (u8*)((((u32)vptr) + 0x1F) & ~0x1F);
 	
-	bglDrawArrays(GPU_UNKPRIM, 2);
+	bglDrawArrays(GPU_GEOMETRY_PRIM, 2);
 	
 	vertexPtr = vptr;
 	
@@ -779,10 +779,10 @@ void PPU_ClearSubScreen()
 	bglUseShader(&plainQuadShaderP);
 
 	
-	bglOutputBuffers(SubScreenTex, OBJDepthBuffer);
+	bglOutputBuffers(SubScreenTex, OBJDepthBuffer, 256, 256);
 	
 	bglEnableStencilTest(false);
-	bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	bglStencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_KEEP);
 	
 	bglEnableDepthTest(false);
 	bglEnableAlphaTest(false);
@@ -837,7 +837,7 @@ void PPU_ClearSubScreen()
 	
 	vptr = (u8*)((((u32)vptr) + 0x1F) & ~0x1F);
 	
-	bglDrawArrays(GPU_UNKPRIM, nvtx);
+	bglDrawArrays(GPU_GEOMETRY_PRIM, nvtx);
 	
 	vertexPtr = vptr;
 	
@@ -865,10 +865,10 @@ void PPU_DrawWindowMask(u32 snum)
 	bglUseShader(&windowMaskShaderP);
 
 	
-	bglOutputBuffers(OBJDepthBuffer, OBJDepthBuffer);
+	bglOutputBuffers(OBJDepthBuffer, OBJDepthBuffer, 256, 256);
 	
 	bglEnableStencilTest(false);
-	bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	bglStencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_KEEP);
 	
 	bglEnableDepthTest(false);
 	bglEnableAlphaTest(false);
@@ -913,7 +913,7 @@ void PPU_DrawWindowMask(u32 snum)
 	
 	vptr = (u8*)((((u32)vptr) + 0x1F) & ~0x1F);
 	
-	bglDrawArrays(GPU_UNKPRIM, nvtx);
+	bglDrawArrays(GPU_GEOMETRY_PRIM, nvtx);
 	
 	vertexPtr = vptr;
 	
@@ -938,7 +938,7 @@ void PPU_ClearAlpha(u32 snum)
 	bglUseShader(&plainQuadShaderP);
 	
 	bglEnableStencilTest(false);
-	bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	bglStencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_KEEP);
 	
 	bglEnableDepthTest(false);
 	bglEnableAlphaTest(false);
@@ -978,7 +978,7 @@ void PPU_ClearAlpha(u32 snum)
 	ADDVERTEX(256, 256, 0,  255, 0, 255, 255);
 	vptr = (u8*)((((u32)vptr) + 0x1F) & ~0x1F);
 	
-	bglDrawArrays(GPU_UNKPRIM, 2);
+	bglDrawArrays(GPU_GEOMETRY_PRIM, 2);
 	
 	// clear alpha wherever the color math window applies
 	if (!snum)
@@ -989,7 +989,7 @@ void PPU_ClearAlpha(u32 snum)
 		bglBlendEquation(GPU_BLEND_ADD, GPU_BLEND_ADD);
 		bglBlendFunc(GPU_ONE, GPU_ZERO, GPU_ZERO, GPU_ZERO);
 		
-		bglDrawArrays(GPU_UNKPRIM, 2);
+		bglDrawArrays(GPU_GEOMETRY_PRIM, 2);
 	}
 
 	vertexPtr = vptr;
@@ -1225,7 +1225,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart,
 			vptr = (u16*)((((u32)vptr) + 0x1F) & ~0x1F);
 			vertexPtr = vptr;
 			
-			bglDrawArrays(GPU_UNKPRIM, ntiles*2);
+			bglDrawArrays(GPU_GEOMETRY_PRIM, ntiles*2);
 		}
 		
 		if (syend >= yend) break;
@@ -1410,7 +1410,7 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystar
 			vptr = (u16*)((((u32)vptr) + 0x1F) & ~0x1F);
 			vertexPtr = vptr;
 			
-			bglDrawArrays(GPU_UNKPRIM, ntiles*2);
+			bglDrawArrays(GPU_GEOMETRY_PRIM, ntiles*2);
 		}
 		
 		if (syend >= yend) break;
@@ -1937,7 +1937,7 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend, u32 prio)
 				vptr = (u16*)((((u32)vptr) + 0x1F) & ~0x1F);
 				vertexPtr = vptr;
 			
-				bglDrawArrays(GPU_UNKPRIM, ntiles);
+				bglDrawArrays(GPU_GEOMETRY_PRIM, ntiles);
 			}
 		}
 		else
@@ -1968,7 +1968,7 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend, u32 prio)
 
 			bglEnableStencilTest(true);
 			bglStencilFunc(GPU_EQUAL, 0x00, 0x01, 0xFF);
-			bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+			bglStencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_KEEP);
 	
 			bglEnableDepthTest(false);
 			bglEnableAlphaTest(true);
@@ -2012,7 +2012,7 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend, u32 prio)
 			vptr = (u16*)((((u32)vptr) + 0x1F) & ~0x1F);
 			vertexPtr = vptr;
 
-			bglDrawArrays(GPU_UNKPRIM, 2);
+			bglDrawArrays(GPU_GEOMETRY_PRIM, 2);
 
 #undef ADDVERTEX
 		}
@@ -2199,12 +2199,12 @@ void PPU_HardRenderOBJs()
 	if (!ntiles) return;
 	
 	
-	bglOutputBuffers(OBJColorBuffer, OBJDepthBuffer);
+	bglOutputBuffers(OBJColorBuffer, OBJDepthBuffer, 256, 256);
 	
 	bglScissorMode(GPU_SCISSOR_NORMAL);
 		
 	bglEnableStencilTest(false);
-	bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	bglStencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_KEEP);
 	
 	bglEnableDepthTest(false);
 	bglEnableAlphaTest(true);
@@ -2245,7 +2245,7 @@ void PPU_HardRenderOBJs()
 	bglAttribType(1, GPU_UNSIGNED_BYTE, 2);	// texcoord
 	bglAttribBuffer(vstart);
 	
-	bglDrawArrays(GPU_UNKPRIM, ntiles*2);
+	bglDrawArrays(GPU_GEOMETRY_PRIM, ntiles*2);
 }
 
 void PPU_HardRenderOBJLayer(u32 setalpha, u32 prio, int ystart, int yend)
@@ -2263,7 +2263,7 @@ void PPU_HardRenderOBJLayer(u32 setalpha, u32 prio, int ystart, int yend)
 	
 	bglEnableStencilTest(true);
 	bglStencilFunc(GPU_EQUAL, 0x00, 0x10, 0xFF);
-	bglStencilOp(GPU_KEEP, GPU_KEEP, GPU_KEEP);
+	bglStencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_KEEP);
 	
 	bglEnableDepthTest(true);
 	bglDepthFunc(GPU_EQUAL);
@@ -2307,7 +2307,7 @@ void PPU_HardRenderOBJLayer(u32 setalpha, u32 prio, int ystart, int yend)
 	ADDVERTEX(256, yend,   prio,  256, yend);
 	vptr = (u16*)((((u32)vptr) + 0x1F) & ~0x1F);
 	
-	bglDrawArrays(GPU_UNKPRIM, 2);
+	bglDrawArrays(GPU_GEOMETRY_PRIM, 2);
 	
 	// sprites with no color math
 	
@@ -2326,7 +2326,7 @@ void PPU_HardRenderOBJLayer(u32 setalpha, u32 prio, int ystart, int yend)
 	vptr = (u16*)((((u32)vptr) + 0x1F) & ~0x1F);
 	vertexPtr = vptr;
 	
-	bglDrawArrays(GPU_UNKPRIM, 2);
+	bglDrawArrays(GPU_GEOMETRY_PRIM, 2);
 	
 #undef ADDVERTEX
 }
@@ -2920,7 +2920,7 @@ void PPU_VBlank_Hard(int endLine)
 	// MAIN SCREEN
 	
 	doingBG = 0;
-	bglOutputBuffers(MainScreenTex, OBJDepthBuffer);
+	bglOutputBuffers(MainScreenTex, OBJDepthBuffer, 256, 256);
 	PPU_HardRender(0);
 	PPU_ClearAlpha(0);
 	
@@ -2935,7 +2935,7 @@ void PPU_VBlank_Hard(int endLine)
 
 
 	doingBG = 0;
-	bglOutputBuffers(SubScreenTex, OBJDepthBuffer);
+	bglOutputBuffers(SubScreenTex, OBJDepthBuffer, 256, 256);
 	PPU_HardRender(1);
 	PPU_ClearAlpha(1);
 

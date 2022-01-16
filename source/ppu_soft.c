@@ -1400,7 +1400,7 @@ void PPU_BlendScreens(u32 colorformat)
 
 	bglUseShader(&softRenderShaderP);
 	
-	bglOutputBuffers(SNESFrame, gpuDOut); // depth buffer doesn't matter
+	bglOutputBuffers(SNESFrame, gpuDOut, 256, 256); // depth buffer doesn't matter
 	bglViewport(0, 0, 256, 256);
 	
 	bglEnableDepthTest(false);
@@ -1520,7 +1520,7 @@ void PPU_BlendScreens(u32 colorformat)
 		vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
 		vertexPtr = vptr;
 		
-		bglDrawArrays(GPU_UNKPRIM, 2);
+		bglDrawArrays(GPU_GEOMETRY_PRIM, 2);
 		
 		if (s->EndOffset == 240) break;
 		

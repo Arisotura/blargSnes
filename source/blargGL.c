@@ -41,8 +41,10 @@ struct
 
 	shaderProgram_s* Shader;
 	
-	void* ColorBuffer;
-	void* DepthBuffer;
+	// physical addresses
+	u32 ColorBuffer;
+	u32 DepthBuffer;
+	u32 OutputW, OutputH;
 	
 	u32 ViewportX, ViewportY;
 	u32 ViewportW, ViewportH;
@@ -98,7 +100,7 @@ struct
 	
 	struct
 	{
-		void* Data;
+		u32 Data; // physical address
 		u16 Width, Height;
 		u32 Parameters;
 		GPU_TEXCOLOR ColorType;
@@ -107,7 +109,7 @@ struct
 	
 	
 	u8 NumAttribBuffers;
-	void* AttribBufferPtr;
+	u32 AttribBufferPtr; // physical address
 	struct
 	{
 		u8 NumComponents;
@@ -141,10 +143,11 @@ void bglInit()
 	bglCommandBuffer = linearAlloc(bglCommandBufferSize * 4);
 	
 	//GPU_Reset(NULL, bglCommandBuffer, bglCommandBufferSize);
-	//GPUCMD_SetBuffer(bglCommandBuffer, bglCommandBufferSize, 0);
+	GPUCMD_SetBuffer(bglCommandBuffer, bglCommandBufferSize, 0);
 	
 	// sane defaults
 	bglDepthRange(-1.0f, 0.0f);
+	bglScissorMode(GPU_SCISSOR_DISABLE);
 	bglFaceCulling(GPU_CULL_BACK_CCW);
 	bglEnableDepthTest(true);
 	bglDepthFunc(GPU_GREATER);
@@ -178,63 +181,149 @@ void _bglUpdateState()
 		bglState.DrawnSomething = false;
 	}
 	
-	/*if (dirty & ~0x2)
+	if (dirty & 0x1)
+		shaderProgramUse(bglState.Shader);
+	
+	if (dirty & 0x4)
 	{
-		dirty |= 0x2;
-			
-		if (dirty & 0x1)
-			shaderProgramUse(bglState.Shader);
+		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_FLUSH, 1);
+		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_INVALIDATE, 1);
 		
-		if (dirty & 0x4)
-		{
-			GPU_SetViewport(bglState.DepthBuffer, bglState.ColorBuffer, bglState.ViewportX, bglState.ViewportY, bglState.ViewportW, bglState.ViewportH);
-			GPU_SetScissorTest(bglState.ScissorMode, bglState.ScissorX, bglState.ScissorY, bglState.ScissorW, bglState.ScissorH);
-		}
+		GPUCMD_AddWrite(GPUREG_DEPTHBUFFER_LOC, bglState.DepthBuffer >> 3);
+		GPUCMD_AddWrite(GPUREG_COLORBUFFER_LOC, bglState.ColorBuffer >> 3);
+		
+		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_DIM, bglState.OutputW | ((bglState.OutputH - 1) << 12) | (1<<24));
+		GPUCMD_AddWrite(GPUREG_RENDERBUF_DIM, bglState.OutputW | ((bglState.OutputH - 1) << 12) | (1<<24));
+		
+		GPUCMD_AddWrite(GPUREG_DEPTHBUFFER_FORMAT, 0x00000003);
+		GPUCMD_AddWrite(GPUREG_COLORBUFFER_FORMAT, 0x00000002);
+		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_BLOCK32, 0x00000000);
+		
+		GPUCMD_AddWrite(GPUREG_COLORBUFFER_READ, 0xF);
+		GPUCMD_AddWrite(GPUREG_COLORBUFFER_WRITE, 0xF);
+		GPUCMD_AddWrite(GPUREG_DEPTHBUFFER_READ, 0x3);
+		GPUCMD_AddWrite(GPUREG_DEPTHBUFFER_WRITE, 0x3);
+	}
+	
+	if (dirty & 0x404)
+	{
+		GPUCMD_AddWrite(GPUREG_VIEWPORT_XY, bglState.ViewportX | (bglState.ViewportY << 16));
+		GPUCMD_AddWrite(GPUREG_VIEWPORT_WIDTH, f32tof24((float)(bglState.ViewportW >> 1)));
+		GPUCMD_AddWrite(GPUREG_VIEWPORT_INVW, f32tof31(2.0f / (float)bglState.ViewportW) << 1);
+		GPUCMD_AddWrite(GPUREG_VIEWPORT_HEIGHT, f32tof24((float)(bglState.ViewportH >> 1)));
+		GPUCMD_AddWrite(GPUREG_VIEWPORT_INVH, f32tof31(2.0f / (float)bglState.ViewportH) << 1);
+	}
+	
+	if (dirty & 0x800)
+	{
+		GPUCMD_AddWrite(GPUREG_SCISSORTEST_MODE, bglState.ScissorMode);
+		GPUCMD_AddWrite(GPUREG_SCISSORTEST_POS, bglState.ScissorX | (bglState.ScissorY << 16));
+		GPUCMD_AddWrite(GPUREG_SCISSORTEST_DIM, (bglState.ScissorW-1) | ((bglState.ScissorH-1) << 16));
+	}
+	
+	if (dirty & 0x8)
+	{
+		GPUCMD_AddWrite(GPUREG_DEPTHMAP_ENABLE, 1);
+		GPUCMD_AddWrite(GPUREG_DEPTHMAP_SCALE, f32tof24(bglState.DepthMin));
+		GPUCMD_AddWrite(GPUREG_DEPTHMAP_OFFSET, f32tof24(bglState.DepthMax));
+	}
+	
+	if (dirty & 0x10)
+	{
+		GPUCMD_AddWrite(GPUREG_FACECULLING_CONFIG, bglState.CullMode);
+	}
+	
+	// stencil test, blending color
+	
+	if (dirty & 0x40)
+	{
+		GPUCMD_AddWrite(GPUREG_DEPTH_COLOR_MASK, bglState.DepthTest | (bglState.DepthFunc << 4) | (bglState.ColorDepthMask << 8));
+	}
 
-		GPU_DepthMap(bglState.DepthMin, bglState.DepthMax);
-		GPU_SetFaceCulling(bglState.CullMode);
-		GPU_SetStencilTest(bglState.StencilTest, bglState.StencilFunc, bglState.StencilRef, bglState.StencilMask, bglState.StencilReplace);
-		GPU_SetStencilOp(bglState.StencilOpSFail, bglState.StencilOpDFail, bglState.StencilOpPass);
-		GPU_SetBlendingColor(bglState.BlendingColor.R, bglState.BlendingColor.G, bglState.BlendingColor.B, bglState.BlendingColor.A);
-		GPU_SetDepthTestAndWriteMask(bglState.DepthTest, bglState.DepthFunc, bglState.ColorDepthMask);
+	/*GPU_DepthMap(bglState.DepthMin, bglState.DepthMax);
+	GPU_SetFaceCulling(bglState.CullMode);
+	GPU_SetStencilTest(bglState.StencilTest, bglState.StencilFunc, bglState.StencilRef, bglState.StencilMask, bglState.StencilReplace);
+	GPU_SetStencilOp(bglState.StencilOpSFail, bglState.StencilOpDFail, bglState.StencilOpPass);
+	GPU_SetBlendingColor(bglState.BlendingColor.R, bglState.BlendingColor.G, bglState.BlendingColor.B, bglState.BlendingColor.A);
+	GPU_SetDepthTestAndWriteMask(bglState.DepthTest, bglState.DepthFunc, bglState.ColorDepthMask);
+	
+	// start drawing? whatever that junk is
+	GPUCMD_AddMaskedWrite(GPUREG_0062, 0x1, 0); // GPUREG_EARLYDEPTH_TEST1
+	GPUCMD_AddWrite(GPUREG_0118, 0); // GPUREG_EARLYDEPTH_TEST2 
+	
+	GPU_SetAlphaBlending(
+		bglState.ColorBlendEquation, bglState.AlphaBlendEquation,
+		bglState.ColorSrcFactor, bglState.ColorDstFactor,
+		bglState.AlphaSrcFactor, bglState.AlphaDstFactor);
+	GPU_SetAlphaTest(bglState.AlphaTest, bglState.AlphaFunc, bglState.AlphaRef);
+	
+	GPU_SetTextureEnable(bglState.TextureEnable);
+	
+	for (i = 0; i < 6; i++)
+	{
+		GPU_SetTexEnv(i,
+			bglState.TextureEnv[i].RGBSources,
+			bglState.TextureEnv[i].AlphaSources,
+			bglState.TextureEnv[i].RGBOperands,
+			bglState.TextureEnv[i].AlphaOperands,
+			bglState.TextureEnv[i].RGBCombine,
+			bglState.TextureEnv[i].AlphaCombine,
+			bglState.TextureEnv[i].ConstantColor.Val);
+	}*
+	
+	for (i = 0; i < 3; i++)
+	{
+		u32 texunit = 1<<i;
 		
-		// start drawing? whatever that junk is
-		GPUCMD_AddMaskedWrite(GPUREG_0062, 0x1, 0);
-		GPUCMD_AddWrite(GPUREG_0118, 0);
+		if (!(bglState.TextureEnable & texunit))
+			continue;
 		
-		GPU_SetAlphaBlending(
-			bglState.ColorBlendEquation, bglState.AlphaBlendEquation,
-			bglState.ColorSrcFactor, bglState.ColorDstFactor,
-			bglState.AlphaSrcFactor, bglState.AlphaDstFactor);
-		GPU_SetAlphaTest(bglState.AlphaTest, bglState.AlphaFunc, bglState.AlphaRef);
-		
-		GPU_SetTextureEnable(bglState.TextureEnable);
+		GPU_SetTexture(texunit,
+			bglState.Texture[i].Data,
+			bglState.Texture[i].Height,
+			bglState.Texture[i].Width,
+			bglState.Texture[i].Parameters,
+			bglState.Texture[i].ColorType);
+	}*/
+	
+	// texturing
+	if (dirty & 0x200)
+	{
+		GPUCMD_AddMaskedWrite(GPUREG_SH_OUTATTR_CLOCK, 0x2, bglState.TextureEnable << 8);
+		GPUCMD_AddWrite(GPUREG_TEXUNIT_CONFIG, bglState.TextureEnable | (1<<12) | (1<<16));
 		
 		for (i = 0; i < 6; i++)
 		{
-			GPU_SetTexEnv(i,
-				bglState.TextureEnv[i].RGBSources,
-				bglState.TextureEnv[i].AlphaSources,
-				bglState.TextureEnv[i].RGBOperands,
-				bglState.TextureEnv[i].AlphaOperands,
-				bglState.TextureEnv[i].RGBCombine,
-				bglState.TextureEnv[i].AlphaCombine,
-				bglState.TextureEnv[i].ConstantColor.Val);
+			u32 regbases[6] = {GPUREG_TEXENV0_SOURCE, GPUREG_TEXENV1_SOURCE, GPUREG_TEXENV2_SOURCE,
+			                   GPUREG_TEXENV3_SOURCE, GPUREG_TEXENV4_SOURCE, GPUREG_TEXENV5_SOURCE};
+			
+			GPUCMD_AddWrite(regbases[i]+0, bglState.TextureEnv[i].RGBSources | (bglState.TextureEnv[i].AlphaSources << 16));
+			GPUCMD_AddWrite(regbases[i]+1, bglState.TextureEnv[i].RGBOperands | (bglState.TextureEnv[i].AlphaOperands << 12));
+			GPUCMD_AddWrite(regbases[i]+2, bglState.TextureEnv[i].RGBCombine | (bglState.TextureEnv[i].AlphaCombine << 16));
+			GPUCMD_AddWrite(regbases[i]+3, bglState.TextureEnv[i].ConstantColor.Val);
+			GPUCMD_AddWrite(regbases[i]+4, 0);
 		}
 		
-		for (i = 0; i < 3; i++)
+		if (bglState.TextureEnable & GPU_TEXUNIT0)
 		{
-			u32 texunit = 1<<i;
-			
-			if (!(bglState.TextureEnable & texunit))
-				continue;
-			
-			GPU_SetTexture(texunit,
-				bglState.Texture[i].Data,
-				bglState.Texture[i].Height,
-				bglState.Texture[i].Width,
-				bglState.Texture[i].Parameters,
-				bglState.Texture[i].ColorType);
+			GPUCMD_AddWrite(GPUREG_TEXUNIT0_TYPE, bglState.Texture[0].ColorType);
+			GPUCMD_AddWrite(GPUREG_TEXUNIT0_ADDR1, bglState.Texture[0].Data >> 3);
+			GPUCMD_AddWrite(GPUREG_TEXUNIT0_DIM, (bglState.Texture[0].Width << 16) | bglState.Texture[0].Height);
+			GPUCMD_AddWrite(GPUREG_TEXUNIT0_PARAM, bglState.Texture[0].Parameters);
+		}
+		if (bglState.TextureEnable & GPU_TEXUNIT1)
+		{
+			GPUCMD_AddWrite(GPUREG_TEXUNIT1_TYPE, bglState.Texture[1].ColorType);
+			GPUCMD_AddWrite(GPUREG_TEXUNIT1_ADDR, bglState.Texture[1].Data >> 3);
+			GPUCMD_AddWrite(GPUREG_TEXUNIT1_DIM, (bglState.Texture[1].Width << 16) | bglState.Texture[1].Height);
+			GPUCMD_AddWrite(GPUREG_TEXUNIT1_PARAM, bglState.Texture[1].Parameters);
+		}
+		if (bglState.TextureEnable & GPU_TEXUNIT2)
+		{
+			GPUCMD_AddWrite(GPUREG_TEXUNIT2_TYPE, bglState.Texture[2].ColorType);
+			GPUCMD_AddWrite(GPUREG_TEXUNIT2_ADDR, bglState.Texture[2].Data >> 3);
+			GPUCMD_AddWrite(GPUREG_TEXUNIT2_DIM, (bglState.Texture[2].Width << 16) | bglState.Texture[2].Height);
+			GPUCMD_AddWrite(GPUREG_TEXUNIT2_PARAM, bglState.Texture[2].Parameters);
 		}
 	}
 	
@@ -242,16 +331,44 @@ void _bglUpdateState()
 	// this lacks flexiblity
 	if (dirty & 0x2)
 	{
+		u32 datasizes[4] = {1, 1, 2, 4};
+		u32 numattr = bglState.NumAttribBuffers - 1;
 		u64 attrib = 0;
 		u64 permut = 0;
+		u32 numcomp = 0;
+		u32 stride = 0;
 		
 		for (i = 0; i < bglState.NumAttribBuffers; i++)
 		{
 			attrib |= GPU_ATTRIBFMT(i, bglState.AttribBuffer[i].NumComponents, bglState.AttribBuffer[i].DataType);
-			permut |= (i << (i*4));
+			attrib |= (1ULL << (48+i));
+			permut |= ((u64)i << (i*4));
+			
+			numcomp++;
+			stride += bglState.AttribBuffer[i].NumComponents * datasizes[bglState.AttribBuffer[i].DataType];
 		}
 		
-		GPU_SetAttributeBuffers(bglState.NumAttribBuffers,
+		attrib |= ((u64)numattr << 60);
+		attrib ^= (0xFFFULL << 48);
+		
+		permut |= ((u64)numcomp << 60);
+		permut |= ((u64)stride << 48);
+		
+		GPUCMD_AddWrite(GPUREG_ATTRIBBUFFERS_LOC, bglState.AttribBufferPtr >> 3);
+		GPUCMD_AddWrite(GPUREG_ATTRIBBUFFERS_FORMAT_LOW, (u32)attrib);
+		GPUCMD_AddWrite(GPUREG_ATTRIBBUFFERS_FORMAT_HIGH, (u32)(attrib >> 32));
+		
+		GPUCMD_AddWrite(GPUREG_ATTRIBBUFFER0_OFFSET, 0);
+		GPUCMD_AddWrite(GPUREG_ATTRIBBUFFER0_CONFIG1, (u32)permut);
+		GPUCMD_AddWrite(GPUREG_ATTRIBBUFFER0_CONFIG2, (u32)(permut >> 32));
+		
+		GPUCMD_AddMaskedWrite(GPUREG_VSH_INPUTBUFFER_CONFIG, 0xB, 0xA0000000 | numattr);
+		GPUCMD_AddWrite(GPUREG_VSH_NUM_ATTR, numattr);
+
+		GPUCMD_AddWrite(GPUREG_VSH_ATTRIBUTES_PERMUTATION_LOW, (u32)permut);
+		GPUCMD_AddWrite(GPUREG_VSH_ATTRIBUTES_PERMUTATION_HIGH, (u32)(permut >> 32) & 0xFFFF);
+		
+		/*GPU_SetAttributeBuffers(bglState.NumAttribBuffers,
 			bglState.AttribBufferPtr,
 			attrib, 
 			0xFFC, // whatever that junk is-- may not be right in all cases
@@ -259,8 +376,8 @@ void _bglUpdateState()
 			1,
 			(u32[]){0}, // buffer offsets
 			(u64[]){permut},
-			(u8[]){bglState.NumAttribBuffers});
-	}*/
+			(u8[]){bglState.NumAttribBuffers});*/
+	}
 }
 
 
@@ -271,28 +388,60 @@ void bglUseShader(shaderProgram_s* shader)
 }
 
 
+u32 bglUniformLoc(GPU_SHADER_TYPE type, const char* name)
+{
+	return shaderInstanceGetUniformLocation((type == GPU_GEOMETRY_SHADER) ? bglState.Shader->geometryShader : bglState.Shader->vertexShader, name);
+}
+
 void bglUniform(GPU_SHADER_TYPE type, u32 id, float* val)
 {
-	float pancake[4] = {val[3], val[2], val[1], val[0]};
-	//GPU_SetFloatUniform(type, id, (u32*)pancake, 1);
+	u32 regbase = (type == GPU_GEOMETRY_SHADER) ? GPUREG_GSH_FLOATUNIFORM_CONFIG : GPUREG_VSH_FLOATUNIFORM_CONFIG;
+	
+	/*u32 conv[4] = {f32tof24(val[0]), f32tof24(val[1]), f32tof24(val[2]), f32tof24(val[3])};
+	
+	GPUCMD_AddWrite(regbase, id);
+	GPUCMD_AddWrite(regbase+1, conv[3] | (conv[2] << 24));
+	GPUCMD_AddWrite(regbase+1, (conv[2] >> 8) | (conv[1] << 16));
+	GPUCMD_AddWrite(regbase+1, (conv[1] >> 16) | (conv[0] << 8));*/
+	
+	GPUCMD_AddWrite(regbase, id | (1<<31));
+	GPUCMD_AddWrite(regbase+1, *(u32*)&val[3]);
+	GPUCMD_AddWrite(regbase+1, *(u32*)&val[2]);
+	GPUCMD_AddWrite(regbase+1, *(u32*)&val[1]);
+	GPUCMD_AddWrite(regbase+1, *(u32*)&val[0]);
 }
 
 void bglUniformMatrix(GPU_SHADER_TYPE type, u32 id, float* val)
 {
-	float pancake[16] = {
-		val[3], val[2], val[1], val[0],
-		val[7], val[6], val[5], val[4],
-		val[11], val[10], val[9], val[8],
-		val[15], val[14], val[13], val[12]
-	};
-	//GPU_SetFloatUniform(type, id, (u32*)pancake, 4);
+	u32 regbase = (type == GPU_GEOMETRY_SHADER) ? GPUREG_GSH_FLOATUNIFORM_CONFIG : GPUREG_VSH_FLOATUNIFORM_CONFIG;
+	
+	/*GPUCMD_AddWrite(regbase, id);
+	for (int i = 0; i < 16; i+=4)
+	{
+		u32 conv[4] = {f32tof24(val[i+0]), f32tof24(val[i+1]), f32tof24(val[i+2]), f32tof24(val[i+3])};
+		
+		GPUCMD_AddWrite(regbase+1, conv[3] | (conv[2] << 24));
+		GPUCMD_AddWrite(regbase+1, (conv[2] >> 8) | (conv[1] << 16));
+		GPUCMD_AddWrite(regbase+1, (conv[1] >> 16) | (conv[0] << 8));
+	}*/
+	
+	GPUCMD_AddWrite(regbase, id | (1<<31));
+	for (int i = 0; i < 16; i+=4)
+	{
+		GPUCMD_AddWrite(regbase+1, *(u32*)&val[i+3]);
+		GPUCMD_AddWrite(regbase+1, *(u32*)&val[i+2]);
+		GPUCMD_AddWrite(regbase+1, *(u32*)&val[i+1]);
+		GPUCMD_AddWrite(regbase+1, *(u32*)&val[i+0]);
+	}
 }
 
 
-void bglOutputBuffers(void* color, void* depth)
+void bglOutputBuffers(void* color, void* depth, u32 w, u32 h)
 {
-	bglState.ColorBuffer = (void*)osConvertVirtToPhys(color);
-	bglState.DepthBuffer = (void*)osConvertVirtToPhys(depth);
+	bglState.ColorBuffer = osConvertVirtToPhys(color);
+	bglState.DepthBuffer = osConvertVirtToPhys(depth);
+	bglState.OutputW = w;
+	bglState.OutputH = h;
 	bglState.DirtyFlags |= 0x4;
 }
 
@@ -302,13 +451,16 @@ void bglViewport(u32 x, u32 y, u32 w, u32 h)
 	bglState.ViewportY = y;
 	bglState.ViewportW = w;
 	bglState.ViewportH = h;
-	bglState.DirtyFlags |= 0x4;
+	bglState.DirtyFlags |= 0x400;
+	
+	//bglScissorMode(GPU_SCISSOR_DISABLE);
+	//bglScissor(x, y, w, h);
 }
 
 void bglScissorMode(GPU_SCISSORMODE mode)
 {
 	bglState.ScissorMode = mode;
-	bglState.DirtyFlags |= 0x4;
+	bglState.DirtyFlags |= 0x800;
 }
 
 void bglScissor(u32 x, u32 y, u32 w, u32 h)
@@ -317,7 +469,7 @@ void bglScissor(u32 x, u32 y, u32 w, u32 h)
 	bglState.ScissorY = y;
 	bglState.ScissorW = w;
 	bglState.ScissorH = h;
-	bglState.DirtyFlags |= 0x4;
+	bglState.DirtyFlags |= 0x800;
 }
 
 
@@ -452,7 +604,7 @@ void bglTexImage(GPU_TEXUNIT unit, void* data, u32 width, u32 height, u32 param,
 {
 	u32 id = (unit==4) ? 2:(unit-1);
 	
-	bglState.Texture[id].Data = (void*)osConvertVirtToPhys(data);
+	bglState.Texture[id].Data = osConvertVirtToPhys(data);
 	bglState.Texture[id].Width = width;
 	bglState.Texture[id].Height = height;
 	bglState.Texture[id].Parameters = param;
@@ -469,7 +621,7 @@ void bglNumAttribs(u32 num)
 
 void bglAttribBuffer(void* data)
 {
-	bglState.AttribBufferPtr = (void*)osConvertVirtToPhys(data);
+	bglState.AttribBufferPtr = osConvertVirtToPhys(data);
 	bglState.DirtyFlags |= 0x2;
 }
 
@@ -484,7 +636,19 @@ void bglAttribType(u32 id, GPU_FORMATS datatype, u32 numcomps)
 void bglDrawArrays(GPU_Primitive_t type, u32 numvertices)
 {
 	_bglUpdateState();
-	//GPU_DrawArray(type, numvertices);
+	
+	GPUCMD_AddMaskedWrite(GPUREG_PRIMITIVE_CONFIG, 2, type);
+	GPUCMD_AddWrite(GPUREG_RESTART_PRIMITIVE, 1);
+	GPUCMD_AddWrite(GPUREG_INDEXBUFFER_CONFIG, 0x80000000);
+	GPUCMD_AddWrite(GPUREG_NUMVERTICES, numvertices);
+	GPUCMD_AddWrite(GPUREG_VERTEX_OFFSET, 0);
+	GPUCMD_AddMaskedWrite(GPUREG_GEOSTAGE_CONFIG2, 1, 1);
+	GPUCMD_AddMaskedWrite(GPUREG_START_DRAW_FUNC0, 1, 0);
+	GPUCMD_AddWrite(GPUREG_DRAWARRAYS, 1);
+	GPUCMD_AddMaskedWrite(GPUREG_START_DRAW_FUNC0, 1, 1);
+	GPUCMD_AddMaskedWrite(GPUREG_GEOSTAGE_CONFIG2, 1, 0);
+	GPUCMD_AddWrite(GPUREG_VTX_FUNC, 1);
+	
 	bglState.DrawnSomething = true;
 }
 
@@ -493,11 +657,18 @@ void bglFlush()
 {
 	if (bglState.DrawnSomething)
 	{
-		//GPU_FinishDrawing();
+		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_FLUSH, 1);
+		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_INVALIDATE, 1);
+		//GPUCMD_AddWrite(GPUREG_EARLYDEPTH_CLEAR, 1);
+		
 		bglState.DrawnSomething = false;
 	}
 	
-	/*GPUCMD_Finalize();
-	GPUCMD_Run(NULL);
-	GPUCMD_SetBuffer(bglCommandBuffer, bglCommandBufferSize, 0);*/
+	GPUCMD_AddWrite(GPUREG_FINALIZE, 0x12345678);
+	u32* buf; u32 size;
+	GPUCMD_Split(&buf, &size);
+	GX_ProcessCommandList(buf, size<<2, 2);
+	
+	// TODO: would it be wise to have two command buffers?
+	GPUCMD_SetBuffer(bglCommandBuffer, bglCommandBufferSize, 0);
 }

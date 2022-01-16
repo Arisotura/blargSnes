@@ -16,8 +16,10 @@
 ; with blargSnes. If not, see http:;www.gnu.org/licenses/.
 ; -----------------------------------------------------------------------------
 
+.gsh point c0
+
 ; setup constants
-.constf myconst(0.0, 0.0, 0.0, 1.0)
+.constf myconst(-0.345, 0.0, 0.0, 1.0)
 
 ; setup outmap
 .out o0 position
@@ -38,32 +40,36 @@
 	; x1 y1
 	setemit 0
 	mov o0, v0
-	mov o1, c5.wwww
+	mov o1, myconst.wwww
 	mov o2, v1
 	emit
 
 	; x2 y1
 	setemit 1
-	mov o0.xzw, v2.xzw
-	mov o0.y, v0.y
-	mov o1, c5.wwww
-	mov o2.xzw, v1.xzw
-	mov o2.y, v3.y
+	mov r0, v2
+	mov r0.y, v0.y
+	mov o0, r0
+	mov o1, myconst.wwww
+	mov r2, v1
+	mov r2.y, v3.y
+	mov o2, r2
 	emit
 
 	; x1 y2
 	setemit 2, prim
-	mov o0.xzw, v0.xzw
-	mov o0.y, v2.y
-	mov o1, c5.wwww
-	mov o2.xzw, v3.xzw
-	mov o2.y, v1.y
+	mov r0, v0
+	mov r0.y, v2.y
+	mov o0, r0
+	mov o1, myconst.wwww
+	mov r2, v3
+	mov r2.y, v1.y
+	mov o2, r2
 	emit
 
 	; x2 y2
 	setemit 0, prim inv
 	mov o0, v2
-	mov o1, c5.wwww
+	mov o1, myconst.wwww
 	mov o2, v3
 	emit
 

@@ -30,18 +30,15 @@
 // blargGL -- thin wrapper around the ctrulib GPU API
 // Not meant to be on par with OpenGL, just meant to be somewhat sane~
 
-// REMVOE ME
-#define GPU_UNKPRIM 0
-#define GPU_KEEP 0
-
 void bglInit();
 void bglDeInit();
 
 
+u32 bglUniformLoc(GPU_SHADER_TYPE type, const char* name);
 void bglUniform(GPU_SHADER_TYPE type, u32 id, float* val);
 void bglUniformMatrix(GPU_SHADER_TYPE type, u32 id, float* val);
 
-void bglOutputBuffers(void* color, void* depth);
+void bglOutputBuffers(void* color, void* depth, u32 w, u32 h);
 void bglViewport(u32 x, u32 y, u32 w, u32 h);
 
 void bglScissorMode(GPU_SCISSORMODE mode);

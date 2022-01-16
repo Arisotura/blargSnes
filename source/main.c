@@ -260,6 +260,17 @@ void dbgcolor(u32 col)
 {
 	u32 regData=0x01000000|col;
 	GSPGPU_WriteHWRegs(0x202204, &regData, 4);
+	
+	u8* zarp = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
+	int i;
+	for (i = 0; i < 320*240; i++) 
+	{
+		zarp[i*3+0] = col;
+		zarp[i*3+1] = col >> 8;
+		zarp[i*3+2] = col >> 16;
+	}
+	gfxFlushBuffers();
+	gfxSwapBuffers();
 }
 
 
@@ -400,7 +411,7 @@ void RenderTopScreen()
 {
 	bglUseShader(&finalShaderP);
 
-	bglOutputBuffers(gpuOut, gpuDOut);
+	bglOutputBuffers(gpuOut, gpuDOut, 240, 400);
 	bglViewport(0, 0, 240, 400);
 	
 	bglEnableDepthTest(false);
@@ -423,14 +434,15 @@ void RenderTopScreen()
 	
 	bglTexImage(GPU_TEXUNIT0, BorderTex,512,256,0,GPU_RGBA8);
 	
-	bglUniformMatrix(GPU_VERTEX_SHADER, 0, screenProjMatrix);
+	bglUniformMatrix(GPU_VERTEX_SHADER, bglUniformLoc(GPU_VERTEX_SHADER, "projMtx"), screenProjMatrix);
+	//bglUniformMatrix(GPU_VERTEX_SHADER, 0, screenProjMatrix);
 	
 	bglNumAttribs(2);
 	bglAttribType(0, GPU_FLOAT, 3);	// vertex
 	bglAttribType(1, GPU_FLOAT, 2);	// texcoord
 	bglAttribBuffer(borderVertices);
 	
-	bglDrawArrays(GPU_UNKPRIM, 2); // border
+	bglDrawArrays(GPU_GEOMETRY_PRIM, 2); // border
 
 	// filtering enabled only when scaling
 	// filtering at 1:1 causes output to not be pixel-perfect, but not filtering at higher res looks like total shit
@@ -438,7 +450,7 @@ void RenderTopScreen()
 	
 	bglAttribBuffer(screenVertices);
 	
-	bglDrawArrays(GPU_UNKPRIM, 2); // screen
+	bglDrawArrays(GPU_GEOMETRY_PRIM, 2); // screen
 
 	if (!RenderState)
 	{
@@ -919,9 +931,10 @@ int main()
 	
 	UI_Switch(&UI_ROMMenu);
 
+	// TODO add APT hooks for homemenu/sleep
 	//APP_STATUS status;
 	//while (!forceexit && (status = aptGetStatus()) != APP_EXITING)
-	while (aptMainLoop())
+	while (!forceexit && aptMainLoop())
 	{
 		//if (status == APP_RUNNING)
 		if (aptIsActive())
@@ -1068,7 +1081,8 @@ int main()
 				}
 			}
 		}
-		/*else if (status == APP_SUSPENDING)
+		//else if (status == APP_SUSPENDING)
+		/*if (aptShouldJumpToHome())
 		{
 			int oldpause = pause; pause = 1;
 			svcSignalEvent(SPCSync);
@@ -1076,7 +1090,7 @@ int main()
 			if (running) SNES_SaveSRAM();
 			FinishRendering();
 			 
-			aptReturnToMenu();
+			aptJumpToHomeMenu();
 			
 			pause = oldpause;
 		}
