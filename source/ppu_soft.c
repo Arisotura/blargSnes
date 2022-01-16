@@ -30,8 +30,6 @@ extern DVLB_s* softRenderShader;
 
 extern shaderProgram_s softRenderShaderP;
 
-extern float snesProjMatrix[16];
-
 extern u32* gpuOut;
 extern u32* gpuDOut;
 extern u32* SNESFrame;
@@ -1406,8 +1404,6 @@ void PPU_BlendScreens(u32 colorformat)
 	bglEnableDepthTest(false);
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	bglEnableAlphaTest(false);
-
-	bglUniformMatrix(GPU_VERTEX_SHADER, 0, snesProjMatrix);
 	
 	bglEnableTextures(GPU_TEXUNIT0|GPU_TEXUNIT1);
 	bglTexImage(GPU_TEXUNIT0, MainScreenTex,256,256,0,colorformat);
@@ -1548,4 +1544,5 @@ void PPU_VBlank_Soft()
 	PPU_BlendScreens(GPU_RGBA5551);
 	
 	RenderState = 3;
+	//bglFlush();
 }

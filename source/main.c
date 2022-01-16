@@ -275,14 +275,6 @@ void dbgcolor(u32 col)
 
 
 
-float screenProjMatrix[16] = 
-{
-	2.0f/240.0f, 0, 0, -1,
-	0, 2.0f/400.0f, 0, -1,
-	0, 0, 1, -1,
-	0, 0, 0, 1
-};
-
 float snesProjMatrix[16] = 
 {
 	2.0f/256.0f, 0, 0, -1,
@@ -433,9 +425,6 @@ void RenderTopScreen()
 	bglDummyTexEnv(5);
 	
 	bglTexImage(GPU_TEXUNIT0, BorderTex,512,256,0,GPU_RGBA8);
-	
-	bglUniformMatrix(GPU_VERTEX_SHADER, bglUniformLoc(GPU_VERTEX_SHADER, "projMtx"), screenProjMatrix);
-	//bglUniformMatrix(GPU_VERTEX_SHADER, 0, screenProjMatrix);
 	
 	bglNumAttribs(2);
 	bglAttribType(0, GPU_FLOAT, 3);	// vertex
@@ -948,7 +937,8 @@ int main()
 			{
 				// emulate
 				CPU_MainLoop(); // runs the SNES for one frame. Handles PPU rendering.
-				ContinueRendering();
+				//ContinueRendering();
+				FinishRendering();
 				
 				/*{
 					extern u32 dbgcycles, nruns;

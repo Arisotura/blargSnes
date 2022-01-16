@@ -17,28 +17,23 @@
 ; -----------------------------------------------------------------------------
 
 ; setup constants
-.constf myconst(0.0, 0.0, 0.0, 1.0)
+.constf const1(0.008333333, 0.005, 0.0, 1.0)
+.constf const2(-1.0, 0.0, 0.0, 0.0)
 
 ; setup outmap
 .out o0 position
 .out o1 texcoord0
 
-; setup uniform map (not required)
-.fvec projMtx[4]
-
 .entry vmain
 .proc vmain
-	mov r1.xy, v0.xy
-	mov r1.zw, myconst.zw
-
-	; result.pos = projMtx * in.pos
-	dp4 o0.x, projMtx[0].xyzw, r1.xyzw
-	dp4 o0.y, projMtx[1].xyzw, r1.xyzw
-	dp4 o0.z, projMtx[2].xyzw, r1.xyzw
-	dp4 o0.w, projMtx[3].xyzw, r1.xyzw
+	; perform simple projection
+	mov r0, const1
+	mul r0.xy, r0.xy, v0.xy
+	add r0.xy, const2.xx, r0.xy
+	mov o0, r0
 
 	; result.texcoord = in.texcoord
-	mov o1.xyzw, v1.xyzw
+	mov o1, v1
 	end
 	nop
 .end
