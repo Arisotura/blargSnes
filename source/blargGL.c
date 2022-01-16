@@ -233,11 +233,39 @@ void _bglUpdateState()
 		GPUCMD_AddWrite(GPUREG_FACECULLING_CONFIG, bglState.CullMode);
 	}
 	
-	// stencil test, blending color
+	// stencil test
+	
+	if (dirty & 0x20)
+	{
+		GPUCMD_AddWrite(GPUREG_BLEND_COLOR, bglState.BlendingColor.Val);
+	}
+	
+	if (dirty & 0x80)
+	{
+		GPUCMD_AddWrite(GPUREG_FRAGOP_ALPHA_TEST, 
+			bglState.AlphaTest | 
+			(bglState.AlphaFunc << 4) | 
+			(bglState.AlphaRef << 8));
+	}
+	
+	if (dirty & 0x100)
+	{
+		GPUCMD_AddWrite(GPUREG_COLOR_OPERATION, 0x00E40100);
+		GPUCMD_AddWrite(GPUREG_BLEND_FUNC,
+			bglState.ColorBlendEquation |
+			(bglState.AlphaBlendEquation << 8) |
+			(bglState.ColorSrcFactor << 16) |
+			(bglState.ColorDstFactor << 20) |
+			(bglState.AlphaSrcFactor << 24) |
+			(bglState.AlphaDstFactor << 28));
+	}
 	
 	if (dirty & 0x40)
 	{
-		GPUCMD_AddWrite(GPUREG_DEPTH_COLOR_MASK, bglState.DepthTest | (bglState.DepthFunc << 4) | (bglState.ColorDepthMask << 8));
+		GPUCMD_AddWrite(GPUREG_DEPTH_COLOR_MASK, 
+			bglState.DepthTest | 
+			(bglState.DepthFunc << 4) | 
+			(bglState.ColorDepthMask << 8));
 	}
 
 	/*GPU_DepthMap(bglState.DepthMin, bglState.DepthMax);
