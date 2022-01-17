@@ -130,6 +130,7 @@ struct
 
 u32 bglCommandBufferSize; // this size in words
 void* bglCommandBuffer;
+u32 bglCommandBufferPos;
 
 
 
@@ -142,8 +143,8 @@ void bglInit()
 	bglCommandBufferSize = 0x80000;
 	bglCommandBuffer = linearAlloc(bglCommandBufferSize * 4);
 	
-	//GPU_Reset(NULL, bglCommandBuffer, bglCommandBufferSize);
-	GPUCMD_SetBuffer(bglCommandBuffer, bglCommandBufferSize, 0);
+	bglCommandBufferPos = 0;
+	GPUCMD_SetBuffer(&bglCommandBuffer[bglCommandBufferPos], bglCommandBufferSize, 0);
 	
 	// sane defaults
 	bglDepthRange(-1.0f, 0.0f);
@@ -183,6 +184,8 @@ void _bglUpdateState()
 	
 	if (dirty & 0x1)
 		shaderProgramUse(bglState.Shader);
+	
+	// TODO: a lot of this could be optimized with incremental writes
 	
 	if (dirty & 0x4)
 	{
@@ -276,51 +279,7 @@ void _bglUpdateState()
 			(bglState.StencilOpPass << 8));
 	}
 
-	/*GPU_DepthMap(bglState.DepthMin, bglState.DepthMax);
-	GPU_SetFaceCulling(bglState.CullMode);
-	GPU_SetStencilTest(bglState.StencilTest, bglState.StencilFunc, bglState.StencilRef, bglState.StencilMask, bglState.StencilReplace);
-	GPU_SetStencilOp(bglState.StencilOpSFail, bglState.StencilOpDFail, bglState.StencilOpPass);
-	GPU_SetBlendingColor(bglState.BlendingColor.R, bglState.BlendingColor.G, bglState.BlendingColor.B, bglState.BlendingColor.A);
-	GPU_SetDepthTestAndWriteMask(bglState.DepthTest, bglState.DepthFunc, bglState.ColorDepthMask);
-	
-	// start drawing? whatever that junk is
-	GPUCMD_AddMaskedWrite(GPUREG_0062, 0x1, 0); // GPUREG_EARLYDEPTH_TEST1
-	GPUCMD_AddWrite(GPUREG_0118, 0); // GPUREG_EARLYDEPTH_TEST2 
-	
-	GPU_SetAlphaBlending(
-		bglState.ColorBlendEquation, bglState.AlphaBlendEquation,
-		bglState.ColorSrcFactor, bglState.ColorDstFactor,
-		bglState.AlphaSrcFactor, bglState.AlphaDstFactor);
-	GPU_SetAlphaTest(bglState.AlphaTest, bglState.AlphaFunc, bglState.AlphaRef);
-	
-	GPU_SetTextureEnable(bglState.TextureEnable);
-	
-	for (i = 0; i < 6; i++)
-	{
-		GPU_SetTexEnv(i,
-			bglState.TextureEnv[i].RGBSources,
-			bglState.TextureEnv[i].AlphaSources,
-			bglState.TextureEnv[i].RGBOperands,
-			bglState.TextureEnv[i].AlphaOperands,
-			bglState.TextureEnv[i].RGBCombine,
-			bglState.TextureEnv[i].AlphaCombine,
-			bglState.TextureEnv[i].ConstantColor.Val);
-	}*
-	
-	for (i = 0; i < 3; i++)
-	{
-		u32 texunit = 1<<i;
-		
-		if (!(bglState.TextureEnable & texunit))
-			continue;
-		
-		GPU_SetTexture(texunit,
-			bglState.Texture[i].Data,
-			bglState.Texture[i].Height,
-			bglState.Texture[i].Width,
-			bglState.Texture[i].Parameters,
-			bglState.Texture[i].ColorType);
-	}*/
+	// TODO: do the early-depth registers need to be set?
 	
 	// texturing
 	if (dirty & 0x200)
@@ -690,11 +649,11 @@ void bglFlush()
 		bglState.DrawnSomething = false;
 	}
 	
-	GPUCMD_AddWrite(GPUREG_FINALIZE, 0x12345678);
+	// GPUCMD_Split() will finalize the command buffer properly
 	u32* buf; u32 size;
 	GPUCMD_Split(&buf, &size);
 	GX_ProcessCommandList(buf, size<<2, 2);
 	
-	// TODO: would it be wise to have two command buffers?
-	GPUCMD_SetBuffer(bglCommandBuffer, bglCommandBufferSize, 0);
+	bglCommandBufferPos ^= (bglCommandBufferSize >> 1);
+	GPUCMD_SetBuffer(&bglCommandBuffer[bglCommandBufferPos], bglCommandBufferSize, 0);
 }

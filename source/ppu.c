@@ -1141,8 +1141,8 @@ void PPU_ComputeWindows(PPU_WindowSegment* s)
 
 void PPU_RenderScanline(u32 line)
 {
-	if (!(line & 7))
-		ContinueRendering();
+	//if (!(line & 7))
+	//	ContinueRendering();
 	
 	if (SkipThisFrame) return;
 	

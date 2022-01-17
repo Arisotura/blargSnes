@@ -92,9 +92,7 @@ u64 LastVBlank = 0;
 // debug
 u32 ntriangles = 0;
 
-// hax
-//extern Handle gspEventThread;
-//extern Handle gspEvents[GSPGPU_EVENT_MAX];
+gxCmdQueue_s GXQueue;
 
 
 Handle spcthread = NULL;
@@ -261,7 +259,7 @@ void dbgcolor(u32 col)
 	u32 regData=0x01000000|col;
 	GSPGPU_WriteHWRegs(0x202204, &regData, 4);
 	
-	u8* zarp = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
+	/*u8* zarp = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
 	int i;
 	for (i = 0; i < 320*240; i++) 
 	{
@@ -270,7 +268,7 @@ void dbgcolor(u32 col)
 		zarp[i*3+2] = col >> 16;
 	}
 	gfxFlushBuffers();
-	gfxSwapBuffers();
+	gfxSwapBuffers();*/
 }
 
 
@@ -433,10 +431,12 @@ void RenderTopScreen()
 	
 	bglDrawArrays(GPU_GEOMETRY_PRIM, 2); // screen
 
-	if (!RenderState)
+	//if (!RenderState)
 	{
 		bglFlush();
-		RenderState = 1;
+		GX_DisplayTransfer(gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
+		gxCmdQueueRun(&GXQueue);
+		//RenderState = 1;
 	}
 }
 
@@ -474,7 +474,7 @@ void ContinueRendering()
 
 void FinishRendering()
 {
-	if (RenderState == 3)
+	/*if (RenderState == 3)
 	{
 		gspWaitForPPF();
 		//SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
@@ -499,7 +499,21 @@ void FinishRendering()
 		VSyncAndFrameskip();
 	}
 	
-	RenderState = 0;
+	RenderState = 0;*/
+	
+	gxCmdQueueWait(&GXQueue, -1);
+	gxCmdQueueClear(&GXQueue);
+	
+	{
+		u8* bottomfb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
+		
+		UI_SetFramebuffer(bottomfb);
+		UI_Render();
+		GSPGPU_FlushDataCache(bottomfb, 0x38400);
+	}
+	
+	gfxSwapBuffersGpu();
+	gspWaitForEvent(GSPGPU_EVENT_VBlank0, false);
 }
 
 u32 PALCount = 0;
@@ -904,8 +918,12 @@ int main()
 	GX_DisplayTransfer(tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
 	gspWaitForPPF();
 
-	//SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
 	linearFree(tempbuf);
+	
+	memset(&GXQueue, 0, sizeof(GXQueue));
+	GXQueue.maxEntries = 32;
+	GXQueue.entries = (gxCmdEntry_s*)malloc(GXQueue.maxEntries * sizeof(gxCmdEntry_s));
+	GX_BindQueue(&GXQueue);
 	
 	Audio_Init();
 	svcCreateEvent(&SPCSync, 0); 
@@ -930,7 +948,7 @@ int main()
 				// emulate
 				CPU_MainLoop(); // runs the SNES for one frame. Handles PPU rendering.
 				//ContinueRendering();
-				FinishRendering();
+				//FinishRendering();
 				
 				/*{
 					extern u32 dbgcycles, nruns;
@@ -1100,6 +1118,11 @@ int main()
 		svcWaitSynchronization(spcthread, U64_MAX);
 		svcCloseHandle(spcthread);
 	}
+	
+	gxCmdQueueStop(&GXQueue);
+	gxCmdQueueWait(&GXQueue, -1);
+	GX_BindQueue(NULL);
+	free(GXQueue.entries);
 
 	vramFree(SNESFrame);
 	vramFree(gpuDOut);
