@@ -233,11 +233,14 @@ void _bglUpdateState()
 		GPUCMD_AddWrite(GPUREG_FACECULLING_CONFIG, bglState.CullMode);
 	}
 	
-	// stencil test
-	
 	if (dirty & 0x20)
 	{
-		GPUCMD_AddWrite(GPUREG_BLEND_COLOR, bglState.BlendingColor.Val);
+		GPUCMD_AddWrite(GPUREG_STENCIL_TEST,
+			bglState.StencilTest |
+			(bglState.StencilFunc << 4) |
+			(bglState.StencilReplace << 8) | // buffer mask
+			(bglState.StencilRef << 16) |
+			(bglState.StencilMask << 24));
 	}
 	
 	if (dirty & 0x80)
@@ -250,6 +253,7 @@ void _bglUpdateState()
 	
 	if (dirty & 0x100)
 	{
+		GPUCMD_AddWrite(GPUREG_BLEND_COLOR, bglState.BlendingColor.Val);
 		GPUCMD_AddWrite(GPUREG_COLOR_OPERATION, 0x00E40100);
 		GPUCMD_AddWrite(GPUREG_BLEND_FUNC,
 			bglState.ColorBlendEquation |
@@ -266,6 +270,10 @@ void _bglUpdateState()
 			bglState.DepthTest | 
 			(bglState.DepthFunc << 4) | 
 			(bglState.ColorDepthMask << 8));
+		GPUCMD_AddWrite(GPUREG_STENCIL_OP,
+			bglState.StencilOpSFail |
+			(bglState.StencilOpDFail << 4) |
+			(bglState.StencilOpPass << 8));
 	}
 
 	/*GPU_DepthMap(bglState.DepthMin, bglState.DepthMax);
@@ -395,16 +403,6 @@ void _bglUpdateState()
 
 		GPUCMD_AddWrite(GPUREG_VSH_ATTRIBUTES_PERMUTATION_LOW, (u32)permut);
 		GPUCMD_AddWrite(GPUREG_VSH_ATTRIBUTES_PERMUTATION_HIGH, (u32)(permut >> 32) & 0xFFFF);
-		
-		/*GPU_SetAttributeBuffers(bglState.NumAttribBuffers,
-			bglState.AttribBufferPtr,
-			attrib, 
-			0xFFC, // whatever that junk is-- may not be right in all cases
-			permut,
-			1,
-			(u32[]){0}, // buffer offsets
-			(u64[]){permut},
-			(u8[]){bglState.NumAttribBuffers});*/
 	}
 }
 
@@ -579,7 +577,7 @@ void bglBlendColor(u32 r, u32 g, u32 b, u32 a)
 	bglState.BlendingColor.G = g;
 	bglState.BlendingColor.B = b;
 	bglState.BlendingColor.A = a;
-	bglState.DirtyFlags |= 0x20;
+	bglState.DirtyFlags |= 0x100;
 }
 
 void bglBlendEquation(GPU_BLENDEQUATION coloreq, GPU_BLENDEQUATION alphaeq)
