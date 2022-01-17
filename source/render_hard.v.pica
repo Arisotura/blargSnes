@@ -17,7 +17,8 @@
 ; -----------------------------------------------------------------------------
 
 ; setup constants
-.constf myconst(0.0, 0.0, 0.0078125, 1.0)
+.constf const1(0.0078125, 0.00390625, 0.0, 1.0)
+.constf const2(-1.0, 0.0, 0.0, 0.0)
 
 ; setup outmap
 .out o0 position
@@ -36,14 +37,10 @@
 
 .entry vmain
 .proc vmain
-	mov r1.xyz, v0.xyz
-	mov r1.w, myconst.w
-
-	; result.pos = projMtx * temp.pos
-	dp4 o0.x, projMtx[0], r1
-	dp4 o0.y, projMtx[1], r1
-	dp4 o0.z, projMtx[2], r1
-	dp4 o0.w, projMtx[3], r1
+	mov r0, const1
+	mul r0.xyz, r0.xxx, v0.xyz
+	add r0.xyz, const2.xxx, r0.xyz
+	mov o0, r0
 
 	; result.texcoord = in.texcoord * (uniform scale in c4)
 	mul r1, c4, v1

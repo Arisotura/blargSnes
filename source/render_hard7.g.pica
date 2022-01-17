@@ -28,8 +28,6 @@
 .out o1 color
 .out o2 texcoord0
 
-; setup uniform map (not required)
-
 ; INPUT
 ; - VERTEX ATTRIBUTES -
 ; v0: vertex (x, y, and optional z)
@@ -37,6 +35,8 @@
 ; - UNIFORMS -
 ; c0-c3: projection matrix
 ; c4: texcoord scale
+; c14: 
+; c15: 
 
 .entry gmain
 .proc gmain

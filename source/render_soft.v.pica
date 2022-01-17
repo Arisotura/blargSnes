@@ -22,7 +22,7 @@
 
 ; setup outmap
 .out o0 position
-.out o1 color
+.out o1 texcoord0
 
 .entry vmain
 .proc vmain

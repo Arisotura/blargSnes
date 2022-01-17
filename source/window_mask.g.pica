@@ -16,14 +16,9 @@
 ; with blargSnes. If not, see http:;www.gnu.org/licenses/.
 ; -----------------------------------------------------------------------------
 
-; setup constants
-
-
 ; setup outmap
 .out o0 position
 .out o1 color
-
-; setup uniform map (not required)
 
 ; input
 ; v0: XY coordinates
@@ -47,15 +42,17 @@
 
 	; x2 y1
 	setemit 1
-	mov o0.xzw, v2.xzw
-	mov o0.y, v0.y
+	mov r0, v2
+	mov r0.y, v0.y
+	mov o0, r0
 	mov o1, v3
 	emit
 
 	; x1 y2
 	setemit 2, prim
-	mov o0.xzw, v0.xzw
-	mov o0.y, v2.y
+	mov r0, v0
+	mov r0.y, v2.y
+	mov o0, r0
 	mov o1, v1
 	emit
 

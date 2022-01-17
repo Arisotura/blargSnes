@@ -275,14 +275,6 @@ void dbgcolor(u32 col)
 
 
 
-float snesProjMatrix[16] = 
-{
-	2.0f/256.0f, 0, 0, -1,
-	0, 2.0f/256.0f, 0, -1,
-	0, 0, 1.0f/128.0f, -1,
-	0, 0, 0, 1
-};
-
 
 float snesM7Matrix[16] = 
 {
