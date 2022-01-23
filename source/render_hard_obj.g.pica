@@ -19,26 +19,13 @@
 .gsh point c0
 
 ; setup constants
-.constf const9(0.0, 0.0, 0.0078125, 1.0)
-.constf const10(0.00004, 0.00004, 0.0, 0.0)
-.constf const11(0.0077725, 0.00004, 0.0, 0.0)
-.constf const12(0.00004, 0.0077725, 0.0, 0.0)
-.constf const13(0.0077725, 0.0077725, 0.0, 0.0)
+.constf myconst(0.0, 0.0, 0.0078125, 1.0)
 
 ; setup outmap
 .out o0 position
 .out o1 color
 .out o2 texcoord0
 
-; INPUT
-; - VERTEX ATTRIBUTES -
-; v0: vertex (x, y, and optional z)
-; v1: texcoord
-; - UNIFORMS -
-; c0-c3: projection matrix
-; c4: texcoord scale
-; c14: 
-; c15: 
 
 .entry gmain
 .proc gmain
@@ -46,42 +33,46 @@
 	; setemit: vtxid, primemit, winding
 
 	; v0 = vertex 0, position
-	; v1 = vertex 0, texcoord
+	; v1 = vertex 0, color
+	; v2 = vertex 0, texcoord
+	; v3 = vertex 1, position
+	; v4 = vertex 1, color
+	; v5 = vertex 1, texcoord
 
 	; x1 y1
 	setemit 0
 	mov o0, v0
-	mov o1, const9.wwww
-	mov r3, v1
-	add o2, const10, r3
+	mov o1, v1
+	mov o2, v2
 	emit
 
 	; x2 y1
 	setemit 1
-	mov r3, c14
-	add o0, v0, r3
-	mov o1, const9.wwww
-	mov r3, v1
-	add o2, const11, r3
+	mov r0, v3
+	mov r0.y, v0.y
+	mov o0, r0
+	mov o1, v4
+	mov r2, v5
+	mov r2.y, v2.y
+	mov o2, r2
 	emit
 
 	; x1 y2
 	setemit 2, prim
-	mov r3, c15
-	add o0, v0, r3
-	mov o1, const9.wwww
-	mov r3, v1
-	add o2, const12, r3
+	mov r0, v0
+	mov r0.y, v3.y
+	mov o0, r0
+	mov o1, v1
+	mov r2, v2
+	mov r2.y, v5.y
+	mov o2, r2
 	emit
 
 	; x2 y2
 	setemit 0, prim inv
-	mov r4, c14
-	add r3, c15, r4
-	add o0, v0, r3
-	mov o1, const9.wwww
-	mov r3, v1
-	add o2, const13, r3
+	mov o0, v3
+	mov o1, v4
+	mov o2, v5
 	emit
 
 	end

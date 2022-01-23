@@ -22,17 +22,13 @@
 
 ; setup outmap
 .out o0 position
-.out o1 color
-
-; setup uniform map (not required)
-.alias projMtx c0-c3
+.out o1 texcoord0
 
 ; INPUT
 ; - VERTEX ATTRIBUTES -
 ; v0: vertex (x, y, and optional z)
 ; v1: texcoord
 ; - UNIFORMS -
-; c0-c3: projection matrix
 ; c4: texcoord scale
 
 .entry vmain

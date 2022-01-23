@@ -16,6 +16,8 @@
 ; with blargSnes. If not, see http:;www.gnu.org/licenses/.
 ; -----------------------------------------------------------------------------
 
+.gsh point c0
+
 ; setup outmap
 .out o0 position
 .out o1 color

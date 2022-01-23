@@ -202,10 +202,10 @@ void _bglUpdateState()
 		GPUCMD_AddWrite(GPUREG_COLORBUFFER_FORMAT, 0x00000002);
 		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_BLOCK32, 0x00000000);
 		
-		GPUCMD_AddWrite(GPUREG_COLORBUFFER_READ, 0xF);
-		GPUCMD_AddWrite(GPUREG_COLORBUFFER_WRITE, 0xF);
-		GPUCMD_AddWrite(GPUREG_DEPTHBUFFER_READ, 0x3);
-		GPUCMD_AddWrite(GPUREG_DEPTHBUFFER_WRITE, 0x3);
+		GPUCMD_AddWrite(GPUREG_COLORBUFFER_READ, bglState.ColorBuffer ? 0xF : 0);
+		GPUCMD_AddWrite(GPUREG_COLORBUFFER_WRITE, bglState.ColorBuffer ? 0xF : 0);
+		GPUCMD_AddWrite(GPUREG_DEPTHBUFFER_READ, bglState.DepthBuffer ? 0x3 : 0);
+		GPUCMD_AddWrite(GPUREG_DEPTHBUFFER_WRITE, bglState.DepthBuffer ? 0x3 : 0);
 	}
 	
 	if (dirty & 0x404)
@@ -368,8 +368,11 @@ void _bglUpdateState()
 
 void bglUseShader(shaderProgram_s* shader)
 {
+	if (bglState.Shader == shader)
+		return;
+	
 	bglState.Shader = shader;
-	bglState.DirtyFlags |= 0x5;
+	bglState.DirtyFlags |= 0x1;
 }
 
 

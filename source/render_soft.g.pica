@@ -16,6 +16,8 @@
 ; with blargSnes. If not, see http:;www.gnu.org/licenses/.
 ; -----------------------------------------------------------------------------
 
+.gsh point c0
+
 ; setup constants
 .constf myconst(0.0, 0.0, 0.00390625, 1.0)
 

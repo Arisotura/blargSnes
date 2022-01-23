@@ -34,6 +34,8 @@ void bglInit();
 void bglDeInit();
 
 
+void bglUseShader(shaderProgram_s* shader);
+
 u32 bglUniformLoc(GPU_SHADER_TYPE type, const char* name);
 void bglUniform(GPU_SHADER_TYPE type, u32 id, float* val);
 void bglUniformMatrix(GPU_SHADER_TYPE type, u32 id, float* val);

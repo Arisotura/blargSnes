@@ -16,6 +16,8 @@
 ; with blargSnes. If not, see http:;www.gnu.org/licenses/.
 ; -----------------------------------------------------------------------------
 
+.gsh point c0
+
 ; setup constants
 .constf myconst(0.0, 0.0, 0.0078125, 1.0)
 
@@ -23,16 +25,8 @@
 .out o0 position
 .out o1 color
 .out o2 texcoord0
+.out o3 texcoord1
 
-; setup uniform map (not required)
-
-; INPUT
-; - VERTEX ATTRIBUTES -
-; v0: vertex (x, y, and optional z)
-; v1: texcoord
-; - UNIFORMS -
-; c0-c3: projection matrix
-; c4: texcoord scale
 
 .entry gmain
 .proc gmain
@@ -49,6 +43,7 @@
 	mov o0, v0
 	mov o1, myconst.wwww
 	mov o2, v1
+	mov o3, v1
 	emit
 
 	; x2 y1
@@ -60,6 +55,7 @@
 	mov r2, v3
 	mov r2.y, v1.y
 	mov o2, r2
+	mov o3, r2
 	emit
 
 	; x1 y2
@@ -71,6 +67,7 @@
 	mov r2, v1
 	mov r2.y, v3.y
 	mov o2, r2
+	mov o3, r2
 	emit
 
 	; x2 y2
@@ -78,6 +75,7 @@
 	mov o0, v2
 	mov o1, myconst.wwww
 	mov o2, v3
+	mov o3, v3
 	emit
 
 	end

@@ -18,6 +18,9 @@
 
 ; setup constants
 .constf const1(0.008333333, 0.005, 0.0, 1.0)
+;.constf const1(0.008333333, 0.005, -0.99610138, 1.0) ; FF0080
+;.constf const1(0.008333333, 0.005, -0.00389862, 1.0) ; 00FF7F
+;.constf const1(0.008333333, 0.005, -0.99999237, 1.0) ; FFFF80
 .constf const2(-1.0, 0.0, 0.0, 0.0)
 
 ; setup outmap

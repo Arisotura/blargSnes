@@ -1528,9 +1528,25 @@ void PPU_BlendScreens(u32 colorformat)
 }
 
 	
+	
+extern gxCmdQueue_s GXQueue;
+
+void PPU_FBTransferDone(gxCmdQueue_s* queue)
+{
+	bprintf("PISS\n");
+	gxCmdQueueSetCallback(queue, NULL, NULL);
+	
+	vertexPtr = vertexBuf;
+	
+	PPU_BlendScreens(GPU_RGBA5551);
+}
 
 void PPU_VBlank_Soft()
 {
+	// setup callback, to ensure the GPU drawing isn't done until the transfer below is finished
+	//gxCmdQueueSetCallback(&GXQueue, PPU_FBTransferDone, NULL);
+	GX_BindQueue(NULL);
+	
 	// copy new screen textures
 	// SetDisplayTransfer with flags=2 converts linear graphics to the tiled format used for textures
 	// since the two sets of buffers are contiguous, we can transfer them as one 256x512 texture
@@ -1538,6 +1554,9 @@ void PPU_VBlank_Soft()
 	GX_DisplayTransfer((u32*)PPU.MainBuffer, 0x02000100, (u32*)MainScreenTex, 0x02000100, 0x3302);
 	
 	PPU.CurColorEffect->EndOffset = 240;
+	
+	gspWaitForPPF();
+	GX_BindQueue(&GXQueue);
 	
 	vertexPtr = vertexBuf;
 	

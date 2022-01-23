@@ -42,6 +42,7 @@
 #include "render_soft_shbin.h"
 #include "render_hard_shbin.h"
 #include "render_hard7_shbin.h"
+#include "render_hard_obj_shbin.h"
 #include "plain_quad_shbin.h"
 #include "window_mask_shbin.h"
 
@@ -55,6 +56,7 @@ DVLB_s* finalShader;
 DVLB_s* softRenderShader;
 DVLB_s* hardRenderShader;
 DVLB_s* hard7RenderShader;
+DVLB_s* hardRenderOBJShader;
 DVLB_s* plainQuadShader;
 DVLB_s* windowMaskShader;
 
@@ -62,6 +64,7 @@ shaderProgram_s finalShaderP;
 shaderProgram_s softRenderShaderP;
 shaderProgram_s hardRenderShaderP;
 shaderProgram_s hard7RenderShaderP;
+shaderProgram_s hardRenderOBJShaderP;
 shaderProgram_s plainQuadShaderP;
 shaderProgram_s windowMaskShaderP;
 
@@ -877,6 +880,7 @@ int main()
 	softRenderShader = DVLB_ParseFile((u32*)render_soft_shbin, render_soft_shbin_size);
 	hardRenderShader = DVLB_ParseFile((u32*)render_hard_shbin, render_hard_shbin_size);
 	hard7RenderShader = DVLB_ParseFile((u32*)render_hard7_shbin, render_hard7_shbin_size);
+	hardRenderOBJShader = DVLB_ParseFile((u32*)render_hard_obj_shbin, render_hard_obj_shbin_size);
 	plainQuadShader = DVLB_ParseFile((u32*)plain_quad_shbin, plain_quad_shbin_size);
 	windowMaskShader = DVLB_ParseFile((u32*)window_mask_shbin, window_mask_shbin_size);
 
@@ -884,6 +888,7 @@ int main()
 	shaderProgramInit(&softRenderShaderP);	shaderProgramSetVsh(&softRenderShaderP, &softRenderShader->DVLE[0]);	shaderProgramSetGsh(&softRenderShaderP, &softRenderShader->DVLE[1], 4);
 	shaderProgramInit(&hardRenderShaderP);	shaderProgramSetVsh(&hardRenderShaderP, &hardRenderShader->DVLE[0]);	shaderProgramSetGsh(&hardRenderShaderP, &hardRenderShader->DVLE[1], 4);
 	shaderProgramInit(&hard7RenderShaderP);	shaderProgramSetVsh(&hard7RenderShaderP, &hard7RenderShader->DVLE[0]);	shaderProgramSetGsh(&hard7RenderShaderP, &hard7RenderShader->DVLE[1], 2);
+	shaderProgramInit(&hardRenderOBJShaderP);	shaderProgramSetVsh(&hardRenderOBJShaderP, &hardRenderOBJShader->DVLE[0]);	shaderProgramSetGsh(&hardRenderOBJShaderP, &hardRenderOBJShader->DVLE[1], 6);
 	shaderProgramInit(&plainQuadShaderP);	shaderProgramSetVsh(&plainQuadShaderP, &plainQuadShader->DVLE[0]);		shaderProgramSetGsh(&plainQuadShaderP, &plainQuadShader->DVLE[1], 4);
 	shaderProgramInit(&windowMaskShaderP);	shaderProgramSetVsh(&windowMaskShaderP, &windowMaskShader->DVLE[0]);	shaderProgramSetGsh(&windowMaskShaderP, &windowMaskShader->DVLE[1], 4);
 
@@ -1135,6 +1140,7 @@ int main()
 	shaderProgramFree(&softRenderShaderP);
 	shaderProgramFree(&hardRenderShaderP);
 	shaderProgramFree(&hard7RenderShaderP);
+	shaderProgramFree(&hardRenderOBJShaderP);
 	shaderProgramFree(&plainQuadShaderP);
 	shaderProgramFree(&windowMaskShaderP);
 
@@ -1142,6 +1148,7 @@ int main()
 	DVLB_Free(softRenderShader);
 	DVLB_Free(hardRenderShader);
 	DVLB_Free(hard7RenderShader);
+	DVLB_Free(hardRenderOBJShader);
 	DVLB_Free(plainQuadShader);
 	DVLB_Free(windowMaskShader);
 
