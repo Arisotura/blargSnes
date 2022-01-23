@@ -31,7 +31,7 @@
 .entry vmain
 .proc vmain
 	mov r0, const1
-	mul r0.xyz, r0.xxx, v0.xyz
+	mul r0.xyz, r0.xyz, v0.xyz
 	add r0.xyz, const2.xxx, r0.xyz
 	mov o0, r0
 
