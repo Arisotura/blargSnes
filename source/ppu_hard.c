@@ -1989,13 +1989,12 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend, u32 prio)
 
 
 
-int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int yend)
+int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int width, int height, int ystart, int yend, u32 tileaddr, u32 tilegap)
 {
 	s32 xoff;
 	u16 attrib;
 	u32 idx;
 	s32 x;
-	s32 width = (s32)PPU.CurOBJSecSel->OBJWidth[(oamextra & 0x2) >> 1];
 	u32 palid, prio, cmath;
 	int yincr = 8;
 	int ntiles = 0;
@@ -2021,8 +2020,8 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 	attrib = *(u16*)&oam[2];
 	
 	idx = (attrib & 0x01FF) << 5;
-	if(attrib & 0x100)
-		idx += PPU.CurOBJSecSel->OBJGap;
+	if (attrib & 0x100)
+		idx += tilegap;
 	
 	if (attrib & 0x4000)
 		idx += ((width-1) & 0x38) << 2;
@@ -2068,7 +2067,7 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int height, int ystart, int 
 				continue;
 			}
 			
-			u32 addr = PPU.CurOBJSecSel->OBJTilesetAddr + idx;
+			u32 addr = tileaddr + idx;
 			u32 coord = PPU_StoreTileInCache(TILE_4BPP, palid, addr);
 			if (coord == 0xC000)
 			{
@@ -2123,43 +2122,12 @@ void PPU_HardRenderOBJs()
 	i--;
 	if (i < 0) i = 127;
 	int last = i;
-	int ntiles = 0;
-	int ystart = 1, yend = SNES_Status->ScreenHeight;
-	void* vstart = vertexPtr;
-
-	do
-	{
-		u8* oam = &PPU.OAM[i << 2];
-		u8 oamextra = PPU.OAM[0x200 + (i >> 2)] >> ((i & 0x03) << 1);
-		s32 oy = (s32)oam[1] + 1;
-
-		PPU.CurOBJSecSel = &PPU.OBJSections[0];
-		while(PPU.CurOBJSecSel->EndOffset < oy && PPU.CurOBJSecSel->EndOffset < 240)
-			PPU.CurOBJSecSel++;
-		s32 oh = (s32)PPU.CurOBJSecSel->OBJHeight[(oamextra & 0x2) >> 1];
-
-		if ((oy+oh) > ystart && oy < yend)
-		{
-			ntiles += PPU_HardRenderOBJ(oam, oamextra, oy, oh, ystart, yend);
-		}
-		if (oy >= 192)
-		{
-			oy -= 0x100;
-			if ((oy+oh) > ystart)
-			{
-				ntiles += PPU_HardRenderOBJ(oam, oamextra, oy, oh, ystart, yend);
-			}
-		}
-
-		i--;
-		if (i < 0) i = 127;
-	}
-	while (i != last);
-	if (!ntiles) return;
+	int ystart = 1, yend;
+	u8* cur_oam = PPU.OAM;
 	
 	
 	bglOutputBuffers(OBJColorBuffer, OBJPrioBuffer, 256, 256);
-	
+			
 	bglScissorMode(GPU_SCISSOR_NORMAL);
 		
 	bglEnableStencilTest(false);
@@ -2194,16 +2162,66 @@ void PPU_HardRenderOBJs()
 		
 	bglTexImage(GPU_TEXUNIT0, PPU_TileCache,1024,1024,0,GPU_RGBA5551);
 	
-	vertexPtr = (u16*)((((u32)vertexPtr) + 0xF) & ~0xF);
-	
-	bglScissor(0, ystart, 256, yend);
-
 	bglNumAttribs(2);
 	bglAttribType(0, GPU_SHORT, 3);	// vertex
 	bglAttribType(1, GPU_UNSIGNED_BYTE, 4);	// texcoord/prio
-	bglAttribBuffer(vstart);
 	
-	bglDrawArrays(GPU_GEOMETRY_PRIM, ntiles*2);
+
+	PPU_OBJSection* s = &PPU.OBJSections[0];
+	for (;;)
+	{
+		void* vstart = vertexPtr;
+		int ntiles = 0;
+		
+		yend = s->EndOffset;
+		if (s->HasOAM) cur_oam = s->OAM;
+		
+		do
+		{
+			u8* oam = &cur_oam[i << 2];
+			u8 oamextra = cur_oam[0x200 + (i >> 2)] >> ((i & 0x03) << 1);
+			s32 oy = (s32)oam[1] + 1;
+			
+			s32 ow = (s32)s->OBJWidth[(oamextra & 0x2) >> 1];
+			s32 oh = (s32)s->OBJHeight[(oamextra & 0x2) >> 1];
+
+			if ((oy+oh) > ystart && oy < yend)
+			{
+				ntiles += PPU_HardRenderOBJ(oam, oamextra, oy, ow, oh, ystart, yend, s->OBJTilesetAddr, s->OBJGap);
+			}
+			if (oy >= 192)
+			{
+				oy -= 0x100;
+				if ((oy+oh) > ystart)
+				{
+					ntiles += PPU_HardRenderOBJ(oam, oamextra, oy, ow, oh, ystart, yend, s->OBJTilesetAddr, s->OBJGap);
+				}
+			}
+
+			i--;
+			if (i < 0) i = 127;
+		}
+		while (i != last);
+		
+		if (ntiles)
+		{
+			vertexPtr = (u16*)((((u32)vertexPtr) + 0xF) & ~0xF);
+			bglScissor(0, ystart, 256, yend);
+			bglAttribBuffer(vstart);
+			
+			bglDrawArrays(GPU_GEOMETRY_PRIM, ntiles*2);
+		}
+		
+		if (yend >= SNES_Status->ScreenHeight)
+		{
+			break;
+		}
+		else
+		{
+			ystart = yend;
+			s++;
+		}
+	}
 }
 
 void PPU_HardRenderOBJLayer(u32 setalpha, u32 prio, int ystart, int yend)
@@ -2379,6 +2397,8 @@ void PPU_RenderScanline_Hard(u32 line)
 		PPU.CurOBJSection->OBJHeight = PPU.OBJHeight;
 		PPU.CurOBJSection->OBJTilesetAddr = PPU.OBJTilesetAddr;
 		PPU.CurOBJSection->OBJGap = PPU.OBJGap;
+		PPU.CurOBJSection->HasOAM = 1;
+		memcpy(PPU.CurOBJSection->OAM, PPU.OAM, 0x220);
 
 		
 		for (i = 0; i < 4; i++)
@@ -2455,6 +2475,15 @@ void PPU_RenderScanline_Hard(u32 line)
 			PPU.CurOBJSection->OBJHeight = PPU.OBJHeight;
 			PPU.CurOBJSection->OBJTilesetAddr = PPU.OBJTilesetAddr;
 			PPU.CurOBJSection->OBJGap = PPU.OBJGap;
+			
+			if (PPU.OBJDirty & 0x02)
+			{
+				PPU.CurOBJSection->HasOAM = 1;
+				memcpy(PPU.CurOBJSection->OAM, PPU.OAM, 0x220);
+			}
+			else
+				PPU.CurOBJSection->HasOAM = 0;
+			
 			PPU.OBJDirty = 0;
 		}
 		

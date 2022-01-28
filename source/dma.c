@@ -88,6 +88,8 @@ void DMA_Enable(u8 flag)
 		{
 			if (ppuaddr == 0x04)
 			{
+				// coolspot: transfer at scanline 205
+				//bprintf("OAM DMA %04X %02X AT %d\n", PPU.OAMAddr, bytecount, SNES_Status->VCount);
 				while (bytecount > 1)
 				{
 					if (PPU.OAMAddr >= 0x200)
@@ -103,6 +105,7 @@ void DMA_Enable(u8 flag)
 					PPU.OAMAddr += 2;
 					PPU.OAMAddr &= ~0x400;
 				}
+				PPU.OBJDirty |= 0x02;
 			}
 			else if (ppuaddr == 0x22)
 			{

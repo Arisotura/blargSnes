@@ -17,6 +17,7 @@
 */
 
 #include <3ds.h>
+#include <string.h>
 
 #include "main.h"
 #include "mem.h"

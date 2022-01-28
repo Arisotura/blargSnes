@@ -228,6 +228,8 @@ typedef struct
 	u8 *OBJWidth, *OBJHeight;
 	u16 OBJTilesetAddr;
 	u32 OBJGap;
+	u8 HasOAM;		// indicates if OAM was different during this section than what we have upon VBlank
+	u8 OAM[0x220];
 } PPU_OBJSection;
 
 
@@ -391,7 +393,7 @@ typedef struct
 
 	PPU_OBJSection OBJSections[240];
 	PPU_OBJSection* CurOBJSection;
-	PPU_OBJSection* CurOBJSecSel;
+	//PPU_OBJSection* CurOBJSecSel;
 
 	u16 OBJTilesetAddr;
 	u16* OBJTileset;
