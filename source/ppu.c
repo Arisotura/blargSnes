@@ -558,12 +558,12 @@ void PPU_Write8(u32 addr, u8 val)
 			if (PPU.OAMAddr >= 0x200)
 			{
 				PPU.OAM[PPU.OAMAddr & 0x21F] = val;
-				PPU.OBJDirty |= 0x02;
+				//PPU.OBJDirty |= 0x02;
 			}
 			else if (PPU.OAMAddr & 0x1)
 			{
 				*(u16*)&PPU.OAM[PPU.OAMAddr - 1] = PPU.OAMVal | (val << 8);
-				PPU.OBJDirty |= 0x02;
+				//PPU.OBJDirty |= 0x02;
 			}
 			else
 			{

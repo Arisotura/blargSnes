@@ -35,11 +35,13 @@
 		bglUniform(t, n, blarg); \
 	}
 
-u8 curForcedBlank = 0;
+u8 CurForcedBlank = 0;
 
 
 extern void* vertexBuf;
 extern void* vertexPtr;
+void* vertexPtrStart;
+void SwapVertexBuf();
 
 
 extern shaderProgram_s hardRenderShaderP;
@@ -65,6 +67,9 @@ u32* OBJPrioBuffer;
 u16* Mode7ColorBuffer;
 
 u32 YOffset256[256];
+
+u8 FirstScreenSection;
+u8 ScreenYStart, ScreenYEnd;
 
 //u16 TempPalette[256];
 #define TempPalette PPU.Palette
@@ -135,6 +140,20 @@ u32 PPU_TileCacheReverseList[16384];
 u32 PPU_TileVRAMUpdate[0x20000];
 u32 PPU_TilePalUpdate[0x20000];
 
+u8 PPU_LastPalUpdate[64];
+u16 PPU_LastPalUpdate128;
+u16 PPU_LastPalUpdate256;
+
+u32 PPU_PalHash4[32];  // first half of palette
+u32 PPU_PalHash16[16]; // entire palette, including OBJ (second half)
+u32 PPU_PalHash128;
+u32 PPU_PalHash256;
+
+
+u32 SuperFastHash(u32 start, const u8* data, u32 len);
+
+void PPU_HardRenderSection(u32 endline);
+
 
 void PPU_Init_Hard()
 {
@@ -166,6 +185,16 @@ void PPU_Init_Hard()
 		
 	for (i = 0; i < 1024*1024; i++)
 		PPU_TileCache[i] = 0xF800;
+	
+	for (i = 0; i < 64; i++)
+		PPU_LastPalUpdate[i] = 0;
+	PPU_LastPalUpdate128 = 0;
+	PPU_LastPalUpdate256 = 0;
+	
+	for (i = 0; i < 32; i++) PPU_PalHash4[i] = 0;
+	for (i = 0; i < 16; i++) PPU_PalHash16[i] = 0;
+	PPU_PalHash128 = 0;
+	PPU_PalHash256 = 0;
 		
 	for (i = 0; i < 256; i++)
 	{
@@ -730,7 +759,7 @@ void PPU_ClearScreens()
 	
 	nvtx = 0;
 	{
-		int ystart = 1;
+		int ystart = ScreenYStart;
 		PPU_MainBackdropSection* s = &PPU.MainBackdropSections[0];
 		for (;;)
 		{
@@ -743,13 +772,13 @@ void PPU_ClearScreens()
 			ADDVERTEX(256, s->EndOffset+256, 0,  r, g, b, alpha);
 			nvtx += 2;
 			
-			if (s->EndOffset >= 240) break;
+			if (s->EndOffset >= ScreenYEnd) break;
 			ystart = s->EndOffset;
 			s++;
 		}
 	}
 	{
-		int ystart = 1;
+		int ystart = ScreenYStart;
 		PPU_SubBackdropSection* s = &PPU.SubBackdropSections[0];
 		for (;;)
 		{
@@ -765,7 +794,7 @@ void PPU_ClearScreens()
 			ADDVERTEX(256, s->EndOffset, 0, r, g, b, alpha);
 			nvtx += 2;
 			
-			if (s->EndOffset >= 240) break;
+			if (s->EndOffset >= ScreenYEnd) break;
 			ystart = s->EndOffset;
 			s++;
 		}
@@ -776,6 +805,7 @@ void PPU_ClearScreens()
 	bglDrawArrays(GPU_GEOMETRY_PRIM, nvtx);
 	
 	// clear the OBJ buffer
+	// TODO: only do that once, if multiple screen sections are involved?
 
 	bglOutputBuffers(OBJColorBuffer, OBJPrioBuffer, 256, 256);
 	bglViewport(0, 0, 256, 256);
@@ -836,7 +866,7 @@ void PPU_DrawWindowMask()
 	bglAttribBuffer(vptr);
 		
 	int nvtx = 0;
-	int ystart = 1;
+	int ystart = ScreenYStart;
 	PPU_WindowSection* s = &PPU.WindowSections[0];
 	for (;;)
 	{
@@ -860,7 +890,7 @@ void PPU_DrawWindowMask()
 			ws++;
 		}
 		
-		if (s->EndOffset >= 240) break;
+		if (s->EndOffset >= ScreenYEnd) break;
 		ystart = s->EndOffset;
 		s++;
 	}
@@ -2122,7 +2152,7 @@ void PPU_HardRenderOBJs()
 	i--;
 	if (i < 0) i = 127;
 	int last = i;
-	int ystart = 1, yend;
+	int ystart = ScreenYStart, yend;
 	u8* cur_oam = PPU.OAM;
 	
 	
@@ -2174,8 +2204,9 @@ void PPU_HardRenderOBJs()
 		int ntiles = 0;
 		
 		yend = s->EndOffset;
-		if (s->HasOAM) cur_oam = s->OAM;
+		//if (s->HasOAM) cur_oam = s->OAM;
 		
+		i = last;
 		do
 		{
 			u8* oam = &cur_oam[i << 2];
@@ -2212,7 +2243,7 @@ void PPU_HardRenderOBJs()
 			bglDrawArrays(GPU_GEOMETRY_PRIM, ntiles*2);
 		}
 		
-		if (yend >= SNES_Status->ScreenHeight)
+		if (yend >= ScreenYEnd)
 		{
 			break;
 		}
@@ -2372,211 +2403,301 @@ void PPU_ComputeWindows_Hard(PPU_WindowSegment* s)
 	}
 }
 
+void PPU_StartHardSection(u32 line)
+{
+	int i;
+	
+	ScreenYStart = line;
+	
+	PPU.CurModeSection = &PPU.ModeSections[0];
+	PPU.CurModeSection->Mode = PPU.Mode;
+	PPU.CurModeSection->MainScreen = PPU.MainScreen;
+	PPU.CurModeSection->SubScreen = PPU.SubScreen;
+	PPU.CurModeSection->ColorMath1 = PPU.ColorMath1;
+	PPU.CurModeSection->ColorMath2 = PPU.ColorMath2;
+	PPU.ModeDirty = 0;
+
+	PPU.CurOBJSection = &PPU.OBJSections[0];
+	PPU.CurOBJSection->OBJWidth = PPU.OBJWidth;
+	PPU.CurOBJSection->OBJHeight = PPU.OBJHeight;
+	PPU.CurOBJSection->OBJTilesetAddr = PPU.OBJTilesetAddr;
+	PPU.CurOBJSection->OBJGap = PPU.OBJGap;
+	//PPU.CurOBJSection->HasOAM = 1;
+	//memcpy(PPU.CurOBJSection->OAM, PPU.OAM, 0x220);
+	PPU.OBJDirty = 0;
+	
+	for (i = 0; i < 4; i++)
+	{
+		PPU_Background* bg = &PPU.BG[i];
+		
+		bg->CurSection = &bg->Sections[0];
+		bg->CurSection->ScrollParams = bg->ScrollParams;
+		bg->CurSection->GraphicsParams = bg->GraphicsParams;
+		bg->CurSection->Size = bg->Size;
+		
+		bg->LastScrollParams = bg->ScrollParams;
+		bg->LastGraphicsParams = bg->GraphicsParams;
+		bg->LastSize = bg->Size;
+	}
+
+	PPU.CurMode7Section = &PPU.Mode7Sections[0];
+	PPU.CurMode7Section->StartOffset = line;
+	PPU.CurMode7Section->Sel = PPU.M7Sel;
+	PPU.CurMode7Section->AffineParams1 = PPU.M7AffineParams1;
+	PPU.CurMode7Section->AffineParams2 = PPU.M7AffineParams2;
+	PPU.CurMode7Section->RefParams = PPU.M7RefParams;
+	PPU.CurMode7Section->ScrollParams = PPU.M7ScrollParams;
+	PPU.Mode7Dirty = 0;
+	
+	PPU.CurWindowSection = &PPU.WindowSections[0];
+	PPU_ComputeWindows_Hard(&PPU.CurWindowSection->Window);
+	PPU.WindowDirty = 0;
+	
+	PPU.CurMainBackdrop = &PPU.MainBackdropSections[0];
+	PPU.CurMainBackdrop->Color = TempPalette[0];
+	PPU.CurMainBackdrop->ColorMath2 = PPU.ColorMath2;
+	PPU.MainBackdropDirty = 0;
+
+	PPU.CurSubBackdrop = &PPU.SubBackdropSections[0];
+	PPU.CurSubBackdrop->Color = PPU.SubBackdrop;
+	PPU.CurSubBackdrop->Div2 = (!(PPU.ColorMath1 & 0x02)) && (PPU.ColorMath2 & 0x40);
+	PPU.SubBackdropDirty = 0;
+}
+
+void PPU_FinishHardSection(u32 line)
+{
+	int i;
+	
+	ScreenYEnd = line;
+	
+	PPU.CurModeSection->EndOffset = line;
+	
+	PPU.CurOBJSection->EndOffset = line;
+
+	for (i = 0; i < 4; i++)
+	{
+		PPU_Background* bg = &PPU.BG[i];
+		bg->CurSection->EndOffset = line;
+	}
+	
+	PPU_Mode7Section *cur = PPU.CurMode7Section;
+	cur->EndOffset = line;
+	if((PPU.Mode & 0x07) == 7)
+	{
+		if(Config.HardwareMode7 > 0)
+		{
+			int numLines = cur->EndOffset - cur->StartOffset;
+			int sizeComp = (numLines == 1 ? 0x30000 : (numLines >= 16 ? 0x100000 : 0x80000));
+			coord0 = PPU_StoreTileInCache(TILE_Mode7, 0, ((u32)PPU.VRAM[0]) << 7);
+			if((cur->Sel >> 6) == 2)
+				cur->doHW = 1;
+			else if(((cur->Sel >> 6) == 3) && (coord0 == 0xC000))
+			{
+				cur->Sel &= 0xBF;
+				cur->doHW = 1;
+			}
+			else if(((((int)cur->A * cur->A) + ((int)cur->C * cur->C)) <= sizeComp) && ((((int)cur->B * cur->B) + ((int)cur->D * cur->D)) <= sizeComp))
+				cur->doHW = 1;
+			else
+				cur->doHW = 0;
+		}
+		else
+			cur->doHW = 0;
+	}
+	
+	PPU.CurWindowSection->EndOffset = line;
+	
+	PPU.CurMainBackdrop->EndOffset = line;
+	PPU.CurSubBackdrop->EndOffset = line;
+}
+
 void PPU_RenderScanline_Hard(u32 line)
 {
 	int i;
 	
 	if (!line)
 	{
-
+		FirstScreenSection = 1;
+		
+		CurForcedBlank = PPU.ForcedBlank;
 		
 		// initialize stuff upon line 0
-
-		//memset(PPU.NumPaletteChanges, 0, 240);
-		
-		PPU.CurModeSection = &PPU.ModeSections[0];
-		PPU.CurModeSection->Mode = PPU.Mode;
-		PPU.CurModeSection->MainScreen = PPU.MainScreen;
-		PPU.CurModeSection->SubScreen = PPU.SubScreen;
-		PPU.CurModeSection->ColorMath1 = PPU.ColorMath1;
-		PPU.CurModeSection->ColorMath2 = PPU.ColorMath2;
-		PPU.ModeDirty = 0;
-
-		PPU.CurOBJSection = &PPU.OBJSections[0];
-		PPU.CurOBJSection->OBJWidth = PPU.OBJWidth;
-		PPU.CurOBJSection->OBJHeight = PPU.OBJHeight;
-		PPU.CurOBJSection->OBJTilesetAddr = PPU.OBJTilesetAddr;
-		PPU.CurOBJSection->OBJGap = PPU.OBJGap;
-		PPU.CurOBJSection->HasOAM = 1;
-		memcpy(PPU.CurOBJSection->OAM, PPU.OAM, 0x220);
-
-		
-		for (i = 0; i < 4; i++)
-		{
-			PPU_Background* bg = &PPU.BG[i];
-			
-			bg->CurSection = &bg->Sections[0];
-			bg->CurSection->ScrollParams = bg->ScrollParams;
-			bg->CurSection->GraphicsParams = bg->GraphicsParams;
-			bg->CurSection->Size = bg->Size;
-			
-			bg->LastScrollParams = bg->ScrollParams;
-			bg->LastGraphicsParams = bg->GraphicsParams;
-			bg->LastSize = bg->Size;
-		}
-
-		PPU.CurMode7Section = &PPU.Mode7Sections[0];
-		PPU.CurMode7Section->StartOffset = line;
-		PPU.CurMode7Section->Sel = PPU.M7Sel;
-		PPU.CurMode7Section->AffineParams1 = PPU.M7AffineParams1;
-		PPU.CurMode7Section->AffineParams2 = PPU.M7AffineParams2;
-		PPU.CurMode7Section->RefParams = PPU.M7RefParams;
-		PPU.CurMode7Section->ScrollParams = PPU.M7ScrollParams;
-		PPU.Mode7Dirty = 0;
-		
-		PPU.CurWindowSection = &PPU.WindowSections[0];
-		PPU_ComputeWindows_Hard(&PPU.CurWindowSection->Window);
-		PPU.WindowDirty = 0;
+		PPU_StartHardSection(1);
 		
 		PPU.CurColorEffect = &PPU.ColorEffectSections[0];
 		PPU.CurColorEffect->ColorMath = (PPU.ColorMath2 & 0x80);
 		PPU.CurColorEffect->Brightness = PPU.CurBrightness;
 		PPU.ColorEffectDirty = 0;
-		
-		PPU.CurMainBackdrop = &PPU.MainBackdropSections[0];
-		PPU.CurMainBackdrop->Color = TempPalette[0];
-		PPU.CurMainBackdrop->ColorMath2 = PPU.ColorMath2;
-		PPU.MainBackdropDirty = 0;
-		
-
-		PPU.CurSubBackdrop = &PPU.SubBackdropSections[0];
-		PPU.CurSubBackdrop->Color = PPU.SubBackdrop;
-		PPU.CurSubBackdrop->Div2 = (!(PPU.ColorMath1 & 0x02)) && (PPU.ColorMath2 & 0x40);
-		PPU.SubBackdropDirty = 0;
 	}
 	else
 	{
-		if (PPU.ModeDirty)
+		if (PPU.ForcedBlank)
 		{
-			if((PPU.CurModeSection->Mode != PPU.Mode) ||
-			   (PPU.CurModeSection->MainScreen != PPU.MainScreen) ||
-			   (PPU.CurModeSection->SubScreen != PPU.SubScreen) ||
-			   (PPU.CurModeSection->ColorMath1 != PPU.ColorMath1) ||
-			   (PPU.CurModeSection->ColorMath2 != PPU.ColorMath2))
+			if (!CurForcedBlank)
 			{
-				PPU.CurModeSection->EndOffset = line;
-				PPU.CurModeSection++;
-			
-				PPU.CurModeSection->Mode = PPU.Mode;
-				PPU.CurModeSection->MainScreen = PPU.MainScreen;
-				PPU.CurModeSection->SubScreen = PPU.SubScreen;
-				PPU.CurModeSection->ColorMath1 = PPU.ColorMath1;
-				PPU.CurModeSection->ColorMath2 = PPU.ColorMath2;
-				PPU.MainBackdropDirty = 1;
-			}		
-		}
-
-		if (PPU.OBJDirty)
-		{
-			PPU.CurOBJSection->EndOffset = line;
-			PPU.CurOBJSection++;
-
-			PPU.CurOBJSection->OBJWidth = PPU.OBJWidth;
-			PPU.CurOBJSection->OBJHeight = PPU.OBJHeight;
-			PPU.CurOBJSection->OBJTilesetAddr = PPU.OBJTilesetAddr;
-			PPU.CurOBJSection->OBJGap = PPU.OBJGap;
-			
-			if (PPU.OBJDirty & 0x02)
-			{
-				PPU.CurOBJSection->HasOAM = 1;
-				memcpy(PPU.CurOBJSection->OAM, PPU.OAM, 0x220);
+				PPU_HardRenderSection(line);
 			}
-			else
-				PPU.CurOBJSection->HasOAM = 0;
-			
-			PPU.OBJDirty = 0;
 		}
-		
-
-		u32 optChange = 0;
-		for (i = 3; i >= 0; i--)
+		else if (CurForcedBlank)
 		{
-			PPU_Background* bg = &PPU.BG[i];
-			
-			if(!PPU.ModeDirty)
+			PPU_StartHardSection(line);
+		}
+		else
+		{
+			if (PPU.ModeDirty)
 			{
-				if(!optChange)
+				if((PPU.CurModeSection->Mode != PPU.Mode) ||
+				   (PPU.CurModeSection->MainScreen != PPU.MainScreen) ||
+				   (PPU.CurModeSection->SubScreen != PPU.SubScreen) ||
+				   (PPU.CurModeSection->ColorMath1 != PPU.ColorMath1) ||
+				   (PPU.CurModeSection->ColorMath2 != PPU.ColorMath2))
 				{
-					if(i==2 && (PPU.CurModeSection->Mode & 0x7) > 0 && !(PPU.CurModeSection->Mode & 0x1))
-					{
-						if(bg->ScrollParams == bg->LastScrollParams && bg->GraphicsParams == bg->LastGraphicsParams && bg->Size == bg->LastSize)
-							continue;
-						else
-							optChange = 1;
-					}
-					else
-						if (bg->ScrollParams == bg->LastScrollParams && bg->GraphicsParams == bg->LastGraphicsParams && bg->Size == bg->LastSize)
-							continue;
+					PPU.CurModeSection->EndOffset = line;
+					PPU.CurModeSection++;
+				
+					PPU.CurModeSection->Mode = PPU.Mode;
+					PPU.CurModeSection->MainScreen = PPU.MainScreen;
+					PPU.CurModeSection->SubScreen = PPU.SubScreen;
+					PPU.CurModeSection->ColorMath1 = PPU.ColorMath1;
+					PPU.CurModeSection->ColorMath2 = PPU.ColorMath2;
+					PPU.MainBackdropDirty = 1;
+				}		
+			}
+
+			if (PPU.OBJDirty)
+			{
+				PPU.CurOBJSection->EndOffset = line;
+				PPU.CurOBJSection++;
+
+				PPU.CurOBJSection->OBJWidth = PPU.OBJWidth;
+				PPU.CurOBJSection->OBJHeight = PPU.OBJHeight;
+				PPU.CurOBJSection->OBJTilesetAddr = PPU.OBJTilesetAddr;
+				PPU.CurOBJSection->OBJGap = PPU.OBJGap;
+				
+				/*if (PPU.OBJDirty & 0x02)
+				{
+					PPU.CurOBJSection->HasOAM = 1;
+					memcpy(PPU.CurOBJSection->OAM, PPU.OAM, 0x220);
 				}
+				else
+					PPU.CurOBJSection->HasOAM = 0;*/
+				
+				PPU.OBJDirty = 0;
 			}
-	
-			bg->CurSection->EndOffset = line;
-			bg->CurSection++;
 			
-			bg->CurSection->ScrollParams = bg->ScrollParams;
-			bg->CurSection->GraphicsParams = bg->GraphicsParams;
-			bg->CurSection->Size = bg->Size;
-			
-			bg->LastScrollParams = bg->ScrollParams;
-			bg->LastGraphicsParams = bg->GraphicsParams;
-			bg->LastSize = bg->Size;
-		}
 
-		PPU.ModeDirty = 0;
-		
-		if (PPU.Mode7Dirty && (PPU.Mode & 0x07) == 7)
-		{
-			PPU_Mode7Section *cur = PPU.CurMode7Section;
-			if((cur->Sel != PPU.M7Sel) ||
-			   (cur->AffineParams1 != PPU.M7AffineParams1) ||
-			   (cur->AffineParams2 != PPU.M7AffineParams2) ||
-			   (cur->RefParams != PPU.M7RefParams) ||
-			   (cur->ScrollParams != PPU.M7ScrollParams))
+			u32 optChange = 0;
+			for (i = 3; i >= 0; i--)
 			{
-				cur->EndOffset = line;
-
+				PPU_Background* bg = &PPU.BG[i];
+				
+				if(!PPU.ModeDirty)
 				{
-					if(Config.HardwareMode7 > 0)
+					if(!optChange)
 					{
-						int numLines = cur->EndOffset - cur->StartOffset;
-						int sizeComp = (numLines == 1 ? 0x30000 : (numLines >= 16 ? 0x100000 : 0x80000));
-						coord0 = PPU_StoreTileInCache(TILE_Mode7, 0, ((u32)PPU.VRAM[0]) << 7);
-						if((cur->Sel >> 6) == 2)
-							cur->doHW = 1;
-						else if(((cur->Sel >> 6) == 3) && (coord0 == 0xC000))
+						if(i==2 && (PPU.CurModeSection->Mode & 0x7) > 0 && !(PPU.CurModeSection->Mode & 0x1))
 						{
-							cur->Sel &= 0xBF;
-							cur->doHW = 1;
+							if(bg->ScrollParams == bg->LastScrollParams && bg->GraphicsParams == bg->LastGraphicsParams && bg->Size == bg->LastSize)
+								continue;
+							else
+								optChange = 1;
 						}
-						else if(((((int)cur->A * cur->A) + ((int)cur->C * cur->C)) <= sizeComp) && ((((int)cur->B * cur->B) + ((int)cur->D * cur->D)) <= sizeComp))
-							cur->doHW = 1;
+						else
+							if (bg->ScrollParams == bg->LastScrollParams && bg->GraphicsParams == bg->LastGraphicsParams && bg->Size == bg->LastSize)
+								continue;
+					}
+				}
+		
+				bg->CurSection->EndOffset = line;
+				bg->CurSection++;
+				
+				bg->CurSection->ScrollParams = bg->ScrollParams;
+				bg->CurSection->GraphicsParams = bg->GraphicsParams;
+				bg->CurSection->Size = bg->Size;
+				
+				bg->LastScrollParams = bg->ScrollParams;
+				bg->LastGraphicsParams = bg->GraphicsParams;
+				bg->LastSize = bg->Size;
+			}
+
+			PPU.ModeDirty = 0;
+			
+			if (PPU.Mode7Dirty && (PPU.Mode & 0x07) == 7)
+			{
+				PPU_Mode7Section *cur = PPU.CurMode7Section;
+				if((cur->Sel != PPU.M7Sel) ||
+				   (cur->AffineParams1 != PPU.M7AffineParams1) ||
+				   (cur->AffineParams2 != PPU.M7AffineParams2) ||
+				   (cur->RefParams != PPU.M7RefParams) ||
+				   (cur->ScrollParams != PPU.M7ScrollParams))
+				{
+					cur->EndOffset = line;
+
+					{
+						if(Config.HardwareMode7 > 0)
+						{
+							int numLines = cur->EndOffset - cur->StartOffset;
+							int sizeComp = (numLines == 1 ? 0x30000 : (numLines >= 16 ? 0x100000 : 0x80000));
+							coord0 = PPU_StoreTileInCache(TILE_Mode7, 0, ((u32)PPU.VRAM[0]) << 7);
+							if((cur->Sel >> 6) == 2)
+								cur->doHW = 1;
+							else if(((cur->Sel >> 6) == 3) && (coord0 == 0xC000))
+							{
+								cur->Sel &= 0xBF;
+								cur->doHW = 1;
+							}
+							else if(((((int)cur->A * cur->A) + ((int)cur->C * cur->C)) <= sizeComp) && ((((int)cur->B * cur->B) + ((int)cur->D * cur->D)) <= sizeComp))
+								cur->doHW = 1;
+							else
+								cur->doHW = 0;
+						}
 						else
 							cur->doHW = 0;
 					}
-					else
-						cur->doHW = 0;
-				}
 
-				cur = ++PPU.CurMode7Section;
-				
-				cur->StartOffset = line;
-				cur->Sel = PPU.M7Sel;
-				cur->AffineParams1 = PPU.M7AffineParams1;
-			    cur->AffineParams2 = PPU.M7AffineParams2;
-			    cur->RefParams = PPU.M7RefParams;
-			    cur->ScrollParams = PPU.M7ScrollParams;
+					cur = ++PPU.CurMode7Section;
+					
+					cur->StartOffset = line;
+					cur->Sel = PPU.M7Sel;
+					cur->AffineParams1 = PPU.M7AffineParams1;
+					cur->AffineParams2 = PPU.M7AffineParams2;
+					cur->RefParams = PPU.M7RefParams;
+					cur->ScrollParams = PPU.M7ScrollParams;
+				}
+				PPU.Mode7Dirty = 0;
 			}
-			PPU.Mode7Dirty = 0;
+			
+			if (PPU.WindowDirty)
+			{
+				PPU.CurWindowSection->EndOffset = line;
+				PPU.CurWindowSection++;
+				
+				PPU_ComputeWindows_Hard(&PPU.CurWindowSection->Window);
+				PPU.WindowDirty = 0;
+			}
+
+			if(PPU.MainBackdropDirty)
+			{
+				PPU.CurMainBackdrop->EndOffset = line;
+				PPU.CurMainBackdrop++;
+				
+				PPU.CurMainBackdrop->Color = TempPalette[0];
+				PPU.CurMainBackdrop->ColorMath2 = PPU.ColorMath2;
+				PPU.MainBackdropDirty = 0;
+			}
+			
+			if (PPU.SubBackdropDirty)
+			{
+				PPU.CurSubBackdrop->EndOffset = line;
+				PPU.CurSubBackdrop++;
+				
+				PPU.CurSubBackdrop->Color = PPU.SubBackdrop;
+				PPU.CurSubBackdrop->Div2 = (!(PPU.ColorMath1 & 0x02)) && (PPU.ColorMath2 & 0x40);
+				PPU.SubBackdropDirty = 0;
+			}
 		}
 		
-		if (PPU.WindowDirty)
-		{
-			PPU.CurWindowSection->EndOffset = line;
-			PPU.CurWindowSection++;
-			
-			PPU_ComputeWindows_Hard(&PPU.CurWindowSection->Window);
-			PPU.WindowDirty = 0;
-		}
+		CurForcedBlank = PPU.ForcedBlank;
 		
 		if (PPU.ColorEffectDirty)
 		{
@@ -2586,26 +2707,6 @@ void PPU_RenderScanline_Hard(u32 line)
 			PPU.CurColorEffect->ColorMath = (PPU.ColorMath2 & 0x80);
 			PPU.CurColorEffect->Brightness = PPU.CurBrightness;
 			PPU.ColorEffectDirty = 0;
-		}
-
-		if(PPU.MainBackdropDirty)
-		{
-			PPU.CurMainBackdrop->EndOffset = line;
-			PPU.CurMainBackdrop++;
-			
-			PPU.CurMainBackdrop->Color = TempPalette[0];
-			PPU.CurMainBackdrop->ColorMath2 = PPU.ColorMath2;
-			PPU.MainBackdropDirty = 0;
-		}
-		
-		if (PPU.SubBackdropDirty)
-		{
-			PPU.CurSubBackdrop->EndOffset = line;
-			PPU.CurSubBackdrop++;
-			
-			PPU.CurSubBackdrop->Color = PPU.SubBackdrop;
-			PPU.CurSubBackdrop->Div2 = (!(PPU.ColorMath1 & 0x02)) && (PPU.ColorMath2 & 0x40);
-			PPU.SubBackdropDirty = 0;
 		}
 	}
 }
@@ -2799,7 +2900,7 @@ void PPU_HardRender_Mode7(int ystart, int yend, u32 screen, u32 mode, u32 colorm
 void PPU_HardRender(u32 snum)
 {
 	PPU_ModeSection* s = &PPU.ModeSections[0];
-	int ystart = 1;
+	int ystart = ScreenYStart;
 	
 	for (;;)
 	{
@@ -2813,7 +2914,7 @@ void PPU_HardRender(u32 snum)
 		{
 			if (!(s->ColorMath1 & 0x02))
 			{
-				if (s->EndOffset >= 240) break;
+				if (s->EndOffset >= ScreenYEnd) break;
 				ystart = s->EndOffset;
 				s++;
 				continue;
@@ -2864,10 +2965,52 @@ void PPU_HardRender(u32 snum)
 				break;
 		}
 		
-		if (s->EndOffset >= 240) break;
+		if (s->EndOffset >= ScreenYEnd) break;
 		ystart = s->EndOffset;
 		s++;
 	}
+}
+
+
+void PPU_HardRenderSection(u32 endline)
+{
+	if (FirstScreenSection)
+	{
+		SwapVertexBuf();
+		vertexPtrStart = vertexPtr;
+		
+		FirstScreenSection = 0;
+	}
+	
+	PPU_FinishHardSection(endline);
+	
+	if (CurForcedBlank) return;
+	
+	PPU_ClearScreens();
+
+	PPU_DrawWindowMask();
+
+	// OBJ LAYER
+	
+	bglViewport(0, 0, 256, 256);
+	bglUseShader(&hardRenderOBJShaderP);
+	PPU_HardRenderOBJs();
+	
+	// MAIN SCREEN
+
+	doingBG = 0;
+	scissorY = 256;
+	bglUseShader(&hardRenderShaderP);
+	bglOutputBuffers(MainScreenTex, DepthBuffer, 256, 512);
+	bglViewport(0, 256, 256, 256);
+	PPU_HardRender(0);
+	
+	// SUB SCREEN
+
+	doingBG = 0;
+	scissorY = 0;
+	bglViewport(0, 0, 256, 256);
+	PPU_HardRender(1); 
 }
 
 
@@ -2875,7 +3018,7 @@ void PPU_VBlank_Hard(int endLine)
 {
 	int i;
 
-	PPU.CurModeSection->EndOffset = endLine;
+	/*PPU.CurModeSection->EndOffset = endLine;
 	
 	PPU.CurOBJSection->EndOffset = endLine;
 
@@ -2910,14 +3053,27 @@ void PPU_VBlank_Hard(int endLine)
 			cur->doHW = 0;
 	}
 	
-	PPU.CurWindowSection->EndOffset = endLine;
+	PPU.CurWindowSection->EndOffset = endLine;*/
 	
 	PPU.CurColorEffect->EndOffset = endLine;
-	PPU.CurMainBackdrop->EndOffset = endLine;
-	PPU.CurSubBackdrop->EndOffset = endLine;
+	//PPU.CurMainBackdrop->EndOffset = endLine;
+	//PPU.CurSubBackdrop->EndOffset = endLine;
 	
 	
-	vertexPtr = vertexBuf;
+	/*if (PPU.PaletteUpdateCount256 != PPU_LastPalUpdate256)
+	{
+		PPU_LastPalUpdate256 = PPU.PaletteUpdateCount256;
+		PPU_PalHash256 = SuperFastHash(0, &PPU.Palette[0], 512);
+		
+		if (PPU.PaletteUpdateCount128 != PPU_LastPalUpdate128)
+		{
+			PPU_LastPalUpdate128 = PPU.PaletteUpdateCount128;
+			PPU_PalHash128 = SuperFastHash(0, &PPU.Palette[0], 256);
+		}
+	}*/
+	
+	
+	/*vertexPtr = vertexBuf;
 	
 	PPU_ClearScreens();
 
@@ -2950,18 +3106,20 @@ void PPU_VBlank_Hard(int endLine)
 	scissorY = 0;
 	//bglOutputBuffers(SubScreenTex, OBJDepthBuffer, 256, 256);
 	bglViewport(0, 0, 256, 256);
-	PPU_HardRender(1); 
+	PPU_HardRender(1); */
+	
+	PPU_HardRenderSection(endLine);
 	
 	
-	PPU_ClearAlpha();
+	PPU_ClearAlpha(); // NOT dependent on any section
 
 	// reuse the color math system used by the soft renderer
 	bglEnableStencilTest(false);
 	bglScissorMode(GPU_SCISSOR_DISABLE);
 	PPU_BlendScreens(GPU_RGBA8);
 
-	u32 taken = ((u32)vertexPtr - (u32)vertexBuf);
-	GSPGPU_FlushDataCache(vertexBuf, taken);
+	u32 taken = ((u32)vertexPtr - (u32)vertexPtrStart);
+	GSPGPU_FlushDataCache(vertexPtrStart, taken);
 	if (taken > 0x200000)
 		bprintf("OVERFLOW %06X/200000 (%d%%)\n", taken, (taken*100)/0x200000);
 		

@@ -69,8 +69,10 @@ shaderProgram_s plainQuadShaderP;
 shaderProgram_s windowMaskShaderP;
 
 
+const int vertexBufSize = 0x80000*4;
 void* vertexBuf;
 void* vertexPtr;
+u8 curVertexBuf;
 
 int GPUState = 0;
 DVLB_s* CurShader = NULL;
@@ -570,6 +572,12 @@ void VSyncAndFrameskip()
 	}
 }
 
+void SwapVertexBuf()
+{
+	curVertexBuf ^= 1;
+	vertexPtr = &((u8*)vertexBuf)[curVertexBuf ? vertexBufSize : 0];
+}
+
 
 bool TakeScreenshot(char* path)
 {
@@ -867,8 +875,9 @@ int main()
 	bglInit();
 	RenderState = 0;
 	
-	vertexBuf = linearAlloc(0x80000 * 4);
+	vertexBuf = linearAlloc(vertexBufSize * 2);
 	vertexPtr = vertexBuf;
+	curVertexBuf = 0;
 	
 	//svcSetThreadPriority(gspEventThread, 0x30);
 	
@@ -980,6 +989,11 @@ int main()
 					pause = 1;
 					svcSignalEvent(SPCSync);
 				}
+				
+				/*if (held & KEY_X)
+				{
+					svcSleepThread(1000000000);
+				}*/
 			}
 			else
 			{

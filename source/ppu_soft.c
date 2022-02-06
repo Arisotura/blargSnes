@@ -25,6 +25,7 @@
 
 extern void* vertexBuf;
 extern void* vertexPtr;
+void SwapVertexBuf();
 
 extern DVLB_s* softRenderShader;
 
@@ -1536,7 +1537,7 @@ void PPU_FBTransferDone(gxCmdQueue_s* queue)
 	bprintf("PISS\n");
 	gxCmdQueueSetCallback(queue, NULL, NULL);
 	
-	vertexPtr = vertexBuf;
+	SwapVertexBuf();
 	
 	PPU_BlendScreens(GPU_RGBA5551);
 }
@@ -1558,7 +1559,7 @@ void PPU_VBlank_Soft()
 	gspWaitForPPF();
 	GX_BindQueue(&GXQueue);
 	
-	vertexPtr = vertexBuf;
+	SwapVertexBuf();
 	
 	PPU_BlendScreens(GPU_RGBA5551);
 	
