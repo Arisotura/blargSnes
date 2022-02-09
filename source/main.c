@@ -558,7 +558,8 @@ void VSyncAndFrameskip()
 		}
 		
 		gfxSwapBuffersGpu();
-		gspWaitForEvent(GSPGPU_EVENT_VBlank0, false);
+		gspWaitForVBlank();
+		//gspWaitForEvent(GSPGPU_EVENT_VBlank0, false);
 		//LastVBlank = svcGetSystemTick();
 	}
 	

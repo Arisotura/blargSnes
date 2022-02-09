@@ -605,15 +605,15 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 	
 	switch (type)
 	{
-		case TILE_2BPP: nonzero = PPU_DecodeTile_2bpp((u16*)&PPU.VRAM[addr], &PPU.Palette[palid << 2], tempbuf); break;
-		case TILE_4BPP: nonzero = PPU_DecodeTile_4bpp((u16*)&PPU.VRAM[addr], &PPU.Palette[palid << 4], tempbuf); break;
+		case TILE_2BPP: nonzero = PPU_DecodeTile_2bpp((u16*)&PPU.VRAM[addr], &PPU.HardPalette[palid << 2], tempbuf); break;
+		case TILE_4BPP: nonzero = PPU_DecodeTile_4bpp((u16*)&PPU.VRAM[addr], &PPU.HardPalette[palid << 4], tempbuf); break;
 		
 		case TILE_8BPP: 
 			// TODO: direct color!
-			nonzero = PPU_DecodeTile_8bpp((u16*)&PPU.VRAM[addr], &PPU.Palette[0], tempbuf); 
+			nonzero = PPU_DecodeTile_8bpp((u16*)&PPU.VRAM[addr], &PPU.HardPalette[0], tempbuf); 
 			break;
 
-		case TILE_Mode7: nonzero = PPU_DecodeTile_8bpp_m7((u16*)&PPU.VRAM7[addr << 2], &PPU.Palette[0], tempbuf);	break;
+		case TILE_Mode7: nonzero = PPU_DecodeTile_8bpp_m7((u16*)&PPU.VRAM7[addr << 2], &PPU.HardPalette[0], tempbuf);	break;
 		case TILE_Mode7_1: nonzero = PPU_DecodeTile_8bpp_m7e((u16*)&PPU.VRAM7[addr << 2], &PPU.PaletteEx1[0], tempbuf, 0); break;
 		case TILE_Mode7_2: nonzero = PPU_DecodeTile_8bpp_m7e((u16*)&PPU.VRAM7[addr << 2], &PPU.PaletteEx2[0], tempbuf, 1); break;
 	}
@@ -656,22 +656,6 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 	}
 	
 	return coord;
-}
-
-
-void PPU_ApplyPaletteChanges(u32 num, PPU_PaletteChange* changes)
-{
-	u32 i;
-	
-	for (i = 0; i < num; i++)
-	{
-		PPU.Palette[changes[i].Address] = changes[i].Color;
-		if(changes[i].Address < 128)
-		{
-			PPU.PaletteEx1[changes[i].Address] = changes[i].Color;
-			PPU.PaletteEx2[changes[i].Address + 128] = changes[i].Color;
-		}
-	}
 }
 
 
@@ -1520,8 +1504,8 @@ void PPU_HardRenderBG_ProcessMode7(int ystart, int yend)
 	u8 wasSW = 0;
 
 
-	u16 oldcolor0 = PPU.Palette[0];
-	PPU.Palette[0] = 0;
+	u16 oldcolor0 = PPU.HardPalette[0];
+	PPU.HardPalette[0] = 0;
 
 	PPU_Mode7Section* s = &PPU.Mode7Sections[0];
 
@@ -1692,7 +1676,7 @@ void PPU_HardRenderBG_ProcessMode7(int ystart, int yend)
 						tileidx += ((x & 0x700) >> 7) + ((y & 0x700) >> 4) + 1;
 						colorval = PPU.VRAM[tileidx];
 				
-						*buffer = PPU.Palette[colorval];
+						*buffer = PPU.HardPalette[colorval];
 						buffer[65536] = PPU.PaletteEx2[colorval];
 						buffer += xincr[i&7];
 				
@@ -1732,7 +1716,7 @@ void PPU_HardRenderBG_ProcessMode7(int ystart, int yend)
 				
 						tileidx += ((x & 0x700) >> 7) + ((y & 0x700) >> 4) + 1;
 						colorval = PPU.VRAM[tileidx];
-						*buffer = PPU.Palette[colorval];
+						*buffer = PPU.HardPalette[colorval];
 						buffer += xincr[i&7];
 						x += A;
 						y += C;
@@ -1750,7 +1734,7 @@ void PPU_HardRenderBG_ProcessMode7(int ystart, int yend)
 	}
 	s->endSW = 1;
 
-	PPU.Palette[0] = oldcolor0;
+	PPU.HardPalette[0] = oldcolor0;
 
 }
 
@@ -1765,8 +1749,8 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend, u32 prio)
 	u16* vptr = (u16*)vertexPtr;
 	
 
-	u16 oldcolor0 = PPU.Palette[0];
-	PPU.Palette[0] = 0;
+	u16 oldcolor0 = PPU.HardPalette[0];
+	PPU.HardPalette[0] = 0;
 
 	style = (PPU.M7ExtBG ? (prio ? TILE_Mode7_2 : TILE_Mode7_1) : TILE_Mode7);
 
@@ -2016,7 +2000,7 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend, u32 prio)
 		s++;
 	}
 	
-	PPU.Palette[0] = oldcolor0;
+	PPU.HardPalette[0] = oldcolor0;
 
 	// As a precaution, we'll revert back to normal hardware-rendering should the need be
 	if(curHW)
@@ -2162,7 +2146,7 @@ void PPU_HardRenderOBJs()
 	if (i < 0) i = 127;
 	int last = i;
 	int ystart = ScreenYStart, yend;
-	u8* cur_oam = PPU.OAM;
+	u8* cur_oam = PPU.HardOAM;
 	
 	
 	bglOutputBuffers(OBJColorBuffer, OBJPrioBuffer, 256, 256);
@@ -2979,23 +2963,23 @@ void PPU_HardRenderSection(u32 endline)
 	if (PPU.PaletteUpdateCount256 != PPU_LastPalUpdate256)
 	{
 		PPU_LastPalUpdate256 = PPU.PaletteUpdateCount256;
-		PPU_PalHash256 = SuperFastPalHash((u8*)&PPU.Palette[0], 512);
+		PPU_PalHash256 = SuperFastPalHash((u8*)&PPU.HardPalette[0], 512);
 		
 		if (PPU.PaletteUpdateCount128 != PPU_LastPalUpdate128)
 		{
 			PPU_LastPalUpdate128 = PPU.PaletteUpdateCount128;
-			PPU_PalHash128 = SuperFastPalHash((u8*)&PPU.Palette[0], 256);
+			PPU_PalHash128 = SuperFastPalHash((u8*)&PPU.HardPalette[0], 256);
 			
 			for (u32 i = 0; i < 32; i++)
 			{
 				if (PPU.PaletteUpdateCount[i] != PPU_LastPalUpdate[i])
-					PPU_PalHash4[i] = SuperFastPalHash((u8*)&PPU.Palette[i << 2], 8);
+					PPU_PalHash4[i] = SuperFastPalHash((u8*)&PPU.HardPalette[i << 2], 8);
 			}
 			
 			for (u32 i = 0; i < 16; i++)
 			{
 				if (*(u32*)&PPU.PaletteUpdateCount[i << 2] != *(u32*)&PPU_LastPalUpdate[i << 2])
-					PPU_PalHash16[i] = SuperFastPalHash((u8*)&PPU.Palette[i << 4], 32);
+					PPU_PalHash16[i] = SuperFastPalHash((u8*)&PPU.HardPalette[i << 4], 32);
 				
 				*(u32*)&PPU_LastPalUpdate[i << 2] = *(u32*)&PPU.PaletteUpdateCount[i << 2];
 			}

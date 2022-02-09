@@ -207,6 +207,7 @@ void PPU_Reset()
 		for (i = 1; i < 256; i++)
 		{
 			PPU.Palette[i] = 0x0001;
+			PPU.HardPalette[i] = 0x0001;
 			PPU.PaletteEx1[i] = (i < 128);
 			PPU.PaletteEx2[i] = (i >= 128);
 		}
@@ -285,48 +286,34 @@ inline void PPU_SetColor(u32 num, u16 val)
 	
 	if (PPU.HardwareRenderer)
 	{
-		// check if the write is happening mid-frame
-#if 0
-		if (PPU.VCount < PPU.ScreenHeight-1 && !PPU.ForcedBlank)
+		PPU.Palette[num] = temp | 0x0001;
+		if(num < 128)
 		{
-			// writes happening during this scanline will be applied to the next one
-			// (we assume they happen during HBlank)
-			u32 line = PPU.VCount + 1;
-			
-			u32 n = PPU.NumPaletteChanges[line];
-			PPU.PaletteChanges[line][n].Address = num;
-			PPU.PaletteChanges[line][n].Color = temp | 0x0001;
-			PPU.NumPaletteChanges[line] = n+1;
-			
-			// tell the hardware renderer to start a new section
-			// TODO: also check if the OBJ palette was updated
-			PPU.ModeDirty = 1;
+			//PPU.PaletteEx1[num] = temp | 0x0001;
+			//PPU.PaletteEx2[num + 128] = temp | 0x0001;
+			if(num > 0)
+				PPU.PaletteUpdateCount128++;
 		}
+		
+		if(num == 0)
+			PPU.MainBackdropDirty = 1;
 		else
-#endif
 		{
-			
-
-			PPU.Palette[num] = temp | 0x0001;
-			if(num < 128)
-			{
-				PPU.PaletteEx1[num] = temp | 0x0001;
-				PPU.PaletteEx2[num + 128] = temp | 0x0001;
-				if(num > 0)
-					PPU.PaletteUpdateCount128++;
-			}
-			
-			if(num == 0)
-				PPU.MainBackdropDirty = 1;
-			else
-			{
-				PPU.PaletteUpdateCount[num >> 2]++;
-				PPU.PaletteUpdateCount256++;
-			}
+			PPU.PaletteUpdateCount[num >> 2]++;
+			PPU.PaletteUpdateCount256++;
 		}
 	}
 	else
 		PPU.Palette[num] = temp;
+}
+
+void PPU_UpdateHardMemory()
+{
+	memcpy(PPU.HardPalette, PPU.Palette, 256*2);
+	memcpy(&PPU.PaletteEx1[0], PPU.Palette, 128*2);
+	memcpy(&PPU.PaletteEx2[128], PPU.Palette, 128*2);
+	
+	memcpy(PPU.HardOAM, PPU.OAM, 0x220);
 }
 
 u32 PPU_TranslateVRAMAddress(u32 addr)
@@ -510,6 +497,12 @@ void PPU_Write8(u32 addr, u8 val)
 	{
 		case 0x00: // force blank/master brightness
 			{
+				if ((val & 0x80) && (!PPU.ForcedBlank))
+				{
+					if (PPU.HardwareRenderer)
+						PPU_UpdateHardMemory();
+				}
+				
 				PPU.ForcedBlank = val & 0x80;
 				if (val & 0x80) val = 0;
 				else val &= 0x0F;
@@ -1164,6 +1157,7 @@ void PPU_VBlank()
 	{
 		if (PPU.HardwareRenderer)
 		{
+			PPU_UpdateHardMemory();
 			PPU_VBlank_Hard(240);
 		}
 		else

@@ -170,13 +170,6 @@ typedef struct
 
 typedef struct
 {
-	u16 Address;
-	u16 Color;		// 3DS-format color
-	
-} PPU_PaletteChange;
-
-typedef struct
-{
 	// no start offset in here; start offset is the end offset of the previous segment
 	u16 EndOffset;	// 256 = final segment
 	u8 WindowMask;	// each 2 bits: 2=inside, 3=outside
@@ -253,6 +246,7 @@ typedef struct
 	u8 CGRAMVal;
 	u16 CGRAM[256];		// SNES CGRAM, xBGR1555
 	u16 Palette[256];	// our own palette, converted to RGBx5551
+	u16 HardPalette[256]; // special copy for the hardware renderer
 	u16 PaletteEx1[256];
 	u16 PaletteEx2[256];
 	u8 PaletteUpdateCount[64];
@@ -274,6 +268,7 @@ typedef struct
 	u8 FirstOBJ;
 	u16 OAMReload;
 	u8 OAM[0x220];
+	u8 HardOAM[0x220];
 	
 	u8* OBJWidth;
 	u8* OBJHeight;
