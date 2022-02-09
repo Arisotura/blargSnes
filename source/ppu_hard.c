@@ -129,7 +129,13 @@ u32 coord0;
 
 
 u16* PPU_TileCache;
+u16* PPU_TileCacheRAM;
 u32 PPU_TileCacheIndex;
+
+#define TC_CHUNK_SHIFT 12   // divide the cache in 4K chunks
+#define TC_NUM_CHUNKS (0x200000 >> TC_CHUNK_SHIFT)
+#define TC_CHUNK_SIZE (1 << TC_CHUNK_SHIFT)
+u8 PPU_TileChunkDirty[TC_NUM_CHUNKS];
 
 u16 PPU_TileCacheList[0x20000];
 u32 PPU_TileCacheReverseList[16384];
@@ -168,8 +174,12 @@ void PPU_Init_Hard()
 	
 	Mode7ColorBuffer = (u16*)linearAlloc(256*512*2);
 	
-	PPU_TileCache = (u16*)linearAlloc(1024*1024*sizeof(u16));
+	PPU_TileCache = (u16*)VRAM_Alloc(1024*1024*sizeof(u16));
+	PPU_TileCacheRAM = (u16*)linearAlloc(1024*1024*sizeof(u16));
 	PPU_TileCacheIndex = 0;
+	
+	for (i = 0; i < TC_NUM_CHUNKS; i++)
+		PPU_TileChunkDirty[i] = 0;
 	
 	for (i = 0; i < 0x10000; i++)
 	{
@@ -182,7 +192,7 @@ void PPU_Init_Hard()
 		PPU_TileCacheReverseList[i] = 0x80000000;
 		
 	for (i = 0; i < 1024*1024; i++)
-		PPU_TileCache[i] = 0xF800;
+		PPU_TileCacheRAM[i] = 0xF800;
 	
 	for (i = 0; i < 64; i++)
 		PPU_LastPalUpdate[i] = 0;
@@ -207,7 +217,8 @@ void PPU_Init_Hard()
 
 void PPU_DeInit_Hard()
 {
-	linearFree(PPU_TileCache);
+	VRAM_Free(PPU_TileCache);
+	linearFree(PPU_TileCacheRAM);
 	
 	VRAM_Free(MainScreenTex);
 	VRAM_Free(DepthBuffer);
@@ -634,7 +645,8 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 			PPU_TileCacheList[key] = coord;
 		}
 		
-		memcpy(&PPU_TileCache[tileidx * 64], tempbuf, 64*2);
+		memcpy(&PPU_TileCacheRAM[tileidx * 64], tempbuf, 64*2);
+		PPU_TileChunkDirty[tileidx >> (TC_CHUNK_SHIFT-7)] = 1;
 		
 		// invalidate previous tile if need be
 		u32 oldkey = PPU_TileCacheReverseList[tileidx];
@@ -3044,13 +3056,28 @@ void PPU_VBlank_Hard(int endLine)
 	GSPGPU_FlushDataCache(vertexPtrStart, taken);
 	if (taken > 0x200000)
 		bprintf("OVERFLOW %06X/200000 (%d%%)\n", taken, (taken*100)/0x200000);
-		
 	
-	GSPGPU_FlushDataCache(PPU_TileCache, 1024*1024*sizeof(u16));
-	//GX_DisplayTransfer((u32*)PPU_TileCacheRAM, 0x04000400, (u32*)PPU_TileCache, 0x04000400, 0x3308);
-	//gspWaitForPPF();
-	//GX_RequestDma((u32*)PPU_TileCacheRAM, (u32*)PPU_TileCache, 1024*1024*sizeof(u16));
-	//gspWaitForDMA();
+	u32 rgnstart = 0;
+	u32 rgnsize = 0;
+	for (u32 i = 0; i < TC_NUM_CHUNKS; i++)
+	{
+		if (!PPU_TileChunkDirty[i])
+		{
+			rgnsize = 0;
+			continue;
+		}
+		
+		PPU_TileChunkDirty[i] = 0;
+		
+		if (!rgnsize) rgnstart = i << TC_CHUNK_SHIFT;
+		rgnsize += TC_CHUNK_SIZE;
+		
+		if ((i == (TC_NUM_CHUNKS-1)) || (!PPU_TileChunkDirty[i+1]))
+		{
+			GSPGPU_FlushDataCache(&PPU_TileCacheRAM[rgnstart>>1], rgnsize);
+			GX_RequestDma((u32*)&PPU_TileCacheRAM[rgnstart>>1], (u32*)&PPU_TileCache[rgnstart>>1], rgnsize);
+		}
+	}
 	
 	GSPGPU_FlushDataCache(Mode7ColorBuffer, 256*512*sizeof(u16));
 }
