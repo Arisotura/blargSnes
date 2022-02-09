@@ -144,7 +144,7 @@ void bglInit()
 	bglCommandBuffer = linearAlloc(bglCommandBufferSize * 4);
 	
 	bglCommandBufferPos = 0;
-	GPUCMD_SetBuffer(&bglCommandBuffer[bglCommandBufferPos], bglCommandBufferSize, 0);
+	GPUCMD_SetBuffer(&((u32*)bglCommandBuffer)[bglCommandBufferPos], bglCommandBufferSize, 0);
 	
 	// sane defaults
 	bglDepthRange(-1.0f, 0.0f);
@@ -658,5 +658,5 @@ void bglFlush()
 	GX_ProcessCommandList(buf, size<<2, 2);
 	
 	bglCommandBufferPos ^= (bglCommandBufferSize >> 1);
-	GPUCMD_SetBuffer(&bglCommandBuffer[bglCommandBufferPos], bglCommandBufferSize, 0);
+	GPUCMD_SetBuffer(&((u32*)bglCommandBuffer)[bglCommandBufferPos], bglCommandBufferSize, 0);
 }

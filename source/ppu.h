@@ -258,10 +258,6 @@ typedef struct
 	u8 PaletteUpdateCount[64];
 	u16 PaletteUpdateCount128;
 	u16 PaletteUpdateCount256;
-	
-	// mid-frame palette changes
-	//PPU_PaletteChange PaletteChanges[240][64];
-	//u8 NumPaletteChanges[240];
 
 	u16 VRAMAddr;
 	u16 VRAMPref;
@@ -457,5 +453,9 @@ void PPU_DeInit_Hard();
 
 void PPU_RenderScanline_Hard(u32 line);
 void PPU_VBlank_Hard();
+
+
+void PPU_ComputeWindows(PPU_WindowSegment* s);
+void PPU_BlendScreens(u32 colorformat);
 
 #endif

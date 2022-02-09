@@ -167,6 +167,9 @@ void SNES_Reset()
 		randblarg = (randblarg * 0x17374) ^ (randblarg * 0x327) ^ (randblarg << 2) ^ (randblarg << 17);
 	}
 	
+	// debug: make mainRAM predictable
+	//memset(SNES_SysRAM, 0, 128*1024);
+	
 	// fill it with STP opcodes
 #ifdef OPENBUS_EXEC_TRAP
 	memset(SNES_ExecTrap, 0xDB, 8192);
@@ -313,7 +316,7 @@ inline u8 IO_ReadKeysLow()
 {
 	u32 keys = hidKeysHeld();
 	u8 ret = 0;
-	
+
 	if (keys & KEY_A) ret |= 0x80;
 	if (keys & KEY_X) ret |= 0x40;
 	if (keys & KEY_L) ret |= 0x20;
@@ -326,7 +329,7 @@ inline u8 IO_ReadKeysHigh()
 {
 	u32 keys =  hidKeysHeld();
 	u8 ret = 0;
-	
+
 	if (keys & KEY_B) 		ret |= 0x80;
 	if (keys & KEY_Y) 		ret |= 0x40;
 	if (keys & KEY_SELECT)	ret |= 0x20;

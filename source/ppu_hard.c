@@ -71,9 +71,6 @@ u32 YOffset256[256];
 u8 FirstScreenSection;
 u8 ScreenYStart, ScreenYEnd;
 
-//u16 TempPalette[256];
-#define TempPalette PPU.Palette
-
 int doingBG = 0;
 int scissorY = 0; // gross hack
 
@@ -138,7 +135,7 @@ u16 PPU_TileCacheList[0x20000];
 u32 PPU_TileCacheReverseList[16384];
 
 u32 PPU_TileVRAMUpdate[0x20000];
-u32 PPU_TilePalUpdate[0x20000];
+u32 PPU_TilePalHash[0x20000];
 
 u8 PPU_LastPalUpdate[64];
 u16 PPU_LastPalUpdate128;
@@ -150,7 +147,8 @@ u32 PPU_PalHash128;
 u32 PPU_PalHash256;
 
 
-u32 SuperFastHash(u32 start, const u8* data, u32 len);
+u32 SuperFastHash(const u8* data, u32 len);
+u32 SuperFastPalHash(const u8* data, u32 len);
 
 void PPU_HardRenderSection(u32 endline);
 
@@ -177,7 +175,7 @@ void PPU_Init_Hard()
 	{
 		PPU_TileCacheList[i] = 0x8000;
 		PPU_TileVRAMUpdate[i] = 0;
-		PPU_TilePalUpdate[i] = 0;
+		PPU_TilePalHash[i] = 0;
 	}
 	
 	for (i = 0; i < 16384; i++)
@@ -522,11 +520,10 @@ u32 PPU_DecodeTile_8bpp_m7e(u16* vram, u16* pal, u32* dst, u32 prio)
 	return nonzero;
 }
 
-
 u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 {
 	u32 key;
-	u32 paldirty = 0;
+	u32 palhash = 0;
 	u32 m7upper = 0;
 	u32 vramdirty = 0;
 	u32 nonzero = 0;
@@ -536,29 +533,29 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 	switch (type)
 	{
 		case TILE_2BPP: 
-			paldirty = PPU.PaletteUpdateCount[palid];
+			palhash = PPU_PalHash4[palid];
 			vramdirty = PPU.VRAMUpdateCount[addr >> 4];
 			break;
 			
 		case TILE_4BPP: 
-			paldirty = *(u32*)&PPU.PaletteUpdateCount[palid << 2];
+			palhash = PPU_PalHash16[palid];
 			vramdirty = *(u16*)&PPU.VRAMUpdateCount[addr >> 4];
 			break;
 			
 		case TILE_8BPP: 
-			paldirty = PPU.PaletteUpdateCount256;
+			palhash = PPU_PalHash256;
 			vramdirty = *(u32*)&PPU.VRAMUpdateCount[addr >> 4];
 			break;
 
 		case TILE_Mode7:
-			paldirty = PPU.PaletteUpdateCount256;
+			palhash = PPU_PalHash256;
 			vramdirty = PPU.VRAM7UpdateCount[addr >> 4];
 			break;
 
 		case TILE_Mode7_2:
 			m7upper = 1;
 		case TILE_Mode7_1:
-			paldirty = PPU.PaletteUpdateCount128;
+			palhash = PPU_PalHash128;
 			vramdirty = PPU.VRAM7UpdateCount[addr >> 4];
 			break;
 
@@ -575,7 +572,7 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 	if (coord != 0x8000) // tile already exists
 	{
 		// if the VRAM hasn't been modified in the meantime, just return the old tile
-		if (vramdirty == PPU_TileVRAMUpdate[key] && paldirty == PPU_TilePalUpdate[key])
+		if (vramdirty == PPU_TileVRAMUpdate[key] && palhash == PPU_TilePalHash[key])
 			return coord;
 		
 		if (coord == 0xC000)
@@ -597,21 +594,21 @@ u32 PPU_StoreTileInCache(u32 type, u32 palid, u32 addr)
 	
 	switch (type)
 	{
-		case TILE_2BPP: nonzero = PPU_DecodeTile_2bpp(&PPU.VRAM[addr], &TempPalette[palid << 2], tempbuf); break;
-		case TILE_4BPP: nonzero = PPU_DecodeTile_4bpp(&PPU.VRAM[addr], &TempPalette[palid << 4], tempbuf); break;
+		case TILE_2BPP: nonzero = PPU_DecodeTile_2bpp((u16*)&PPU.VRAM[addr], &PPU.Palette[palid << 2], tempbuf); break;
+		case TILE_4BPP: nonzero = PPU_DecodeTile_4bpp((u16*)&PPU.VRAM[addr], &PPU.Palette[palid << 4], tempbuf); break;
 		
 		case TILE_8BPP: 
 			// TODO: direct color!
-			nonzero = PPU_DecodeTile_8bpp(&PPU.VRAM[addr], &TempPalette[0], tempbuf); 
+			nonzero = PPU_DecodeTile_8bpp((u16*)&PPU.VRAM[addr], &PPU.Palette[0], tempbuf); 
 			break;
 
-		case TILE_Mode7: nonzero = PPU_DecodeTile_8bpp_m7(&PPU.VRAM7[addr << 2], &TempPalette[0], tempbuf);	break;
-		case TILE_Mode7_1: nonzero = PPU_DecodeTile_8bpp_m7e(&PPU.VRAM7[addr << 2], &PPU.PaletteEx1[0], tempbuf, 0); break;
-		case TILE_Mode7_2: nonzero = PPU_DecodeTile_8bpp_m7e(&PPU.VRAM7[addr << 2], &PPU.PaletteEx2[0], tempbuf, 1); break;
+		case TILE_Mode7: nonzero = PPU_DecodeTile_8bpp_m7((u16*)&PPU.VRAM7[addr << 2], &PPU.Palette[0], tempbuf);	break;
+		case TILE_Mode7_1: nonzero = PPU_DecodeTile_8bpp_m7e((u16*)&PPU.VRAM7[addr << 2], &PPU.PaletteEx1[0], tempbuf, 0); break;
+		case TILE_Mode7_2: nonzero = PPU_DecodeTile_8bpp_m7e((u16*)&PPU.VRAM7[addr << 2], &PPU.PaletteEx2[0], tempbuf, 1); break;
 	}
 	
 	PPU_TileVRAMUpdate[key] = vramdirty;
-	PPU_TilePalUpdate[key] = paldirty;
+	PPU_TilePalHash[key] = palhash;
 	
 	if (!nonzero) // tile is empty - mark it as such
 	{
@@ -711,7 +708,6 @@ void PPU_ClearScreens()
 	u8* vptr = (u8*)vertexPtr;
 	int nvtx;
 	
-	
 #define ADDVERTEX(x, y, z, r, g, b, a) \
 	*(u16*)vptr = x; vptr += 2; \
 	*(u16*)vptr = y; vptr += 2; \
@@ -726,6 +722,7 @@ void PPU_ClearScreens()
 	bglOutputBuffers(MainScreenTex, NULL, 256, 512);
 	
 	bglViewport(0, 0, 256, 512);
+	bglScissorMode(GPU_SCISSOR_DISABLE);
 	
 	bglEnableStencilTest(false);
 	bglStencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_KEEP);
@@ -805,26 +802,26 @@ void PPU_ClearScreens()
 	bglDrawArrays(GPU_GEOMETRY_PRIM, nvtx);
 	
 	// clear the OBJ buffer
-	// TODO: only do that once, if multiple screen sections are involved?
-
-	bglOutputBuffers(OBJColorBuffer, OBJPrioBuffer, 256, 256);
-	bglViewport(0, 0, 256, 256);
-	
-	bglColorDepthMask(GPU_WRITE_ALL);
-	
-	bglAttribBuffer(vptr);
+	if (FirstScreenSection)
+	{
+		bglOutputBuffers(OBJColorBuffer, OBJPrioBuffer, 256, 256);
+		bglViewport(0, 0, 256, 256);
 		
-	ADDVERTEX(0, 0, 0,      255, 0, 255, 0);
-	ADDVERTEX(256, 512, 0,  255, 0, 255, 0);
-	vptr = (u8*)((((u32)vptr) + 0x1F) & ~0x1F);
-	
-	bglDrawArrays(GPU_GEOMETRY_PRIM, 2);
+		bglColorDepthMask(GPU_WRITE_ALL);
+		
+		bglAttribBuffer(vptr);
+			
+		ADDVERTEX(0, 0, 0,      255, 0, 255, 0);
+		ADDVERTEX(256, 512, 0,  255, 0, 255, 0);
+		vptr = (u8*)((((u32)vptr) + 0x1F) & ~0x1F);
+		
+		bglDrawArrays(GPU_GEOMETRY_PRIM, 2);
+	}
 	
 	vertexPtr = vptr;
 	
 #undef ADDVERTEX
 }
-
 
 
 void PPU_DrawWindowMask()
@@ -842,13 +839,13 @@ void PPU_DrawWindowMask()
 	*(u16*)vptr = x; vptr += 2; \
 	*(u16*)vptr = y; vptr += 2; \
 	*vptr++ = a; vptr++;
-	
 
 	bglUseShader(&windowMaskShaderP);
 
 	
 	bglOutputBuffers(DepthBuffer, NULL, 256, 512);
 	bglViewport(0, 0, 256, 512);
+	bglScissorMode(GPU_SCISSOR_DISABLE);
 	
 	bglEnableStencilTest(false);
 	bglStencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_KEEP);
@@ -1511,8 +1508,8 @@ void PPU_HardRenderBG_ProcessMode7(int ystart, int yend)
 	u8 wasSW = 0;
 
 
-	u16 oldcolor0 = TempPalette[0];
-	TempPalette[0] = 0;
+	u16 oldcolor0 = PPU.Palette[0];
+	PPU.Palette[0] = 0;
 
 	PPU_Mode7Section* s = &PPU.Mode7Sections[0];
 
@@ -1526,7 +1523,7 @@ void PPU_HardRenderBG_ProcessMode7(int ystart, int yend)
 			continue;
 		}
 		if (systart < ystart) systart = ystart;
-		if (syend > syend) syend = yend;
+		if (syend > yend) syend = yend;
 
 		if(s->doHW)
 		{
@@ -1683,7 +1680,7 @@ void PPU_HardRenderBG_ProcessMode7(int ystart, int yend)
 						tileidx += ((x & 0x700) >> 7) + ((y & 0x700) >> 4) + 1;
 						colorval = PPU.VRAM[tileidx];
 				
-						*buffer = TempPalette[colorval];
+						*buffer = PPU.Palette[colorval];
 						buffer[65536] = PPU.PaletteEx2[colorval];
 						buffer += xincr[i&7];
 				
@@ -1723,7 +1720,7 @@ void PPU_HardRenderBG_ProcessMode7(int ystart, int yend)
 				
 						tileidx += ((x & 0x700) >> 7) + ((y & 0x700) >> 4) + 1;
 						colorval = PPU.VRAM[tileidx];
-						*buffer = TempPalette[colorval];
+						*buffer = PPU.Palette[colorval];
 						buffer += xincr[i&7];
 						x += A;
 						y += C;
@@ -1741,7 +1738,7 @@ void PPU_HardRenderBG_ProcessMode7(int ystart, int yend)
 	}
 	s->endSW = 1;
 
-	TempPalette[0] = oldcolor0;
+	PPU.Palette[0] = oldcolor0;
 
 }
 
@@ -1756,8 +1753,8 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend, u32 prio)
 	u16* vptr = (u16*)vertexPtr;
 	
 
-	u16 oldcolor0 = TempPalette[0];
-	TempPalette[0] = 0;
+	u16 oldcolor0 = PPU.Palette[0];
+	PPU.Palette[0] = 0;
 
 	style = (PPU.M7ExtBG ? (prio ? TILE_Mode7_2 : TILE_Mode7_1) : TILE_Mode7);
 
@@ -2007,7 +2004,7 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, int ystart, int yend, u32 prio)
 		s++;
 	}
 	
-	TempPalette[0] = oldcolor0;
+	PPU.Palette[0] = oldcolor0;
 
 	// As a precaution, we'll revert back to normal hardware-rendering should the need be
 	if(curHW)
@@ -2204,8 +2201,7 @@ void PPU_HardRenderOBJs()
 		int ntiles = 0;
 		
 		yend = s->EndOffset;
-		//if (s->HasOAM) cur_oam = s->OAM;
-		
+
 		i = last;
 		do
 		{
@@ -2422,8 +2418,6 @@ void PPU_StartHardSection(u32 line)
 	PPU.CurOBJSection->OBJHeight = PPU.OBJHeight;
 	PPU.CurOBJSection->OBJTilesetAddr = PPU.OBJTilesetAddr;
 	PPU.CurOBJSection->OBJGap = PPU.OBJGap;
-	//PPU.CurOBJSection->HasOAM = 1;
-	//memcpy(PPU.CurOBJSection->OAM, PPU.OAM, 0x220);
 	PPU.OBJDirty = 0;
 	
 	for (i = 0; i < 4; i++)
@@ -2450,11 +2444,11 @@ void PPU_StartHardSection(u32 line)
 	PPU.Mode7Dirty = 0;
 	
 	PPU.CurWindowSection = &PPU.WindowSections[0];
-	PPU_ComputeWindows_Hard(&PPU.CurWindowSection->Window);
+	PPU_ComputeWindows_Hard(&PPU.CurWindowSection->Window[0]);
 	PPU.WindowDirty = 0;
 	
 	PPU.CurMainBackdrop = &PPU.MainBackdropSections[0];
-	PPU.CurMainBackdrop->Color = TempPalette[0];
+	PPU.CurMainBackdrop->Color = PPU.Palette[0];
 	PPU.CurMainBackdrop->ColorMath2 = PPU.ColorMath2;
 	PPU.MainBackdropDirty = 0;
 
@@ -2574,14 +2568,6 @@ void PPU_RenderScanline_Hard(u32 line)
 				PPU.CurOBJSection->OBJTilesetAddr = PPU.OBJTilesetAddr;
 				PPU.CurOBJSection->OBJGap = PPU.OBJGap;
 				
-				/*if (PPU.OBJDirty & 0x02)
-				{
-					PPU.CurOBJSection->HasOAM = 1;
-					memcpy(PPU.CurOBJSection->OAM, PPU.OAM, 0x220);
-				}
-				else
-					PPU.CurOBJSection->HasOAM = 0;*/
-				
 				PPU.OBJDirty = 0;
 			}
 			
@@ -2672,7 +2658,7 @@ void PPU_RenderScanline_Hard(u32 line)
 				PPU.CurWindowSection->EndOffset = line;
 				PPU.CurWindowSection++;
 				
-				PPU_ComputeWindows_Hard(&PPU.CurWindowSection->Window);
+				PPU_ComputeWindows_Hard(&PPU.CurWindowSection->Window[0]);
 				PPU.WindowDirty = 0;
 			}
 
@@ -2681,7 +2667,7 @@ void PPU_RenderScanline_Hard(u32 line)
 				PPU.CurMainBackdrop->EndOffset = line;
 				PPU.CurMainBackdrop++;
 				
-				PPU.CurMainBackdrop->Color = TempPalette[0];
+				PPU.CurMainBackdrop->Color = PPU.Palette[0];
 				PPU.CurMainBackdrop->ColorMath2 = PPU.ColorMath2;
 				PPU.MainBackdropDirty = 0;
 			}
@@ -2924,12 +2910,6 @@ void PPU_HardRender(u32 snum)
 			colormath = (s->ColorMath2 & 0x40) ? 0x00:0xFF;
 		}
 		
-		/*if (PPU.NumPaletteChanges[ystart])
-		{
-			bprintf("[%03d] %d changes\n", ystart, PPU.NumPaletteChanges[ystart]);
-			PPU_ApplyPaletteChanges(PPU.NumPaletteChanges[ystart], PPU.PaletteChanges[ystart]);
-		}*/
-		
 		switch (s->Mode & 0x07)
 		{
 			case 0:
@@ -2974,17 +2954,41 @@ void PPU_HardRender(u32 snum)
 
 void PPU_HardRenderSection(u32 endline)
 {
+	PPU_FinishHardSection(endline);
+	
+	if (CurForcedBlank) return;
+	
 	if (FirstScreenSection)
 	{
 		SwapVertexBuf();
 		vertexPtrStart = vertexPtr;
-		
-		FirstScreenSection = 0;
 	}
 	
-	PPU_FinishHardSection(endline);
-	
-	if (CurForcedBlank) return;
+	if (PPU.PaletteUpdateCount256 != PPU_LastPalUpdate256)
+	{
+		PPU_LastPalUpdate256 = PPU.PaletteUpdateCount256;
+		PPU_PalHash256 = SuperFastPalHash((u8*)&PPU.Palette[0], 512);
+		
+		if (PPU.PaletteUpdateCount128 != PPU_LastPalUpdate128)
+		{
+			PPU_LastPalUpdate128 = PPU.PaletteUpdateCount128;
+			PPU_PalHash128 = SuperFastPalHash((u8*)&PPU.Palette[0], 256);
+			
+			for (u32 i = 0; i < 32; i++)
+			{
+				if (PPU.PaletteUpdateCount[i] != PPU_LastPalUpdate[i])
+					PPU_PalHash4[i] = SuperFastPalHash((u8*)&PPU.Palette[i << 2], 8);
+			}
+			
+			for (u32 i = 0; i < 16; i++)
+			{
+				if (*(u32*)&PPU.PaletteUpdateCount[i << 2] != *(u32*)&PPU_LastPalUpdate[i << 2])
+					PPU_PalHash16[i] = SuperFastPalHash((u8*)&PPU.Palette[i << 4], 32);
+				
+				*(u32*)&PPU_LastPalUpdate[i << 2] = *(u32*)&PPU.PaletteUpdateCount[i << 2];
+			}
+		}
+	}
 	
 	PPU_ClearScreens();
 
@@ -3011,107 +3015,25 @@ void PPU_HardRenderSection(u32 endline)
 	scissorY = 0;
 	bglViewport(0, 0, 256, 256);
 	PPU_HardRender(1); 
+	
+	FirstScreenSection = 0;
 }
 
 
 void PPU_VBlank_Hard(int endLine)
 {
-	int i;
-
-	/*PPU.CurModeSection->EndOffset = endLine;
-	
-	PPU.CurOBJSection->EndOffset = endLine;
-
-	for (i = 0; i < 4; i++)
-	{
-		PPU_Background* bg = &PPU.BG[i];
-		bg->CurSection->EndOffset = endLine;
-	}
-	
-	PPU_Mode7Section *cur = PPU.CurMode7Section;
-	cur->EndOffset = endLine;
-	if((PPU.Mode & 0x07) == 7)
-	{
-		if(Config.HardwareMode7 > 0)
-		{
-			int numLines = cur->EndOffset - cur->StartOffset;
-			int sizeComp = (numLines == 1 ? 0x30000 : (numLines >= 16 ? 0x100000 : 0x80000));
-			coord0 = PPU_StoreTileInCache(TILE_Mode7, 0, ((u32)PPU.VRAM[0]) << 7);
-			if((cur->Sel >> 6) == 2)
-				cur->doHW = 1;
-			else if(((cur->Sel >> 6) == 3) && (coord0 == 0xC000))
-			{
-				cur->Sel &= 0xBF;
-				cur->doHW = 1;
-			}
-			else if(((((int)cur->A * cur->A) + ((int)cur->C * cur->C)) <= sizeComp) && ((((int)cur->B * cur->B) + ((int)cur->D * cur->D)) <= sizeComp))
-				cur->doHW = 1;
-			else
-				cur->doHW = 0;
-		}
-		else
-			cur->doHW = 0;
-	}
-	
-	PPU.CurWindowSection->EndOffset = endLine;*/
-	
 	PPU.CurColorEffect->EndOffset = endLine;
-	//PPU.CurMainBackdrop->EndOffset = endLine;
-	//PPU.CurSubBackdrop->EndOffset = endLine;
-	
-	
-	/*if (PPU.PaletteUpdateCount256 != PPU_LastPalUpdate256)
-	{
-		PPU_LastPalUpdate256 = PPU.PaletteUpdateCount256;
-		PPU_PalHash256 = SuperFastHash(0, &PPU.Palette[0], 512);
-		
-		if (PPU.PaletteUpdateCount128 != PPU_LastPalUpdate128)
-		{
-			PPU_LastPalUpdate128 = PPU.PaletteUpdateCount128;
-			PPU_PalHash128 = SuperFastHash(0, &PPU.Palette[0], 256);
-		}
-	}*/
-	
-	
-	/*vertexPtr = vertexBuf;
-	
-	PPU_ClearScreens();
-
-	//memcpy(TempPalette, PPU.Palette, 512);
-	PPU_DrawWindowMask();
-
-	// OBJ LAYER
-	
-	bglViewport(0, 0, 256, 256);
-	bglUseShader(&hardRenderOBJShaderP);
-	PPU_HardRenderOBJs();
-	
-	bglUseShader(&hardRenderShaderP);
-	
-	// MAIN SCREEN
-	
-	doingBG = 0;
-	scissorY = 256;
-	bglOutputBuffers(MainScreenTex, DepthBuffer, 256, 512);
-	bglViewport(0, 256, 256, 256);
-	PPU_HardRender(0);
-	
-	// SUB SCREEN
-	
-	//memcpy(TempPalette, PPU.Palette, 512);
-	//PPU_DrawWindowMask(1); // windowMaskShader/OBJDepthBuffer
-
-
-	doingBG = 0;
-	scissorY = 0;
-	//bglOutputBuffers(SubScreenTex, OBJDepthBuffer, 256, 256);
-	bglViewport(0, 0, 256, 256);
-	PPU_HardRender(1); */
 	
 	PPU_HardRenderSection(endLine);
 	
+	// just in case nothing was rendered
+	if (FirstScreenSection)
+	{
+		SwapVertexBuf();
+		vertexPtrStart = vertexPtr;
+	}
 	
-	PPU_ClearAlpha(); // NOT dependent on any section
+	PPU_ClearAlpha();
 
 	// reuse the color math system used by the soft renderer
 	bglEnableStencilTest(false);

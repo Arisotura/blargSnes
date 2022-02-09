@@ -431,6 +431,8 @@ void RenderTopScreen()
 	// filtering enabled only when scaling
 	// filtering at 1:1 causes output to not be pixel-perfect, but not filtering at higher res looks like total shit
 	bglTexImage(GPU_TEXUNIT0, SNESFrame,256,256, Config.ScaleMode?0x6:0 ,GPU_RGBA8);
+	//bglTexImage(GPU_TEXUNIT0, SubScreenTex,256,256, Config.ScaleMode?0x6:0 ,GPU_RGBA8);
+	//bglTexImage(GPU_TEXUNIT0, MainScreenTex,256,512, Config.ScaleMode?0x6:0 ,GPU_RGBA8);
 	
 	bglAttribBuffer(screenVertices);
 	
@@ -989,11 +991,6 @@ int main()
 					pause = 1;
 					svcSignalEvent(SPCSync);
 				}
-				
-				/*if (held & KEY_X)
-				{
-					svcSleepThread(1000000000);
-				}*/
 			}
 			else
 			{
