@@ -27,7 +27,7 @@
 #include "snes.h"
 
 
-u8* ROM_Buffer;
+u8* ROM_Buffer = NULL;
 u32 ROM_BufferSize;
 u32 ROM_FileSize;
 u32 ROM_BaseOffset;
@@ -289,6 +289,12 @@ bool ROM_LoadFile(char* name)
 	while (ROM_NumBanks < nbanks) ROM_NumBanks <<= 1;
 	
 	bprintf("ROM size: %dKB / %d banks\n", ((u32)size) >> 10, ROM_NumBanks);
+	
+	if (ROM_Buffer)
+	{
+		MemFree(ROM_Buffer);
+		ROM_Buffer = NULL;
+	}
 	
 	ROM_BufferSize = ROM_NumBanks << (SNES_HiROM ? 16:15);
 	ROM_Buffer = (u8*)MemAlloc(ROM_BufferSize);
