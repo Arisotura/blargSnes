@@ -606,7 +606,8 @@ nmi_nostack:
 	subne r0, r0, #vec_e1_NMI
 	ldrh r0, [r0]
 	SetPC
-	b cpuloop
+	@b cpuloop
+	b nmi_return
 	
 @ --- Main loop ---------------------------------------------------------------
 
@@ -631,12 +632,29 @@ CPU_Run:
 	@ldr r2, [r1]
 	@sub r2, r2, r0
 	
+	@tst snesP, #flagNMI
+	@bne CPU_TriggerNMI
+	
+	@ HAAXXX
 	tst snesP, #flagNMI
-	bne CPU_TriggerNMI
+	bicne snesP, snesP, #flagW
 	
 	@ do not execute if we're waiting for an IRQ
 	tst snesP, #flagW
 	beq cpuloop
+	
+	@ WAI: look if we're supposed to get an IRQ
+	ldrh r0, [snesStatus, #IRQ_CurHMatch]
+	cmp r0, #0x8000 @ no IRQ for this line
+	beq wai_noirq
+	mov snesCycles, snesCycles, lsl #16
+	mov snesCycles, snesCycles, lsr #16
+	orr snesCycles, snesCycles, r0, lsl #16
+	cmp snesCycles, snesCycles, lsl #16
+	bge cpu_run_end
+	b cpuloop
+
+wai_noirq:
 	mov snesCycles, snesCycles, lsl #16
 	orr snesCycles, snesCycles, lsr #16
 	ldmia sp!, {r3, pc}
@@ -662,9 +680,17 @@ cpuloop:
 		ldr pc, [opTable, r0, lsl #0x2]
 		
 	op_return:
+	
+		@ delayed NMI check
+		@ not elegant, but will do
+		tst snesP, #flagNMI
+		bne CPU_TriggerNMI
+	nmi_return:
+	
 		cmp snesCycles, snesCycles, lsl #16
 		blt cpuloop
 	
+cpu_run_end:
 	ldmia sp!, {r3, pc}
 	
 	
