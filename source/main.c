@@ -48,6 +48,10 @@
 
 #include "version.h"
 
+
+aptHookCookie APTHook;
+
+
 u32* gpuOut;
 u32* gpuDOut;
 u32* SNESFrame;
@@ -787,6 +791,28 @@ void reportshit2(u32 pc, u32 a, u32 y)
 }
 
 
+void APTHookFunc(APT_HookType type, void* param)
+{
+	static int oldpause = 0;
+
+	switch (type)
+	{
+	case APTHOOK_ONSUSPEND:
+	case APTHOOK_ONSLEEP:
+		oldpause = pause; pause = 1;
+		svcSignalEvent(SPCSync);
+		
+		if (running) SNES_SaveSRAM();
+		FinishRendering();
+		break;
+		
+	case APTHOOK_ONRESTORE:
+	case APTHOOK_ONWAKEUP:
+		pause = oldpause;
+		break;
+	}
+}
+
 int main() 
 {
 	int i;
@@ -828,8 +854,6 @@ int main()
 	vertexBuf = linearAlloc(vertexBufSize * 2);
 	vertexPtr = vertexBuf;
 	curVertexBuf = 0;
-	
-	//svcSetThreadPriority(gspEventThread, 0x30);
 	
 	gpuOut = (u32*)VRAM_Alloc(400*240*2*4);
 	gpuDOut = (u32*)VRAM_Alloc(400*240*2*4);
@@ -892,14 +916,12 @@ int main()
 	Audio_Init();
 	svcCreateEvent(&SPCSync, 0); 
 	
+	aptHook(&APTHook, APTHookFunc, NULL);
+	
 	UI_Switch(&UI_ROMMenu);
 
-	// TODO add APT hooks for homemenu/sleep
-	//APP_STATUS status;
-	//while (!forceexit && (status = aptGetStatus()) != APP_EXITING)
 	while (!forceexit && aptMainLoop())
 	{
-		//if (status == APP_RUNNING)
 		if (aptIsActive())
 		{
 			hidScanInput();
@@ -1045,35 +1067,11 @@ int main()
 				}
 			}
 		}
-		//else if (status == APP_SUSPENDING)
-		/*if (aptShouldJumpToHome())
-		{
-			int oldpause = pause; pause = 1;
-			svcSignalEvent(SPCSync);
-			
-			if (running) SNES_SaveSRAM();
-			FinishRendering();
-			 
-			aptJumpToHomeMenu();
-			
-			pause = oldpause;
-		}
-		else if (status == APP_PREPARE_SLEEPMODE)
-		{
-			int oldpause = pause; pause = 1;
-			svcSignalEvent(SPCSync);
-			
-			if (running) SNES_SaveSRAM();
-			FinishRendering();
-			
-			aptSignalReadyForSleep();
-			aptWaitStatusEvent();
-			
-			pause = oldpause;
-		}*/
 	}
 	
 	if (running) SNES_SaveSRAM();
+	
+	aptUnhook(&APTHook);
 	
 	exitspc = 1; pause = 1;
 	svcSignalEvent(SPCSync);
