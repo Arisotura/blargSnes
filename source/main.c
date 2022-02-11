@@ -102,25 +102,18 @@ u32 ntriangles = 0;
 gxCmdQueue_s GXQueue;
 
 
-Handle spcthread = NULL;
-u8 spcthreadstack[0x4000] __attribute__((aligned(8)));
+Thread SPCThread = NULL;
+#define SPC_THREAD_STACK_SIZE 4000
 Handle SPCSync;
 int exitspc = 0;
 
-// TODO: correction
-// mixes 127995 samples every 4 seconds, instead of 128000 (128038.1356)
-// +43 samples every 4 seconds
-// +1 sample every 32 second
-void SPCThread(u32 blarg)
+void SPCThreadFunc(void *arg)
 {
-	//const double samplerate = 67027964.0 / (double)((u32)(67027964.0 / 32000.0));
-	const double samplerate = 67030870.0 / (double)((u32)(67030870.0 / 32000.0));
-	const double SAMPLE512TICK = 268123480.0 / (double)(samplerate / 512.0);
-	const double SAMPLE16TICK = 268123480.0 / (double)(samplerate / 16.0);
-	int audCnt = 32;
-	int audExt = 0;
-	u64 lastmixtime = svcGetSystemTick();
-	double mixtimediff = 0.0f;
+
+	int audCnt = 512;
+	u32 lastpos = 0;
+
+
 	int i;
 	while (!exitspc)
 	{
@@ -130,52 +123,26 @@ void SPCThread(u32 blarg)
 		if (!pause)
 		{
 			bool started = Audio_Begin();
-			if(started)
+			if (started)
 			{
-				audCnt = 32;
-				audExt = 0;
-				mixtimediff = 0.0f;
+				audCnt = 512;
+				lastpos = 0;
 			}
-			for (i = 0; i < audCnt; i++)
-			{
-				DSP_ReplayWrites(i);
-				Audio_Mix();
-			}
-			for(i = audCnt; i < 32; i++)
-				DSP_ReplayWrites(i);
-			audCnt = 32;
-			for(i = 0; i < audExt; i++)
-				Audio_Mix();
-			audExt = 0;
- 
-			u64 curmixtime = svcGetSystemTick();
-			double diff = (double)(curmixtime - lastmixtime);
-			lastmixtime = curmixtime;
-			if(!started)
-			{
-				mixtimediff += diff - SAMPLE512TICK;
-				if(mixtimediff >= SAMPLE16TICK)
-				{
-					while(mixtimediff >= SAMPLE16TICK)
-					{
-						mixtimediff -= SAMPLE16TICK;
-						audExt++;
-					}
-				}
-				else
-				{
-					while(mixtimediff < 0)
-					{
-						mixtimediff += SAMPLE16TICK;
-						audCnt--;
-					}
-				}
-			}
+			u32 curpos = ndspChnGetSamplePos(0);
+
+			Audio_Mix(audCnt, started);
+
+			s32 diff = curpos - lastpos;
+			if (diff < 0) diff += MIXBUFSIZE;
+			lastpos = curpos;
+
+			audCnt = diff;
 		}
 		else
 			Audio_Pause();
-	}	
-	svcExitThread();
+	}
+
+	threadExit(0);
 }
 
 
@@ -248,7 +215,7 @@ void ReportCrash()
 	u32 ptr = Mem_PtrTable[pc >> 13];
 	bprintf("Ptr table entry: %08X\n", ptr);
 	
-	bprintf("Tell StapleButter\n");
+	bprintf("Tell Arisotura\n");
 	
 	dbg_save("/SNESRAM.bin", SNES_SysRAM, 0x20000);
 	dbg_save("/SNESPtrChunk.bin", (void*)(ptr&~0xF), 0x2000);
@@ -713,12 +680,12 @@ bool StartROM(char* path, char* dir)
 	char temppath[0x210];
 	Result res;
 	
-	if (spcthread)
+	if (SPCThread)
 	{
 		exitspc = 1; pause = 1;
 		svcSignalEvent(SPCSync);
-		svcWaitSynchronization(spcthread, U64_MAX);
-		svcCloseHandle(spcthread);
+		svcWaitSynchronization(SPCThread, U64_MAX);
+		threadJoin(SPCThread, U64_MAX);
 		exitspc = 0;
 	}
 	
@@ -750,11 +717,10 @@ bool StartROM(char* path, char* dir)
 	PALCount = 0;
 	
 	// SPC700 thread (running on syscore)
-	res = svcCreateThread(&spcthread, SPCThread, 0, (u32*)(spcthreadstack+0x4000), 0x18, 1);
-	if (res)
+	SPCThread = threadCreate(SPCThreadFunc, 0x0, SPC_THREAD_STACK_SIZE, 0x18, 1, true);
+	if (!SPCThread) 
 	{
-		bprintf("Failed to create SPC700 thread:\n -> %08X\n", res);
-		spcthread = NULL;
+		bprintf("Failed to create DSP thread\n");
 	}
 	
 	bprintf("ROM loaded, running...\n");
@@ -1075,10 +1041,10 @@ int main()
 	
 	exitspc = 1; pause = 1;
 	svcSignalEvent(SPCSync);
-	if (spcthread) 
+	if (SPCThread) 
 	{
-		svcWaitSynchronization(spcthread, U64_MAX);
-		svcCloseHandle(spcthread);
+		svcWaitSynchronization(SPCThread, U64_MAX);
+		threadJoin(SPCThread, U64_MAX);
 	}
 	
 	gxCmdQueueStop(&GXQueue);

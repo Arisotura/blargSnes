@@ -739,13 +739,14 @@ lineloop1:
 		ldr r1, [snesStatus, #SPC_CycleRatio]
 		mul r2, r1, r0
 		ldr r1, [snesStatus, #SPC_LastCycle]
-		sub r0, r2, r1
+		subs r0, r2, r1
 		ldr r1, [snesStatus, #SPC_CyclesPerLine]
 		sub r2, r2, r1
 		str r2, [snesStatus, #SPC_LastCycle]
-		movs r0, r0, asr #24
-		movmis r0, #0
-		blne SPC_Run
+		@movs r0, r0, asr #24
+		@movmis r0, #0
+		@blne SPC_Run
+		blgt SPC_Run
 		
 		ldr r0, =((1364<<16) + 340)
 		sub snesCycles, snesCycles, r0
@@ -814,13 +815,14 @@ lineloop2:
 		ldr r1, [snesStatus, #SPC_CycleRatio]
 		mul r2, r1, r0
 		ldr r1, [snesStatus, #SPC_LastCycle]
-		sub r0, r2, r1
+		subs r0, r2, r1
 		ldr r1, [snesStatus, #SPC_CyclesPerLine]
 		sub r2, r2, r1
 		str r2, [snesStatus, #SPC_LastCycle]
-		movs r0, r0, asr #24
-		movmis r0, #0
-		blne SPC_Run
+		@movs r0, r0, asr #24
+		@movmis r0, #0
+		@blne SPC_Run
+		blgt SPC_Run
 		
 		ldr r0, =(1364<<16)
 		sub snesCycles, snesCycles, r0

@@ -23,8 +23,10 @@
 #include "mixrate.h"
 
 
-// 0 = none, 1 = CSND, 2 = DSP
-int Audio_Type;
+// 0 = none, 2 = DSP
+int Audio_Type = 0;
+
+ndspWaveBuf waveBuf;
 
 s16* Audio_Buffer;
 
@@ -35,159 +37,97 @@ bool isPlaying = false;
 
 void Audio_Init()
 {
-	Result res;
+	if (Audio_Type)
+		return;
+
+	if (R_FAILED(ndspInit()))
+		return;
+
+	ndspSetOutputMode(NDSP_OUTPUT_STEREO);
+	ndspSetOutputCount(1);
+	ndspSetMasterVol(1.0f);
+
+
+	Audio_Buffer = (s16*)linearAlloc(MIXBUFSIZE*2*2);
+	memset(Audio_Buffer, 0, MIXBUFSIZE*2*2);
 	
-	Audio_Type = 0;
-	
-	Audio_Buffer = (s16*)linearAlloc(MIXBUFSIZE*4*2);
-	memset(Audio_Buffer, 0, MIXBUFSIZE*4*2);
-	
+	Audio_Type = 2;
 	cursample = 0;
-	
-	// try using CSND
-	res = csndInit();
-	if (!res)
-	{
-		Audio_Type = 1;
-	}
 
 	isPlaying = false;
 	
-	// TODO: DSP black magic
 }
 
 void Audio_DeInit()
 {
-	if (Audio_Type == 1)
-	{
-		CSND_SetPlayState(8, 0);
-		CSND_SetPlayState(9, 0);
+	if (!Audio_Type)
+		return;
 
-		csndExecCmds(0);
-		csndExit();
-	}
+	linearFree(Audio_Buffer);
+
+	ndspChnWaveBufClear(0);
+	ndspExit();
+
+	Audio_Type = 0;
 	isPlaying = false;
 }
 
 void Audio_Pause()
 {
+	if (!Audio_Type)
+		return;
+
 	if(isPlaying)
 	{
 		// stop
-		if (Audio_Type == 1)
-		{
-			CSND_SetPlayState(8, 0);
-			CSND_SetPlayState(9, 0);
 
-			csndExecCmds(0);
-		}
-	
-		memset(Audio_Buffer, 0, MIXBUFSIZE*4*2);
-		CSND_FlushDataCache(Audio_Buffer, MIXBUFSIZE*4*2);
+		ndspChnWaveBufClear(0);
+
+		memset(Audio_Buffer, 0, MIXBUFSIZE*2*2);
+		DSP_FlushDataCache(Audio_Buffer, MIXBUFSIZE*2*2);
+		
 		isPlaying = false;
 	}
 }
 
-void Audio_Mix()
+void Audio_Mix(u32 samples, bool restart)
 {
-	DspGenerateNoise();
-	DspMixSamplesStereo(DSPMIXBUFSIZE, &Audio_Buffer[cursample]);
-	cursample += DSPMIXBUFSIZE;
-	cursample &= ((MIXBUFSIZE << 1) - 1);
+	if (!Audio_Type)
+		return;
+	
+	cursample = DspMixSamplesStereo(samples, Audio_Buffer, MIXBUFSIZE, cursample, restart);
 }
-
-
-// tweaked CSND_playsound() version. Allows setting multiple channels and calling updatestate once.
-// the last two parameters are also repurposed for volume control
-
-
-void myCSND_SetSound(u32 chn, u32 flags, u32 sampleRate, void* data0, void *data1, u32 size, float vol, float pan)
-{
-	u32 paddr0 = 0, paddr1 = 0;
-
-	int encoding = (flags >> 12) & 3;
-	int loopMode = (flags >> 10) & 3;
-
-	if (encoding != CSND_ENCODING_PSG)
-	{
-		if (data0) paddr0 = osConvertVirtToPhys(data0);
-		if (data1) paddr1 = osConvertVirtToPhys(data1);
-
-		if (encoding == CSND_ENCODING_ADPCM)
-		{
-			int adpcmSample = ((s16*)data0)[-2];
-			int adpcmIndex = ((u8*)data0)[-2];
-			CSND_SetAdpcmState(chn, 0, adpcmSample, adpcmIndex);
-		}
-	}
-
-	u32 timer = CSND_TIMER(sampleRate);
-	if (timer < 0x0042) timer = 0x0042;
-	else if (timer > 0xFFFF) timer = 0xFFFF;
-	flags &= ~0xFFFF001F;
-	flags |= SOUND_ENABLE | SOUND_CHANNEL(chn) | (timer << 16);
-
-	CSND_SetChnRegs(flags, paddr0, paddr1, size, CSND_VOL(vol, pan), 0);
-
-	if (loopMode == CSND_LOOPMODE_NORMAL && paddr1 > paddr0)
-	{
-		// Now that the first block is playing, configure the size of the subsequent blocks
-		size -= paddr1 - paddr0;
-		CSND_SetBlock(chn, 1, paddr1, size);
-	}
-	CSND_SetPlayState(chn, 1);
-}
-
 
 bool Audio_Begin()
 {
-	if(isPlaying)
+	if (!Audio_Type)
+		return 0;
+
+	if (isPlaying)
 	    return 0;
  
-	memset(Audio_Buffer, 0, MIXBUFSIZE*4*2);
-	CSND_FlushDataCache(Audio_Buffer, MIXBUFSIZE*4*2);
- 
-	if (Audio_Type == 1)
-	{
-		myCSND_SetSound(8, SOUND_FORMAT_16BIT | SOUND_REPEAT, 32000, &Audio_Buffer[0],            &Audio_Buffer[0],            MIXBUFSIZE*4, 1.0, -1.0);
-		myCSND_SetSound(9, SOUND_FORMAT_16BIT | SOUND_REPEAT, 32000, &Audio_Buffer[MIXBUFSIZE*2], &Audio_Buffer[MIXBUFSIZE*2], MIXBUFSIZE*4, 1.0, 1.0);
+	float mix[12];
+	memset(mix, 0, sizeof(mix));
 
-		csndExecCmds(0);
-	}
+	mix[0] = mix[1] = 1.0f;
+	ndspChnReset(0);
+	ndspChnSetInterp(0, NDSP_INTERP_LINEAR);
+	ndspChnSetRate(0, 32000.0f);
+	ndspChnSetFormat(0, NDSP_FORMAT_STEREO_PCM16);
+	ndspChnSetMix(0, mix);
+
+	memset(&waveBuf, 0, sizeof(ndspWaveBuf));
+	waveBuf.data_vaddr = Audio_Buffer;
+	waveBuf.nsamples = MIXBUFSIZE;
+	waveBuf.looping  = true;
+	waveBuf.status = NDSP_WBUF_FREE;
+
+	memset(Audio_Buffer, 0, MIXBUFSIZE*2*2);
+	DSP_FlushDataCache(Audio_Buffer, MIXBUFSIZE*2*2);
+
+	ndspChnWaveBufAdd(0, &waveBuf);
  
-	cursample = MIXBUFSIZE;//(MIXBUFSIZE * 3) >> 1;
+	cursample = MIXBUFSIZE >> 1;
 	isPlaying = true;
 	return 1;
-}
-
-void Audio_Inc(int count)
-{
-	if(count < 1)
-		return;
-	s16 mySamples[2];
-	s32 getSample = cursample - 1;
-	if(getSample < 0)
-		getSample += (MIXBUFSIZE << 1);
-	mySamples[0] = Audio_Buffer[getSample];
-	mySamples[1] = Audio_Buffer[getSample + (MIXBUFSIZE << 1)];
-	int i;
-	for(i = 0; i < count; i++)
-	{
-		int j;
-		for(j = 0; j < DSPMIXBUFSIZE; j++)
-		{
-			Audio_Buffer[cursample + j] = mySamples[0];
-			Audio_Buffer[cursample + j + (MIXBUFSIZE << 1)] = mySamples[1];
-		}
-		cursample += DSPMIXBUFSIZE;
-		cursample &= ((MIXBUFSIZE << 1) - 1);
-	}
-}
-
-void Audio_Dec(int count)
-{
-	if(count < 1)
-		return;
-	cursample -= (DSPMIXBUFSIZE * count);
-	cursample &= ((MIXBUFSIZE << 1) - 1);
 }

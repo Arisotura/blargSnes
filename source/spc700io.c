@@ -17,6 +17,7 @@
 */
 
 #include <3ds/types.h>
+#include <string.h>
 
 #include "snes.h"
 #include "spc700.h"
