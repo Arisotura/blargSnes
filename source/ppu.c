@@ -1174,5 +1174,9 @@ void PPU_VBlank()
 		PPU.OBJOverflow = 0;
 		
 	if (SNES_AutoJoypad)
+	{
+		SNES_Joy16 = 0;
+		IO_ManualReadKeys();
 		SNES_JoyBit = 16;
+	}
 }

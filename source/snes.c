@@ -402,10 +402,10 @@ u8 SNES_GIORead8(u32 addr)
 			break;
 			
 		case 0x18:
-			ret = IO_ReadKeysLow();
+			ret = SNES_JoyBuffer & 0xFF;
 			break;
 		case 0x19:
-			ret = IO_ReadKeysHigh();
+			ret = (SNES_JoyBuffer >> 8) & 0xFF;
 			break;
 			
 		case 0x13:
@@ -440,7 +440,7 @@ u16 SNES_GIORead16(u32 addr)
 			break;
 			
 		case 0x18:
-			ret = IO_ReadKeysLow() | (IO_ReadKeysHigh() << 8);
+			ret = SNES_JoyBuffer & 0xFFFF;
 			break;
 			
 		default:
@@ -586,19 +586,23 @@ u8 SNES_JoyRead8(u32 addr)
 
 	if (addr == 0x16)
 	{
-		// TODO: investigate later
-		// this shit breaks SMAS SMB1 (pressing Start returns to menu)
-		/*if (SNES_Joy16 & 0x01)
+		if (SNES_Joy16 & 0x01)
 		{
-			ret = 0;
+			// Return Controller connected status (to which Pad 1 is always connected and Pad 3 is not, Pad 2/4 are linked to 4017h, but neither are connected)
+			ret = 0x1;
 		}
 		else
 		{
 			if (SNES_JoyBit == 0) IO_ManualReadKeys();
 			
-			ret = (SNES_JoyBuffer >> (SNES_JoyBit ^ 15)) & 1;
-			SNES_JoyBit++;
-		}*/
+			if (SNES_JoyBit < 16)
+			{
+				ret = (SNES_JoyBuffer >> (SNES_JoyBit ^ 15)) & 1;
+				SNES_JoyBit++;
+			}
+			else
+				ret = 0x1;
+		}
 		ret = 0x01;
 	}
 	else if (addr != 0x17) 
