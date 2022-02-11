@@ -977,7 +977,7 @@ void PPU_ClearAlpha()
 }
 
 
-void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart, int yend, u32 opt, u32 hi)
+void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 palbase, u32 prio, int ystart, int yend, u32 opt, u32 hi)
 {
 	PPU_Background* bg = &PPU.BG[num];
 	PPU_Background* obg = &PPU.BG[2];
@@ -1123,7 +1123,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart,
 				// render the tile
 				
 				u32 addr = s->TilesetOffset + ((curtile & 0x03FF) << tileaddrshift);
-				u32 palid = (curtile & 0x1C00) >> 10;
+				u32 palid = ((curtile & 0x1C00) >> 10) + palbase;
 				
 				u32 coord0 = PPU_StoreTileInCache(type, palid, addr);
 #define DO_SUBTILE(sx, sy, coord, t0, t3) \
@@ -1133,7 +1133,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart,
 							ADDVERTEX(x+sx+xsize, yf+sy+ysize, coord+t3); \
 							ntiles++; \
 						}				
-				if(hi)
+				if (hi)
 				{
 					u32 coord1 = PPU_StoreTileInCache(type, palid, addr+(0x01<<tileaddrshift));
 					switch (curtile & 0xC000)
@@ -1215,7 +1215,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 prio, int ystart,
 #undef ADDVERTEX
 }
 
-void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystart, int yend, u32 hi)
+void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 palbase, u32 prio, int ystart, int yend, u32 hi)
 {
 	PPU_Background* bg = &PPU.BG[num];
 	u16* tilemap;
@@ -1292,7 +1292,7 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 prio, int ystar
 				// render the tile
 				
 				u32 addr = s->TilesetOffset + ((curtile & 0x03FF) << tileaddrshift);
-				u32 palid = (curtile & 0x1C00) >> 10;
+				u32 palid = ((curtile & 0x1C00) >> 10) + palbase;
 				
 				u32 coord0 = PPU_StoreTileInCache(type, palid, addr+(0x00<<tileaddrshift));
 				u32 coord1 = PPU_StoreTileInCache(type, palid, addr+(0x01<<tileaddrshift));
@@ -2695,141 +2695,141 @@ void PPU_RenderScanline_Hard(u32 line)
 
 
 
-#define RENDERBG(num, type, prio, opt, hi) \
+#define RENDERBG(num, type, palbase, prio, opt, hi) \
 	{ \
 		if ((mode & (0x10<<num)) && (mode!=6)) \
-			PPU_HardRenderBG_16x16(colormath&(1<<num), num, type, prio?0x2000:0, ystart, yend, hi); \
+			PPU_HardRenderBG_16x16(colormath&(1<<num), num, type, palbase, prio?0x2000:0, ystart, yend, hi); \
 		else \
-			PPU_HardRenderBG_8x8(colormath&(1<<num), num, type, prio?0x2000:0, ystart, yend, opt, hi); \
+			PPU_HardRenderBG_8x8(colormath&(1<<num), num, type, palbase, prio?0x2000:0, ystart, yend, opt, hi); \
 	}
 
 
 void PPU_HardRender_Mode0(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
 {
-	if (screen & 0x08) RENDERBG(3, TILE_2BPP, 0, 0, 0);
-	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 0, 0, 0);
+	if (screen & 0x08) RENDERBG(3, TILE_2BPP, 24, 0, 0, 0);
+	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 16, 0, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
 	
-	if (screen & 0x08) RENDERBG(3, TILE_2BPP, 1, 0, 0);
-	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 1, 0, 0);
+	if (screen & 0x08) RENDERBG(3, TILE_2BPP, 24, 1, 0, 0);
+	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 16, 1, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
 	
-	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 0, 0, 0);
-	if (screen & 0x01) RENDERBG(0, TILE_2BPP, 0, 0, 0);
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 8, 0, 0, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_2BPP, 0, 0, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
 	
-	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 1, 0, 0);
-	if (screen & 0x01) RENDERBG(0, TILE_2BPP, 1, 0, 0);
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 8, 1, 0, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_2BPP, 0, 1, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
 }
 
 void PPU_HardRender_Mode1(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
 {
-	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 0, 0, 0);
+	if (screen & 0x04) RENDERBG(2, TILE_2BPP, 0, 0, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
 	
 	if (screen & 0x04) 
 	{
 		if (!(mode & 0x08))
-			RENDERBG(2, TILE_2BPP, 1, 0, 0);
+			RENDERBG(2, TILE_2BPP, 0, 1, 0, 0);
 	}
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
 	
-	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0, 0, 0);
-	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0, 0, 0);
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0, 0, 0, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0, 0, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
 	
-	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 1, 0, 0);
-	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 1, 0, 0);
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0, 1, 0, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0, 1, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
 	
 	if (screen & 0x04) 
 	{
 		if (mode & 0x08)
-			RENDERBG(2, TILE_2BPP, 1, 0, 0);
+			RENDERBG(2, TILE_2BPP, 0, 1, 0, 0);
 	}
 }
 
 void PPU_HardRender_Mode2(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
 {
-	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0, 2, 0);
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0, 0, 2, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
 	
-	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0, 2, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0, 0, 2, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
 	
-	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 1, 2, 0);
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0, 1, 2, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
 	
-	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 1, 2, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0, 1, 2, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
 }
 
 void PPU_HardRender_Mode3(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
 {
-	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0, 0, 0);
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0, 0, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
 	
-	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 0, 0, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 0, 0, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
 	
-	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 1, 0, 0);
+	if (screen & 0x02) RENDERBG(1, TILE_4BPP, 0, 1, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
 	
-	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 1, 0, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 0, 1, 0, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
 }
 
 void PPU_HardRender_Mode4(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
 {
-	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 0, 4, 0);
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 0, 0, 4, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
 	
-	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 0, 4, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 0, 0, 4, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
 	
-	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 1, 4, 0);
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 0, 1, 4, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
 	
-	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 1, 4, 0);
+	if (screen & 0x01) RENDERBG(0, TILE_8BPP, 0, 1, 4, 0);
 	
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
 }
 
 void PPU_HardRender_Mode5(int ystart, int yend, u32 screen, u32 mode, u32 colormath)
 {
-	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 0, 0, 1);
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 0, 0, 0, 1);
 
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
 
-	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0, 0, 1);
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0, 0, 0, 1);
 
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x10, ystart, yend);
 
-	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 1, 0, 1);
+	if (screen & 0x02) RENDERBG(1, TILE_2BPP, 0, 1, 0, 1);
 
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
 
-	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 1, 0, 1);
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0, 1, 0, 1);
 
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
 
@@ -2839,7 +2839,7 @@ void PPU_HardRender_Mode6(int ystart, int yend, u32 screen, u32 mode, u32 colorm
 {
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x00, ystart, yend);
 
-	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0, 6, 1);
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0, 0, 6, 1);
 
 	if (screen & 0x10)
 	{
@@ -2847,7 +2847,7 @@ void PPU_HardRender_Mode6(int ystart, int yend, u32 screen, u32 mode, u32 colorm
 		PPU_HardRenderOBJLayer(colormath&0x90, 0x20, ystart, yend);
 	}
 
-	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 6, 1, 1);
+	if (screen & 0x01) RENDERBG(0, TILE_4BPP, 0, 1, 6, 1);
 
 	if (screen & 0x10) PPU_HardRenderOBJLayer(colormath&0x90, 0x30, ystart, yend);
 }
