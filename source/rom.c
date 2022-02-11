@@ -20,7 +20,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <3ds/types.h>
-#include <3ds/services/fs.h>
 #include <3ds/svc.h>
 
 #include "cpu.h"
@@ -33,8 +32,6 @@ u32 ROM_FileSize;
 u32 ROM_BaseOffset;
 u32 ROM_HeaderOffset;
 u32 ROM_NumBanks;
-
-extern FS_Archive sdmcArchive;
 
 
 // TODO find a better way to do speedhacks
@@ -155,7 +152,7 @@ void ROM_MapBank(u32 bank, u8* ptr)
 	ROM_ApplySpeedHacks(bank, ptr);
 }
 
-int ROM_ScoreHeader(Handle file, u32 offset)
+int ROM_ScoreHeader(FILE *pFile, u32 offset)
 {
 	if ((offset + 0x20) >= ROM_FileSize)
 		return -1;
@@ -167,12 +164,15 @@ int ROM_ScoreHeader(Handle file, u32 offset)
 	// 1. check opcodes at reset vector
 	
 	u16 resetvec;
-	FSFILE_Read(file, &bytesread, offset + 0x3C, (u32*)&resetvec, 2);
+	fseek(pFile, offset + 0x3C, SEEK_SET);
+	fread(&resetvec, sizeof(char), 2, pFile);
+
 	if (resetvec < 0x8000)	// invalid reset vector, not likely to go anywhere with this header
 		return -1;
 
 	u32 firstops;
-	FSFILE_Read(file, &bytesread, (offset - 0x7FC0) + (resetvec - 0x8000), (u32*)&firstops, 4);
+	fseek(pFile, (offset - 0x7FC0) + (resetvec - 0x8000), SEEK_SET);
+	fread(&firstops, sizeof(char), 4, pFile);
 	
 	if ((firstops & 0xFFFFFF) == 0xFB1878) // typical SEI/CLC/XCE sequence
 		score += 100;
@@ -190,8 +190,9 @@ int ROM_ScoreHeader(Handle file, u32 offset)
 	{
 		u8 firstbytes[0x40];
 		*(u32*)&firstbytes[0] = firstops;
-		FSFILE_Read(file, &bytesread, (offset - 0x7FC0) + (resetvec - 0x8000) + 4, (u32*)&firstbytes[4], 0x3C);
-		
+		fseek(pFile, (offset - 0x7FC0) + (resetvec - 0x8000) + 4, SEEK_SET);
+		fread(&firstbytes[4], sizeof(char), 0x3C, pFile);
+
 		for (i = 0; i < 0x3F; i++)
 		{
 			if (*(u16*)&firstbytes[i] == 0xFB18)
@@ -205,15 +206,18 @@ int ROM_ScoreHeader(Handle file, u32 offset)
 	// 2. check the checksum
 	
 	u16 chksum, chkcomp;
-	FSFILE_Read(file, &bytesread, offset + 0x1C, (u32*)&chkcomp, 2);
-	FSFILE_Read(file, &bytesread, offset + 0x1E, (u32*)&chksum, 2);
+	fseek(pFile, offset + 0x1C, SEEK_SET);
+	fread(&chkcomp, sizeof(char), 2, pFile);
+	fseek(pFile, offset + 0x1E, SEEK_SET);
+	fread(&chksum, sizeof(char), 2, pFile);
 	
 	if ((chkcomp ^ chksum) == 0xFFFF) score += 50;
 	
 	// 3. check the characters in the title
 	
 	char title[21];
-	FSFILE_Read(file, &bytesread, offset, title, 21);
+	fseek(pFile, offset, SEEK_SET);
+	fread(title, sizeof(char), 21, pFile);
 	
 	for (i = 0; i < 21; i++)
 	{
@@ -226,37 +230,31 @@ int ROM_ScoreHeader(Handle file, u32 offset)
 
 bool ROM_LoadFile(char* name)
 {
-	Handle fileHandle;
-	FS_Path filePath;
-	filePath.type = PATH_ASCII;
-	filePath.size = strlen(name) + 1;
-	filePath.data = (u8*)name;
-	
-	Result res = FSUSER_OpenFile(&fileHandle, sdmcArchive, filePath, FS_OPEN_READ, 0);
-	if ((res & 0xFFFC03FF) != 0)
+	FILE *pFile = fopen(name, "rb");
+	if (pFile == NULL)
 	{
-		bprintf("Error %08X while opening file\n", res);
+		bprintf("Error while opening file\n");
 		return false;
 	}
-		
-	u64 size;
-	FSFILE_GetSize(fileHandle, &size);
-	if (size < 16 || size >= 0x100000000ULL)
+
+	fseek(pFile, 0, SEEK_END);
+	u32 size = ftell(pFile);
+	if ((size < 16) || (size >= 0x8000000))
 	{
-		FSFILE_Close(fileHandle);
+		fclose(pFile);
 		bprintf("File size bad: size=%lld\n", size);
 		return false;
 	}
-	ROM_FileSize = (u32)size;
-	
+	ROM_FileSize = size;
+
 	
 	int bestone = 0;
 	int score[4];
-	score[0] = ROM_ScoreHeader(fileHandle, 0x7FC0);
-	score[1] = ROM_ScoreHeader(fileHandle, 0x81C0);
-	score[2] = ROM_ScoreHeader(fileHandle, 0xFFC0);
-	score[3] = ROM_ScoreHeader(fileHandle, 0x101C0);
-	
+	score[0] = ROM_ScoreHeader(pFile, 0x7FC0);
+	score[1] = ROM_ScoreHeader(pFile, 0x81C0);
+	score[2] = ROM_ScoreHeader(pFile, 0xFFC0);
+	score[3] = ROM_ScoreHeader(pFile, 0x101C0);
+
 	if (score[1] > score[0])
 	{
 		score[0] = score[1];
@@ -300,15 +298,15 @@ bool ROM_LoadFile(char* name)
 	ROM_Buffer = (u8*)MemAlloc(ROM_BufferSize);
 	if (!ROM_Buffer)
 	{
-		FSFILE_Close(fileHandle);
+		fclose(pFile);
 		bprintf("Error while allocating ROM buffer\n");
 		return false;
 	}
 	
-	u32 bytesread;
-	FSFILE_Read(fileHandle, &bytesread, ROM_BaseOffset, (u32*)ROM_Buffer, (u32)size);
-	FSFILE_Close(fileHandle);
-	
+	fseek(pFile, ROM_BaseOffset, SEEK_SET);
+	fread(ROM_Buffer, sizeof(char), size, pFile);
+	fclose(pFile);
+
 	u32 b = 0;
 	u32 offset = 0;
 	for (; b < ROM_NumBanks; b++)

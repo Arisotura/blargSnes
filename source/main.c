@@ -81,8 +81,6 @@ u32* BorderTex;
 u16* MainScreenTex;
 u16* SubScreenTex;
 
-FS_Archive sdmcArchive;
-
 
 int forceexit = 0;
 int running = 0;
@@ -180,18 +178,11 @@ void SPCThread(u32 blarg)
 
 void dbg_save(char* path, void* buf, int size)
 {
-	Handle sram;
-	FS_Path sramPath;
-	sramPath.type = PATH_ASCII;
-	sramPath.size = strlen(path) + 1;
-	sramPath.data = (u8*)path;
-	
-	Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_WRITE, 0);
-	if ((res & 0xFFFC03FF) == 0)
+	FILE* pFile = fopen(path, "wb");
+	if (pFile != NULL)
 	{
-		u32 byteswritten = 0;
-		FSFILE_Write(sram, &byteswritten, 0, (u32*)buf, size, FS_WRITE_FLUSH);
-		FSFILE_Close(sram);
+		fwrite(buf, sizeof(char), size, pFile);
+		fclose(pFile);
 	}
 }
 
@@ -586,23 +577,14 @@ bool TakeScreenshot(char* path)
 {
 	int x, y;
 	
-	Handle file;
-	FS_Path filePath;
-	filePath.type = PATH_ASCII;
-	filePath.size = strlen(path) + 1;
-	filePath.data = (u8*)path;
-	
-	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_CREATE|FS_OPEN_WRITE, 0);
-	if (res) 
+	FILE *pFile = fopen(path, "wb");
+	if(pFile == NULL)
 		return false;
-		
-	u32 byteswritten;
 	
 	u32 bitmapsize = 400*480*3;
-	u8* tempbuf = (u8*)MemAlloc(0x36 + bitmapsize);
+	u8* tempbuf = (u8*)malloc(0x36 + bitmapsize);
 	memset(tempbuf, 0, 0x36 + bitmapsize);
-	
-	FSFILE_SetSize(file, (u16)(0x36 + bitmapsize));
+
 	
 	*(u16*)&tempbuf[0x0] = 0x4D42;
 	*(u32*)&tempbuf[0x2] = 0x36 + bitmapsize;
@@ -640,11 +622,11 @@ bool TakeScreenshot(char* path)
 			tempbuf[di++] = framebuf[si++];
 		}
 	}
-	
-	FSFILE_Write(file, &byteswritten, 0, (u32*)tempbuf, 0x36 + bitmapsize, 0x10001);
-	
-	FSFILE_Close(file);
-	MemFree(tempbuf);
+
+	fwrite(tempbuf, sizeof(char), 0x36 + bitmapsize, pFile);
+	fclose(pFile);
+
+	free(tempbuf);
 	return true;
 }
 
@@ -686,69 +668,33 @@ void CopyBitmapToTexture(u8* src, void* dst, u32 width, u32 height, u32 alpha, u
 
 bool LoadBitmap(char* path, u32 width, u32 height, void* dst, u32 alpha, u32 startx, u32 stride, u32 flags)
 {
-	Handle file;
-	FS_Path filePath;
-	filePath.type = PATH_ASCII;
-	filePath.size = strlen(path) + 1;
-	filePath.data = (u8*)path;
-	
-	Result res = FSUSER_OpenFile(&file, sdmcArchive, filePath, FS_OPEN_READ, 0);
-	if (res) 
+	u8 header[0x1E];
+	FILE *pFile = fopen(path, "rb");
+	if (pFile == NULL)
 		return false;
-		
-	u32 bytesread;
-	u32 temp;
-	
-	// magic
-	FSFILE_Read(file, &bytesread, 0, (u32*)&temp, 2);
-	if ((u16)temp != 0x4D42)
+
+	fread(header, sizeof(char), 0x1E, pFile);
+	if ((*(u16*)&header[0] != 0x4D42) ||    // magic
+	    (*(u32*)&header[0x12] != width) ||  // width
+		(*(u32*)&header[0x16] != height) || // height
+		(*(u16*)&header[0x1A] != 1) ||      // bitplanes
+		(*(u16*)&header[0x1C] != 24))       // bit depth
 	{
-		FSFILE_Close(file);
+		fclose(pFile);
 		return false;
 	}
-	
-	// width
-	FSFILE_Read(file, &bytesread, 0x12, (u32*)&temp, 4);
-	if (temp != width)
-	{
-		FSFILE_Close(file);
-		return false;
-	}
-	
-	// height
-	FSFILE_Read(file, &bytesread, 0x16, (u32*)&temp, 4);
-	if (temp != height)
-	{
-		FSFILE_Close(file);
-		return false;
-	}
-	
-	// bitplanes
-	FSFILE_Read(file, &bytesread, 0x1A, (u32*)&temp, 2);
-	if ((u16)temp != 1)
-	{
-		FSFILE_Close(file);
-		return false;
-	}
-	
-	// bit depth
-	FSFILE_Read(file, &bytesread, 0x1C, (u32*)&temp, 2);
-	if ((u16)temp != 24)
-	{
-		FSFILE_Close(file);
-		return false;
-	}
-	
+
 	
 	u32 bufsize = width*height*3;
-	u8* buf = (u8*)MemAlloc(bufsize);
+	u8* buf = (u8*)malloc(bufsize);
 	
-	FSFILE_Read(file, &bytesread, 0x36, buf, bufsize);
-	FSFILE_Close(file);
-	
+	fseek(pFile, 0x36, SEEK_SET);
+	fread(buf, sizeof(char), bufsize, pFile);
+	fclose(pFile);
+
 	CopyBitmapToTexture(buf, dst, width, height, alpha, startx, stride, flags);
 	
-	MemFree(buf);
+	free(buf);
 	return true;
 }
 
@@ -858,13 +804,14 @@ int main()
 	
 	ClearConsole();
 	
+	// Enable 804Mhz mode on New 3DS
+	osSetSpeedupEnable(true);
+	
 	//aptOpenSession();
 	APT_SetAppCpuTimeLimit(30); // enables syscore usage
 	//aptCloseSession();
 
 	gfxInitDefault();
-	
-	FSUSER_OpenArchive(&sdmcArchive, ARCHIVE_SDMC, (FS_Path){PATH_EMPTY, 1, (u8*)""});
 	
 	Config.HardwareMode7 = -1;
 	LoadConfig(1);

@@ -17,7 +17,9 @@
 */
 
 #include <3ds.h>
+#include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "main.h"
 #include "mem.h"
@@ -37,7 +39,6 @@ u32 SNES_SRAMMask;
 u8* SNES_SRAM = NULL;
 
 char SNES_SRAMPath[300];
-extern FS_Archive sdmcArchive;
 
 // addressing: BBBBBBBB:AAAaaaaa:aaaaaaaa
 // bit4-31: argument
@@ -131,23 +132,22 @@ bool SNES_LoadROM(char* path)
 		strncpy(SNES_SRAMPath + strlen(path)-3, "srm", 3);
 		SNES_SRAMPath[strlen(path)] = '\0';
 
-		Handle sram;
-		FS_Path sramPath;
-		sramPath.type = PATH_ASCII;
-		sramPath.size = strlen(SNES_SRAMPath) + 1;
-		sramPath.data = (u8*)SNES_SRAMPath;
-	
-		Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_READ|FS_OPEN_WRITE, 0);
-		if ((res & 0xFFFC03FF) != 0)
+		FILE *pFile = fopen(SNES_SRAMPath, "rb+");
+		if (pFile == NULL)
 		{
-			res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_READ|FS_OPEN_WRITE, 0);
-			if ((res & 0xFFFC03FF) != 0)
-				bprintf("Error %08X while trying to open the savefile.\nMake sure it isn't read-only.\n", res);
+			pFile = fopen(SNES_SRAMPath, "wb");
+			if (pFile == NULL)
+				bprintf("Error while trying to open the savefile.\nMake sure it isn't read-only.\n");
 			else
-				FSFILE_SetSize(sram, SNES_SRAMMask + 1);
+			{
+				u8* temp = malloc(SNES_SRAMMask + 1);
+				memset(temp, 0, SNES_SRAMMask + 1);
+				fwrite(temp, sizeof(char), SNES_SRAMMask + 1, pFile);
+				free(temp);
+			}
 		}
-		if ((res & 0xFFFC03FF) == 0)
-			FSFILE_Close(sram);
+		if (pFile != NULL)
+			fclose(pFile);
 	}
 	
 	return true;
@@ -190,18 +190,11 @@ void SNES_Reset()
 		for (i = 0; i <= SNES_SRAMMask; i += 4)
 			*(u32*)&SNES_SRAM[i] = 0;
 		
-		Handle sram;
-		FS_Path sramPath;
-		sramPath.type = PATH_ASCII;
-		sramPath.size = strlen(SNES_SRAMPath) + 1;
-		sramPath.data = (u8*)SNES_SRAMPath;
-	
-		Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_READ, 0);
-		if ((res & 0xFFFC03FF) == 0)
+		FILE *pFile = fopen(SNES_SRAMPath, "rb");
+		if (pFile != NULL)
 		{
-			u32 bytesread = 0;
-			FSFILE_Read(sram, &bytesread, 0, (u32*)SNES_SRAM, SNES_SRAMMask + 1);
-			FSFILE_Close(sram);
+			fread(SNES_SRAM, sizeof(char), SNES_SRAMMask + 1, pFile);
+			fclose(pFile);
 		}
 	}
 	
@@ -291,22 +284,15 @@ void SNES_SaveSRAM()
 	if (!SNES_Status->SRAMDirty)
 		return;
 	
-	Handle sram;
-	FS_Path sramPath;
-	sramPath.type = PATH_ASCII;
-	sramPath.size = strlen(SNES_SRAMPath) + 1;
-	sramPath.data = (u8*)SNES_SRAMPath;
-	
-	Result res = FSUSER_OpenFile(&sram, sdmcArchive, sramPath, FS_OPEN_WRITE, 0);
-	if ((res & 0xFFFC03FF) == 0)
+	FILE *pFile = fopen(SNES_SRAMPath, "wb");
+	if (pFile != NULL)
 	{
-		u32 byteswritten = 0;
-		FSFILE_Write(sram, &byteswritten, 0, (u32*)SNES_SRAM, SNES_SRAMMask + 1, FS_WRITE_FLUSH);
-		FSFILE_Close(sram);
+		fwrite(SNES_SRAM, sizeof(char), SNES_SRAMMask + 1, pFile);
+		fclose(pFile);
 		bprintf("SRAM saved\n");
 	}
 	else
-		bprintf("SRAM save failed (%08X)\n", res);
+		bprintf("SRAM save failed\n");
 		
 	SNES_Status->SRAMDirty = 0;
 }

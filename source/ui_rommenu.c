@@ -17,12 +17,12 @@
 */
 
 #include <3ds.h>
+#include <stdio.h>
 #include <string.h>
+#include <dirent.h>
 #include "ui.h"
 #include "config.h"
 
-
-extern FS_Archive sdmcArchive;
 
 int nfiles;
 int menusel = 0;
@@ -87,7 +87,7 @@ int itemcmp(void * first, void * second)
 
 struct LIST * CreateList(void * item)
 {
-	struct LIST * ptr = (struct LIST*)MemAlloc(sizeof(struct LIST));
+	struct LIST * ptr = (struct LIST*)malloc(sizeof(struct LIST));
 	if(ptr == NULL)
 		return NULL;
 	ptr->item = item;
@@ -100,7 +100,7 @@ struct LIST * AddToList(void * item)
 {
 	if(head == NULL)
 		return CreateList(item);
-	struct LIST * ptr = (struct LIST*)MemAlloc(sizeof(struct LIST));
+	struct LIST * ptr = (struct LIST*)malloc(sizeof(struct LIST));
 	if(ptr == NULL)
 		return NULL;
 	ptr->item = item;
@@ -115,18 +115,18 @@ struct LIST * AddToList(void * item)
 void DeleteItem(void * item)
 {
 	struct LISTITEM * thisitem = (struct LISTITEM *)(item);
-	MemFree(thisitem->name);
-	MemFree(item);
+	free(thisitem->name);
+	free(item);
 }
 
 void DeleteList()
 {
-	while(head != NULL)
+	while (head != NULL)
 	{
 		curr = head;
 		DeleteItem(curr->item);
 		head = head->pNext;
-		MemFree(curr);
+		free(curr);
 	}
 }
 
@@ -167,12 +167,21 @@ struct LIST * SortList(struct LIST * pList) {
 }
 
 
-bool IsGoodFile(FS_DirectoryEntry* entry)
+bool IsGoodEntry(struct dirent *entry)
 {
-	if (entry->attributes & FS_ATTRIBUTE_DIRECTORY) return true;
+	if (entry->d_type & DT_DIR) return true;
+
+	char *name = (char*)entry->d_name;
+	char *pch = strchr(name, '.');
+	char *ext = NULL;
+	while (pch != NULL)
+	{
+		ext = pch;
+		pch = strchr(pch + 1, '.');
+	}
+	if (ext == NULL) return false;
 	
-	char* ext = (char*)entry->shortExt;
-	if (strncmp(ext, "SMC", 3) && strncmp(ext, "SFC", 3)) return false;
+	if (strncasecmp(ext, ".SMC", 4) && strncasecmp(ext, ".SFC", 4)) return false;
 	
 	return true;
 }
@@ -267,25 +276,22 @@ void DrawROMList()
 
 void ROMMenu_Init()
 {
-	Handle dirHandle;
-	FS_Path dirPath = (FS_Path){PATH_ASCII, strlen(Config.DirPath)+1, (u8*)Config.DirPath};
-	FS_DirectoryEntry entry;
 	int i;
-	
-	FSUSER_OpenDirectory(&dirHandle, sdmcArchive, dirPath);
-	
+	struct dirent *entry;
+	DIR *pDir = opendir(Config.DirPath);
+
 	
 	head = NULL;
 	curr = NULL;
 
-	if(strcmp(Config.DirPath,"/") == 0)
+	if (strcmp(Config.DirPath,"/") == 0)
 	{
 		nfiles = 0;
 	}
 	else
 	{
-		struct LISTITEM * newItem= (struct LISTITEM *)MemAlloc(sizeof(struct LISTITEM));
-		newItem->name = (char*)MemAlloc(0x106);
+		struct LISTITEM * newItem = (struct LISTITEM *)malloc(sizeof(struct LISTITEM));
+		newItem->name = (char*)malloc(0x106);
 		strncpy(newItem->name, "/..", 0x105);
 		newItem->type = 2;
 		AddToList((void *)(newItem));
@@ -294,32 +300,36 @@ void ROMMenu_Init()
 
 	for (;;)
 	{
-		u32 nread = 0;
-		FSDIR_Read(dirHandle, &nread, 1, &entry);
-		if (!nread) break;
-		if (!IsGoodFile(&entry)) continue;
+		entry = readdir(pDir);
 
-		struct LISTITEM * newItem = (struct LISTITEM *)MemAlloc(sizeof(struct LISTITEM));
-		newItem->name = (char*)MemAlloc(0x106);
-		newItem->type = ((entry.attributes & FS_ATTRIBUTE_DIRECTORY) ? 1 : 0);
-		if(newItem->type)
+		if (entry == NULL) break;
+		if (!IsGoodEntry(entry)) continue;
+
+		struct LISTITEM * newItem = (struct LISTITEM *)malloc(sizeof(struct LISTITEM));
+		newItem->name = (char*)malloc(0x106);
+		
+		newItem->type = (entry->d_type & DT_DIR ? 1 : 0);
+
+		if (newItem->type)
 		{
 			newItem->name[0] = '/';
-			strncpy_u2a(&(newItem->name[1]), entry.name, 0x104);
+			strncpy(&(newItem->name[1]), entry->d_name, 0x104);
 		}
 		else
-			strncpy_u2a(newItem->name, entry.name, 0x105);
+			strncpy(newItem->name, entry->d_name, 0x105);
+
 		AddToList((void *)(newItem));
 		nfiles++;
 	}
-	FSDIR_Close(dirHandle);
+
+	closedir(pDir);
 
 	head = SortList(head);
 
-	fileIdx = (char**)MemAlloc(nfiles * sizeof(char*));
+	fileIdx = (char**)malloc(nfiles * sizeof(char*));
 
 	curr = head;
-	for(i = 0; i < nfiles; i++)
+	for (i = 0; i < nfiles; i++)
 	{
 		fileIdx[i] = (struct LISTITEM *)(curr->item);
 		curr = curr->pNext;
@@ -329,23 +339,23 @@ void ROMMenu_Init()
 	char * dirend = strrchr(dirname, '/');
 	char dirdeep = 0;	
 	strcpy(dirshort, "/\0");
-	if(dirname < dirend)
+	if (dirname < dirend)
 	{
 		char * curdir = dirname;
-		while(MeasureText(dirname) > (256 - (dirdeep ? 22 : 0)))
+		while (MeasureText(dirname) > (256 - (dirdeep ? 22 : 0)))
 		{
-			if((curdir = strchr(&(dirname[1]), '/')) == dirend)
+			if ((curdir = strchr(&(dirname[1]), '/')) == dirend)
 				break;
 			dirdeep = 1;
 			dirname = curdir;
 		}
-		if(dirdeep)
+		if (dirdeep)
 			strcat(dirshort, "../");
-		if(MeasureText(dirname) > (256 - (dirdeep ? 22 : 0)))
+		if (MeasureText(dirname) > (256 - (dirdeep ? 22 : 0)))
 		{
 			strncat(dirshort, &(dirname[1]), 62 - (dirdeep ? 3 : 0));
 			dirend = dirshort + strlen(dirshort) - 1;
-			while(MeasureText(dirshort) > (241 - (dirdeep ? 22 : 0)))
+			while (MeasureText(dirshort) > (241 - (dirdeep ? 22 : 0)))
 			{
 				dirend[0] = '\0';
 				dirend--;
@@ -361,7 +371,7 @@ void ROMMenu_Init()
 
 void ROMMenu_DeInit()
 {
-	MemFree(fileIdx);
+	free(fileIdx);
 	DeleteList();
 }
 
@@ -377,7 +387,7 @@ void ROMMenu_Render(bool force)
 
 void ROMMenu_ExamineExec()
 {
-	if(!fileIdx[menusel]->type)
+	if (!fileIdx[menusel]->type)
 	{
 		if (!StartROM(fileIdx[menusel]->name, Config.DirPath))
 			bprintf("Failed to load this ROM\nPress A to return to menu\n");
@@ -387,10 +397,10 @@ void ROMMenu_ExamineExec()
 	else
 	{
 		
-		if(fileIdx[menusel]->type == 2)
+		if (fileIdx[menusel]->type == 2)
 		{
 			char* findpath = strrchr(Config.DirPath,'/');
-			if(findpath != Config.DirPath)
+			if (findpath != Config.DirPath)
 			{
 				findpath[0] = '\0';
 				findpath = strrchr(Config.DirPath,'/');
