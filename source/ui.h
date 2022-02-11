@@ -25,11 +25,16 @@
 
 void UI_SetFramebuffer(u8* buffer);
 void ClearFramebuffer();
+void ClearFramebufferWithColor(u32 color);
 void DrawRect(int x1, int x2, int y1, int y2, u32 color);
 void DrawRectOutline(int x1, int x2, int y1, int y2, u32 colorin, u32 colorout);
 void FillRect(int x1, int y1, int x2, int y2, u32 color);
+int MeasureCharacter(char ch);
 int MeasureText(char* str);
 void DrawText(int x, int y, u32 color, char* str);
+
+void DrawToolbar(char * dir);
+bool HandleToolbar(u32 x, u32 y);
 
 void DrawButton(int x, int y, int width, u32 color, char* text);
 void DrawCheckBox(int x, int y, u32 color, char* text, bool check);

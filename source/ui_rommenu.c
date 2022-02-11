@@ -17,6 +17,7 @@
 */
 
 #include <3ds.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <dirent.h>
@@ -326,7 +327,7 @@ void ROMMenu_Init()
 
 	head = SortList(head);
 
-	fileIdx = (char**)malloc(nfiles * sizeof(char*));
+	fileIdx = (struct LISTITEM**)malloc(nfiles * sizeof(struct LISTITEM*));
 
 	curr = head;
 	for (i = 0; i < nfiles; i++)
