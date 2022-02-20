@@ -66,5 +66,6 @@ void UI_Touch(int touch, u32 x, u32 y);
 
 
 bool StartROM(char* path, char* dir);
+void bprintf(char* fmt, ...);
 
 #endif

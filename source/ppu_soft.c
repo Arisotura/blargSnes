@@ -19,6 +19,7 @@
 #include <3ds.h>
 
 #include "blargGL.h"
+#include "mem.h"
 #include "snes.h"
 #include "ppu.h"
 

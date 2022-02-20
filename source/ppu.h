@@ -443,8 +443,14 @@ void PPU_VBlank_Hard();
 u32 PPU_TranslateVRAMAddress(u32 addr);
 void PPU_ConvertVRAM8(u32 addr, u8 val);
 void PPU_ConvertVRAM16(u32 addr, u16 val);
+void PPU_ConvertVRAMAll();
 
 void PPU_ComputeWindows(PPU_WindowSegment* s);
 void PPU_BlendScreens(u32 colorformat);
+
+void PPU_SwitchRenderers();
+void ApplyScaling();
+void FinishRendering();
+void RenderTopScreen();
 
 #endif

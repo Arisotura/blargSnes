@@ -19,6 +19,7 @@
 #include <3ds.h>
 #include "ui.h"
 #include "config.h"
+#include "ppu.h"
 
 
 void ApplyScaling();
@@ -73,7 +74,7 @@ void Config_ButtonPress(u32 btn)
 {
 }
 
-void Config_Touch(int touch, u32 x, u32 y)
+void Config_Touch(bool touch, u32 x, u32 y)
 {
 	if (touch != 0) return;
 	

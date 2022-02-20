@@ -22,6 +22,7 @@
 #include <3ds/types.h>
 #include <3ds/svc.h>
 
+#include "mem.h"
 #include "cpu.h"
 #include "snes.h"
 
@@ -159,7 +160,6 @@ int ROM_ScoreHeader(FILE *pFile, u32 offset)
 		
 	int score = 0;
 	int i;
-	u32 bytesread;
 	
 	// 1. check opcodes at reset vector
 	

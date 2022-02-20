@@ -138,6 +138,5 @@ void SPC_IOWrite(int side);
 void SPC_IOWriteDone(int side);
 
 void bprintf(char* fmt, ...);
-void ApplyScaling();
 
 #endif

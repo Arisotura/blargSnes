@@ -189,7 +189,7 @@ bool IsGoodEntry(struct dirent *entry)
 
 void DrawROMList()
 {
-	int i, x, y, y2;
+	int i, y;
 	int maxfile;
 	int menuy;
 	
@@ -473,7 +473,7 @@ void ROMMenu_ButtonPress(u32 btn)
 	marquee_dir = 0;
 }
 
-void ROMMenu_Touch(int touch, u32 x, u32 y)
+void ROMMenu_Touch(bool touch, u32 x, u32 y)
 {
 	int menuy = 26;
 	

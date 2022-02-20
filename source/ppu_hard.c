@@ -262,7 +262,7 @@ inline int bitcount(u32 val)
 {
 	val = val - ((val >> 1) & 0x55555555);                    // reuse input as temporary
 	val = (val & 0x33333333) + ((val >> 2) & 0x33333333);     // temp
-	return ((val + (val >> 4) & 0xF0F0F0F) * 0x1010101) >> 24; // count
+	return (((val + (val >> 4)) & 0xF0F0F0F) * 0x1010101) >> 24; // count
 }
 
 void PPU_ConvertVRAM8(u32 addr, u8 val)
@@ -382,17 +382,18 @@ void PPU_ConvertVRAMAll()
 	PPU_M7PalUpdate = PPU.PaletteUpdateCount256;
 }
 
-void PPU_DecodeTile(u8* src, u16* pal, u32 *dst)
+void PPU_DecodeTile(u8* src, u16* pal, u16* dst)
 {
 	int i;
 	u16 oldcolor0 = pal[0];
+	u32* dst32 = (u32*)dst;
 	pal[0] = 0;
 	for (i = 0; i < 64; i += 2)
-		*dst++ = pal[src[i]] | (pal[src[i+1]] << 16);
+		*dst32++ = pal[src[i]] | (pal[src[i+1]] << 16);
 	pal[0] = oldcolor0;
 }
 
-void PPU_DecodeTileExt(u8* src, u16* pal, u16 *dst)
+void PPU_DecodeTileExt(u8* src, u16* pal, u16* dst)
 {
 	int i;
 	u16 oldcolor0 = pal[0];
@@ -840,10 +841,10 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 palbase, u32 prio
 	PPU_Background* bg = &PPU.BG[num];
 	PPU_Background* obg = &PPU.BG[2];
 	u16* tilemap;
-	u16* tilemapx;
-	u16* tilemapy;
+	u16* tilemapx = NULL;
+	u16* tilemapy = NULL;
 	int tileaddrshift = ((int[]){4, 5, 6})[type];
-	u32 xoff, yoff, oxoff, oyoff;
+	u32 xoff, yoff, oxoff = 0, oyoff;
 	u16 curtile;
 	int x, y, ox, oy, yf;
 	u32 idx;
@@ -871,7 +872,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 palbase, u32 prio
 	*vptr++ = coord;
 	
 	PPU_BGSection* s = &bg->Sections[0];
-	PPU_BGSection* o;
+	PPU_BGSection* o = NULL;
 	for (;;)
 	{
 		syend = s->EndOffset;
@@ -900,8 +901,8 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 palbase, u32 prio
 			}
 			oxoff = o->XScroll & 0xF8;
 			oyoff = o->YScroll >> yshift;
-			tilemapx = PPU.VRAM + o->TilemapOffset + ((oyoff & 0xF8) << 3);
-			tilemapy = PPU.VRAM + o->TilemapOffset + (((oyoff + 8) & 0xF8) << 3);
+			tilemapx = (u16*)(PPU.VRAM + o->TilemapOffset + ((oyoff & 0xF8) << 3));
+			tilemapy = (u16*)(PPU.VRAM + o->TilemapOffset + (((oyoff + 8) & 0xF8) << 3));
 			if (oyoff & 0x100) if (o->Size & 0x2) tilemapx += (o->Size & 0x1) ? 2048 : 1024;
 			if ((oyoff+8) & 0x100) if (o->Size & 0x2) tilemapy += (o->Size & 0x1) ? 2048 : 1024;
 			syend1 = syend + (hi && PPU.Interlace ? 3 : 7);
@@ -923,7 +924,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 palbase, u32 prio
 				y = syend - 1;
 			}
 
-			tilemap = PPU.VRAM + s->TilemapOffset + ((yoff & 0xF8) << 3);
+			tilemap = (u16*)(PPU.VRAM + s->TilemapOffset + ((yoff & 0xF8) << 3));
 			if (yoff & 0x100)
 			{
 				if (s->Size & 0x2)
@@ -965,7 +966,7 @@ void PPU_HardRenderBG_8x8(u32 setalpha, u32 num, int type, u32 palbase, u32 prio
 						vval = tilemapy[idx];
 					if (hval & validBit) hofs = ox + (hval & 0x1F8) - (hval & 0x200);
 					if (vval & validBit) vofs = y + (vval & 0x1FF) - (vval & 0x200);
-					tilemap = PPU.VRAM + s->TilemapOffset + ((vofs & 0xF8) << 3);
+					tilemap = (u16*)(PPU.VRAM + s->TilemapOffset + ((vofs & 0xF8) << 3));
 					if(vofs & 0x100) if(s->Size & 0x2) tilemap += (s->Size & 0x1) ? 2048 : 1024;
 					idx = (hofs & 0xF8) >> 3;
 					if (hofs & 0x100) if (s->Size & 0x1) idx += 1024;
@@ -1124,7 +1125,7 @@ void PPU_HardRenderBG_16x16(u32 setalpha, u32 num, int type, u32 palbase, u32 pr
 		
 		for (y = systart - (yoff&15); y < syend; y += yincr, yoff += 16)
 		{
-			tilemap = PPU.VRAM + s->TilemapOffset + ((yoff & 0x1F0) << 2);
+			tilemap = (u16*)(PPU.VRAM + s->TilemapOffset + ((yoff & 0x1F0) << 2));
 			if (yoff & 0x200)
 			{
 				if (s->Size & 0x2)
@@ -1466,7 +1467,7 @@ void PPU_HardRenderBG_Mode7(u32 setalpha, u32 num, int ystart, int yend, u32 pri
 	if(!prio)
 	{
 		found->vertexLen = nlines;
-		vptr = (u16*)((((u32)vptr) + 0x1F) & ~0x1F);
+		vptr = (float*)((((u32)vptr) + 0x1F) & ~0x1F);
 		vertexPtr = vptr;
 	}
 
@@ -1906,7 +1907,6 @@ void PPU_UpdateMode7()
 	else
 	{
 		//Examine each tile, update as necessary, then start updating all necessary layer sections
-		bool tileUpd = false;
 		for(i = 0; i < 256; i++)
 		{
 			if(PPU_M7TileFlg[i])
@@ -2268,7 +2268,6 @@ void PPU_RenderScanline_Hard(u32 line)
 					    (cur->ScrollParams != PPU.M7ScrollParams))
 					{
 						cur->EndOffset = line;
-						PPU_Mode7Section *bourf = cur;
 						cur = ++PPU.CurMode7Section;
 					
 						cur->vertexStart = NULL;

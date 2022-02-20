@@ -22,6 +22,7 @@
 #include "config.h"
 #include "snes.h"
 #include "ppu.h"
+#include "spc700.h"
 
 
 u32 Mem_WRAMAddr = 0;
@@ -328,6 +329,9 @@ u32 PPU_TranslateVRAMAddress(u32 addr)
 				  ((addr & 0x00700) >> 7) |
 				  ((addr & 0x000FE) << 3);
 	}
+	
+	// herp
+	return addr;
 }
 
 
@@ -776,9 +780,9 @@ void PPU_Write8(u32 addr, u8 val)
 			break;
 			
 		case 0x2B:
-			if(PPU.WinCombine[1] != val & 0xF)
+			if(PPU.WinCombine[1] != (val & 0xF))
 			{
-				PPU.WinCombine[1] = val & 0xF;
+				PPU.WinCombine[1] = (val & 0xF);
 				PPU.OBJWindowCombine = PPU_WindowCombine[(val & 0x03)];
 				PPU.ColorMathWindowCombine = PPU_WindowCombine[(val & 0x0C) >> 2];
 				PPU.WindowDirty = 2;
@@ -873,7 +877,7 @@ void PPU_Write8(u32 addr, u8 val)
 		case 0x83: Mem_WRAMAddr = (Mem_WRAMAddr & 0x0000FFFF) | ((val & 0x01) << 16); break;
 				
 		default:
-			iprintf("PPU_Write8(%08X, %08X)\n", addr, val);
+			//iprintf("PPU_Write8(%08X, %08X)\n", addr, val);
 			break;
 	}
 }
@@ -1141,8 +1145,6 @@ void PPU_RenderScanline(u32 line)
 
 void PPU_VBlank()
 {
-	int i;
-	
 	FinishRendering();
 	
 	if (!SkipThisFrame)

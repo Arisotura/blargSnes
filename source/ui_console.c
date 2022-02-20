@@ -120,7 +120,7 @@ void Console_ButtonPress(u32 btn)
 	}
 }
 
-void Console_Touch(int touch, u32 x, u32 y)
+void Console_Touch(bool touch, u32 x, u32 y)
 {
 }
 

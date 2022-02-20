@@ -94,7 +94,7 @@ u8 SNES_ExecTrap[8192] __attribute__((aligned(256)));
 void SNES_Init()
 {
 	// TODO get rid of this junk!
-	SNES_Status = &_Mem_PtrTable[0];
+	SNES_Status = (SNES_StatusData*)&_Mem_PtrTable[0];
 	Mem_PtrTable = &_Mem_PtrTable[SNESSTATUS_SIZE >> 2];
 }
 
@@ -132,9 +132,10 @@ bool SNES_LoadROM(char* path)
 	
 	if (SNES_SRAMMask)
 	{
-		strncpy(SNES_SRAMPath, path, strlen(path)-3);
-		strncpy(SNES_SRAMPath + strlen(path)-3, "srm", 3);
-		SNES_SRAMPath[strlen(path)] = '\0';
+		int pathlen = strlen(path);
+		if (pathlen > 299) pathlen = 299;
+		strncpy(SNES_SRAMPath, path, pathlen-3);
+		strncpy(SNES_SRAMPath + pathlen-3, "srm", 4);
 
 		FILE *pFile = fopen(SNES_SRAMPath, "rb+");
 		if (pFile == NULL)
