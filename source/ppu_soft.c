@@ -31,8 +31,6 @@ extern DVLB_s* softRenderShader;
 
 extern shaderProgram_s softRenderShaderP;
 
-extern u32* gpuOut;
-extern u32* gpuDOut;
 extern u32* SNESFrame;
 extern u16* MainScreenTex;
 extern u16* SubScreenTex;
@@ -1399,7 +1397,7 @@ void PPU_BlendScreens(u32 colorformat)
 
 	bglUseShader(&softRenderShaderP);
 	
-	bglOutputBuffers(SNESFrame, NULL, 256, 256); // depth buffer doesn't matter
+	bglOutputBuffers(SNESFrame, NULL, GPU_RGBA8, 256, 256); // depth buffer doesn't matter
 	bglViewport(0, 0, 256, 256);
 	
 	bglEnableDepthTest(false);

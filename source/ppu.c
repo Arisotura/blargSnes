@@ -17,6 +17,7 @@
 */
 
 #include <3ds.h>
+#include <string.h>
 
 #include "config.h"
 #include "snes.h"
@@ -208,9 +209,8 @@ void PPU_Reset()
 		{
 			PPU.Palette[i] = 0x0001;
 			PPU.HardPalette[i] = 0x0001;
-			PPU.PaletteEx1[i] = (i < 128);
-			PPU.PaletteEx2[i] = (i >= 128);
 		}
+		PPU_Reset_Hard();
 	}
 }
 
@@ -287,13 +287,6 @@ inline void PPU_SetColor(u32 num, u16 val)
 	if (PPU.HardwareRenderer)
 	{
 		PPU.Palette[num] = temp | 0x0001;
-		if(num < 128)
-		{
-			//PPU.PaletteEx1[num] = temp | 0x0001;
-			//PPU.PaletteEx2[num + 128] = temp | 0x0001;
-			if(num > 0)
-				PPU.PaletteUpdateCount128++;
-		}
 		
 		if(num == 0)
 			PPU.MainBackdropDirty = 1;
@@ -310,8 +303,6 @@ inline void PPU_SetColor(u32 num, u16 val)
 void PPU_UpdateHardMemory()
 {
 	memcpy(PPU.HardPalette, PPU.Palette, 256*2);
-	memcpy(&PPU.PaletteEx1[0], PPU.Palette, 128*2);
-	memcpy(&PPU.PaletteEx2[128], PPU.Palette, 128*2);
 	
 	memcpy(PPU.HardOAM, PPU.OAM, 0x220);
 }
@@ -538,13 +529,13 @@ void PPU_Write8(u32 addr, u8 val)
 		case 0x02:
 			PPU.OAMAddr = (PPU.OAMAddr & 0x200) | (val << 1);
 			PPU.OAMReload = PPU.OAMAddr;
-			PPU.FirstOBJ = PPU.OAMPrio ? ((PPU.OAMAddr >> 1) & 0x7F) : 0;
+			PPU.FirstOBJ = PPU.OAMPrio ? ((PPU.OAMAddr >> 2) & 0x7F) : 0;
 			break;
 		case 0x03:
 			PPU.OAMAddr = (PPU.OAMAddr & 0x1FE) | ((val & 0x01) << 9);
 			PPU.OAMPrio = val & 0x80;
 			PPU.OAMReload = PPU.OAMAddr;
-			PPU.FirstOBJ = PPU.OAMPrio ? ((PPU.OAMAddr >> 1) & 0x7F) : 0;
+			PPU.FirstOBJ = PPU.OAMPrio ? ((PPU.OAMAddr >> 2) & 0x7F) : 0;
 			break;
 			
 		case 0x04:
@@ -632,8 +623,9 @@ void PPU_Write8(u32 addr, u8 val)
 				addr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
 				if (PPU.VRAM[addr] != val)
 				{
+					if (PPU.HardwareRenderer)
+						PPU_ConvertVRAM8(addr, val);
 					PPU.VRAM[addr] = val;
-					PPU.VRAMUpdateCount[addr >> 4]++;
 				}
 				if (!(PPU.VRAMInc & 0x80))
 					PPU.VRAMAddr += PPU.VRAMStep;
@@ -644,10 +636,9 @@ void PPU_Write8(u32 addr, u8 val)
 				addr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
 				if (PPU.VRAM[addr+1] != val)
 				{
+					if (PPU.HardwareRenderer)
+						PPU_ConvertVRAM8(addr+1, val);
 					PPU.VRAM[addr+1] = val;
-					PPU.VRAMUpdateCount[addr >> 4]++;
-					PPU.VRAM7[addr >> 1] = val;
-					PPU.VRAM7UpdateCount[addr >> 7]++;
 				}
 				if (PPU.VRAMInc & 0x80)
 					PPU.VRAMAddr += PPU.VRAMStep;
@@ -799,6 +790,7 @@ void PPU_Write8(u32 addr, u8 val)
 			{
 				PPU.MainLayerEnable = val;
 				PPU.ModeDirty = 1;
+				PPU.WindowDirty = 1;
 			}
 			break;
 		case 0x2D:
@@ -806,6 +798,7 @@ void PPU_Write8(u32 addr, u8 val)
 			{
 				PPU.SubLayerEnable = val;
 				PPU.ModeDirty = 1;
+				PPU.WindowDirty = 1;
 			}
 			break;
 			
@@ -901,10 +894,9 @@ void PPU_Write16(u32 addr, u16 val)
 			addr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
 			if (*(u16*)&PPU.VRAM[addr] != val)
 			{
+				if (PPU.HardwareRenderer)
+					PPU_ConvertVRAM16(addr, val);
 				*(u16*)&PPU.VRAM[addr] = val;
-				PPU.VRAMUpdateCount[addr >> 4]++;
-				PPU.VRAM7[addr >> 1] = val >> 8;
-				PPU.VRAM7UpdateCount[addr >> 7]++;
 			}
 			PPU.VRAMAddr += PPU.VRAMStep;
 			break;

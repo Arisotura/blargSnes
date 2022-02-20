@@ -53,7 +53,6 @@ aptHookCookie APTHook;
 
 
 u32* gpuOut;
-u32* gpuDOut;
 u32* SNESFrame;
 
 DVLB_s* finalShader;
@@ -360,11 +359,11 @@ void RenderTopScreen()
 {
 	bglUseShader(&finalShaderP);
 
-	bglOutputBuffers(gpuOut, gpuDOut, 240, 400);
+	bglOutputBuffers(gpuOut, NULL, GPU_RGBA8, 240, 400);
 	bglViewport(0, 0, 240, 400);
 	
 	bglEnableDepthTest(false);
-	bglColorDepthMask(GPU_WRITE_ALL);
+	bglColorDepthMask(GPU_WRITE_COLOR);
 	
 	bglEnableTextures(GPU_TEXUNIT0);
 	
@@ -805,10 +804,18 @@ int main()
 
 	gfxInitDefault();
 	
-	Config.HardwareMode7 = -1;
+	Config.HardwareMode7Filter = -1;
 	LoadConfig(1);
 	
 	VRAM_Init();
+	gpuOut = (u32*)VRAM_Alloc(400*240*4);
+	
+	//SNESFrame = (u32*)VRAM_Alloc(256*256*4);
+	// TODO: these two have to sit in FCRAM because there isn't enough space left in VRAM
+	// hardware renderer takes up 5.5MB out of 6
+	SNESFrame = (u32*)linearAlloc(256*256*4);
+	BorderTex = (u32*)linearAlloc(512*256*4);
+	
 	SNES_Init();
 	PPU_Init();
 	
@@ -820,10 +827,6 @@ int main()
 	vertexBuf = linearAlloc(vertexBufSize * 2);
 	vertexPtr = vertexBuf;
 	curVertexBuf = 0;
-	
-	gpuOut = (u32*)VRAM_Alloc(400*240*2*4);
-	gpuDOut = (u32*)VRAM_Alloc(400*240*2*4);
-	SNESFrame = (u32*)VRAM_Alloc(256*256*4);
 
 	finalShader = DVLB_ParseFile((u32*)final_shbin, final_shbin_size);
 	softRenderShader = DVLB_ParseFile((u32*)render_soft_shbin, render_soft_shbin_size);
@@ -836,19 +839,17 @@ int main()
 	shaderProgramInit(&finalShaderP);		shaderProgramSetVsh(&finalShaderP, &finalShader->DVLE[0]);				shaderProgramSetGsh(&finalShaderP, &finalShader->DVLE[1], 4);
 	shaderProgramInit(&softRenderShaderP);	shaderProgramSetVsh(&softRenderShaderP, &softRenderShader->DVLE[0]);	shaderProgramSetGsh(&softRenderShaderP, &softRenderShader->DVLE[1], 4);
 	shaderProgramInit(&hardRenderShaderP);	shaderProgramSetVsh(&hardRenderShaderP, &hardRenderShader->DVLE[0]);	shaderProgramSetGsh(&hardRenderShaderP, &hardRenderShader->DVLE[1], 4);
-	shaderProgramInit(&hard7RenderShaderP);	shaderProgramSetVsh(&hard7RenderShaderP, &hard7RenderShader->DVLE[0]);	shaderProgramSetGsh(&hard7RenderShaderP, &hard7RenderShader->DVLE[1], 2);
+	shaderProgramInit(&hard7RenderShaderP);	shaderProgramSetVsh(&hard7RenderShaderP, &hard7RenderShader->DVLE[0]);	shaderProgramSetGsh(&hard7RenderShaderP, &hard7RenderShader->DVLE[1], 4);
 	shaderProgramInit(&hardRenderOBJShaderP);	shaderProgramSetVsh(&hardRenderOBJShaderP, &hardRenderOBJShader->DVLE[0]);	shaderProgramSetGsh(&hardRenderOBJShaderP, &hardRenderOBJShader->DVLE[1], 6);
 	shaderProgramInit(&plainQuadShaderP);	shaderProgramSetVsh(&plainQuadShaderP, &plainQuadShader->DVLE[0]);		shaderProgramSetGsh(&plainQuadShaderP, &plainQuadShader->DVLE[1], 4);
 	shaderProgramInit(&windowMaskShaderP);	shaderProgramSetVsh(&windowMaskShaderP, &windowMaskShader->DVLE[0]);	shaderProgramSetGsh(&windowMaskShaderP, &windowMaskShader->DVLE[1], 4);
 
-	GX_MemoryFill(gpuOut, 0x404040FF, &gpuOut[0x2EE00], 0x201, gpuDOut, 0x00000000, &gpuDOut[0x2EE00], 0x201);
+	GX_MemoryFill(gpuOut, 0x404040FF, &gpuOut[240*400], 0x201, NULL, 0, NULL, 0);
 	gspWaitForPSC0();
 	gfxSwapBuffersGpu();
 	
 	UI_SetFramebuffer(gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL));
 	//ClearConsole();
-	
-	BorderTex = (u32*)linearAlloc(512*256*4);
 	
 	// copy some fixed vertices to linear memory
 	borderVertices = (float*)linearAlloc(5*2 * sizeof(float));
@@ -1052,9 +1053,9 @@ int main()
 	GX_BindQueue(NULL);
 	free(GXQueue.entries);
 
-	vramFree(SNESFrame);
-	vramFree(gpuDOut);
-	vramFree(gpuOut);
+	//VRAM_Free(SNESFrame);
+	linearFree(SNESFrame);
+	VRAM_Free(gpuOut);
 
 	Audio_DeInit();
 	PPU_DeInit();

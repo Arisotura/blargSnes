@@ -33,13 +33,12 @@
 
 .entry vmain
 .proc vmain
-	mov r0, const1
-	mul r0.xyz, r0.xxx, v0.xyz
+	mul r0.xyzw, c4.zzzw, v0.xyzw
 	add r0.xyz, const2.xxx, r0.xyz
 	mov o0, r0
 
 	; result.texcoord = in.texcoord * (uniform scale in c4)
-	mul r1, c4, v1
+	mul r1, c4.xyzz, v1
 	mov o1, r1
 	end
 	nop

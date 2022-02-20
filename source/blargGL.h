@@ -40,7 +40,7 @@ u32 bglUniformLoc(GPU_SHADER_TYPE type, const char* name);
 void bglUniform(GPU_SHADER_TYPE type, u32 id, float* val);
 void bglUniformMatrix(GPU_SHADER_TYPE type, u32 id, float* val);
 
-void bglOutputBuffers(void* color, void* depth, u32 w, u32 h);
+void bglOutputBuffers(void* color, void* depth, GPU_TEXCOLOR colortype, u32 w, u32 h);
 void bglViewport(u32 x, u32 y, u32 w, u32 h);
 
 void bglScissorMode(GPU_SCISSORMODE mode);

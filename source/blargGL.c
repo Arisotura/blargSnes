@@ -45,6 +45,7 @@ struct
 	u32 ColorBuffer;
 	u32 DepthBuffer;
 	u32 OutputW, OutputH;
+	GPU_TEXCOLOR ColorBufferType;
 	
 	u32 ViewportX, ViewportY;
 	u32 ViewportW, ViewportH;
@@ -189,6 +190,16 @@ void _bglUpdateState()
 	
 	if (dirty & 0x4)
 	{
+		u32 coltype;
+		switch (bglState.ColorBufferType)
+		{
+		case GPU_RGBA8:    coltype = 0x00002; break;
+		case GPU_RGBA5551: coltype = 0x20000; break;
+		case GPU_RGB565:   coltype = 0x30000; break;
+		case GPU_RGBA4:    coltype = 0x40000; break;
+		default:           coltype = 0x00002; break;
+		}
+		
 		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_FLUSH, 1);
 		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_INVALIDATE, 1);
 		
@@ -199,7 +210,7 @@ void _bglUpdateState()
 		GPUCMD_AddWrite(GPUREG_RENDERBUF_DIM, bglState.OutputW | ((bglState.OutputH - 1) << 12) | (1<<24));
 		
 		GPUCMD_AddWrite(GPUREG_DEPTHBUFFER_FORMAT, 0x00000003);
-		GPUCMD_AddWrite(GPUREG_COLORBUFFER_FORMAT, 0x00000002);
+		GPUCMD_AddWrite(GPUREG_COLORBUFFER_FORMAT, coltype);
 		GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_BLOCK32, 0x00000000);
 		
 		GPUCMD_AddWrite(GPUREG_COLORBUFFER_READ, bglState.ColorBuffer ? 0xF : 0);
@@ -424,10 +435,21 @@ void bglUniformMatrix(GPU_SHADER_TYPE type, u32 id, float* val)
 }
 
 
-void bglOutputBuffers(void* color, void* depth, u32 w, u32 h)
+void bglOutputBuffers(void* color, void* depth, GPU_TEXCOLOR colortype, u32 w, u32 h)
 {
-	bglState.ColorBuffer = osConvertVirtToPhys(color);
-	bglState.DepthBuffer = osConvertVirtToPhys(depth);
+	u32 colorphys = osConvertVirtToPhys(color);
+	u32 depthphys = osConvertVirtToPhys(depth);
+	
+	if (bglState.ColorBuffer == colorphys &&
+	    bglState.DepthBuffer == depthphys &&
+		bglState.ColorBufferType == colortype &&
+		bglState.OutputW == w &&
+		bglState.OutputH == h)
+		return;
+		
+	bglState.ColorBuffer = colorphys;
+	bglState.DepthBuffer = depthphys;
+	bglState.ColorBufferType = colortype;
 	bglState.OutputW = w;
 	bglState.OutputH = h;
 	bglState.DirtyFlags |= 0x4;
@@ -435,6 +457,12 @@ void bglOutputBuffers(void* color, void* depth, u32 w, u32 h)
 
 void bglViewport(u32 x, u32 y, u32 w, u32 h)
 {
+	if (bglState.ViewportX == x &&
+	    bglState.ViewportY == y &&
+		bglState.ViewportW == w &&
+		bglState.ViewportH == h)
+		return;
+		
 	bglState.ViewportX = x;
 	bglState.ViewportY = y;
 	bglState.ViewportW = w;
