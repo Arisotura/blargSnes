@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2022 Arisotura
 
     This file is part of blargSnes.
 
@@ -60,6 +60,7 @@ extern CPU_Regs_t CPU_Regs;
 
 	
 void CPU_Reset();
+void CPU_MainLoop();
 void CPU_Run();
 
 void CPU_TriggerIRQ();

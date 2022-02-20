@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2022 Arisotura
 
     This file is part of blargSnes.
 
@@ -24,7 +24,7 @@ typedef struct
 	int HardwareRenderer;
 	int ScaleMode;
 	char DirPath[0x106];
-	int HardwareMode7;
+	int HardwareMode7Filter;
 } Config_t;
 
 extern Config_t Config;

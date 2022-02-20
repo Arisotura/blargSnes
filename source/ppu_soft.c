@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2022 Arisotura
 
     This file is part of blargSnes.
 
@@ -19,21 +19,19 @@
 #include <3ds.h>
 
 #include "blargGL.h"
+#include "mem.h"
 #include "snes.h"
 #include "ppu.h"
 
 
 extern void* vertexBuf;
 extern void* vertexPtr;
+void SwapVertexBuf();
 
 extern DVLB_s* softRenderShader;
 
 extern shaderProgram_s softRenderShaderP;
 
-extern float snesProjMatrix[16];
-
-extern u32* gpuOut;
-extern u32* gpuDOut;
 extern u32* SNESFrame;
 extern u16* MainScreenTex;
 extern u16* SubScreenTex;
@@ -1400,14 +1398,12 @@ void PPU_BlendScreens(u32 colorformat)
 
 	bglUseShader(&softRenderShaderP);
 	
-	bglOutputBuffers(SNESFrame, gpuDOut); // depth buffer doesn't matter
+	bglOutputBuffers(SNESFrame, NULL, GPU_RGBA8, 256, 256); // depth buffer doesn't matter
 	bglViewport(0, 0, 256, 256);
 	
 	bglEnableDepthTest(false);
 	bglColorDepthMask(GPU_WRITE_COLOR);
 	bglEnableAlphaTest(false);
-
-	bglUniformMatrix(GPU_VERTEX_SHADER, 0, snesProjMatrix);
 	
 	bglEnableTextures(GPU_TEXUNIT0|GPU_TEXUNIT1);
 	bglTexImage(GPU_TEXUNIT0, MainScreenTex,256,256,0,colorformat);
@@ -1517,10 +1513,10 @@ void PPU_BlendScreens(u32 colorformat)
 		ADDVERTEX(0, startoffset,       0, startoffset);
 		ADDVERTEX(256, s->EndOffset,    256, s->EndOffset);
 		
-		vptr = (u16*)((((u32)vptr) + 0xF) & ~0xF);
+		vptr = (u16*)((((u32)vptr) + 0x1F) & ~0x1F);
 		vertexPtr = vptr;
 		
-		bglDrawArrays(GPU_UNKPRIM, 2);
+		bglDrawArrays(GPU_GEOMETRY_PRIM, 2);
 		
 		if (s->EndOffset == 240) break;
 		
@@ -1531,21 +1527,21 @@ void PPU_BlendScreens(u32 colorformat)
 #undef ADDVERTEX
 }
 
-	
 
 void PPU_VBlank_Soft()
 {
 	// copy new screen textures
 	// SetDisplayTransfer with flags=2 converts linear graphics to the tiled format used for textures
 	// since the two sets of buffers are contiguous, we can transfer them as one 256x512 texture
-	GSPGPU_FlushDataCache(NULL, (u8*)PPU.MainBuffer, 256*512*2);
-	GX_SetDisplayTransfer(NULL, (u32*)PPU.MainBuffer, 0x02000100, (u32*)MainScreenTex, 0x02000100, 0x3302);
+	GSPGPU_FlushDataCache((u8*)PPU.MainBuffer, 256*512*2);
+	GX_DisplayTransfer((u32*)PPU.MainBuffer, 0x02000100, (u32*)MainScreenTex, 0x02000100, 0x3302);
 	
 	PPU.CurColorEffect->EndOffset = 240;
 	
-	vertexPtr = vertexBuf;
+	SwapVertexBuf();
 	
 	PPU_BlendScreens(GPU_RGBA5551);
 	
 	RenderState = 3;
+	//bglFlush();
 }

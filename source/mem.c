@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2022 Arisotura
 
     This file is part of blargSnes.
 
@@ -17,8 +17,9 @@
 */
 
 #include <stdlib.h>
+#include <string.h>
+#include <malloc.h>
 #include <3ds/types.h>
-#include <3ds/svc.h>
 
 void* MemAlloc(u32 size)
 {

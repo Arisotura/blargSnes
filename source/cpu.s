@@ -1,5 +1,5 @@
 @ -----------------------------------------------------------------------------
-@ Copyright 2014 StapleButter
+@ Copyright 2014-2022 Arisotura
 @
 @ This file is part of blargSnes.
 @
@@ -606,7 +606,8 @@ nmi_nostack:
 	subne r0, r0, #vec_e1_NMI
 	ldrh r0, [r0]
 	SetPC
-	b cpuloop
+	@b cpuloop
+	b nmi_return
 	
 @ --- Main loop ---------------------------------------------------------------
 
@@ -631,12 +632,29 @@ CPU_Run:
 	@ldr r2, [r1]
 	@sub r2, r2, r0
 	
+	@tst snesP, #flagNMI
+	@bne CPU_TriggerNMI
+	
+	@ HAAXXX
 	tst snesP, #flagNMI
-	bne CPU_TriggerNMI
+	bicne snesP, snesP, #flagW
 	
 	@ do not execute if we're waiting for an IRQ
 	tst snesP, #flagW
 	beq cpuloop
+	
+	@ WAI: look if we're supposed to get an IRQ
+	ldrh r0, [snesStatus, #IRQ_CurHMatch]
+	cmp r0, #0x8000 @ no IRQ for this line
+	beq wai_noirq
+	mov snesCycles, snesCycles, lsl #16
+	mov snesCycles, snesCycles, lsr #16
+	orr snesCycles, snesCycles, r0, lsl #16
+	cmp snesCycles, snesCycles, lsl #16
+	bge cpu_run_end
+	b cpuloop
+
+wai_noirq:
 	mov snesCycles, snesCycles, lsl #16
 	orr snesCycles, snesCycles, lsr #16
 	ldmia sp!, {r3, pc}
@@ -662,9 +680,17 @@ cpuloop:
 		ldr pc, [opTable, r0, lsl #0x2]
 		
 	op_return:
+	
+		@ delayed NMI check
+		@ not elegant, but will do
+		tst snesP, #flagNMI
+		bne CPU_TriggerNMI
+	nmi_return:
+	
 		cmp snesCycles, snesCycles, lsl #16
 		blt cpuloop
 	
+cpu_run_end:
 	ldmia sp!, {r3, pc}
 	
 	
@@ -739,13 +765,14 @@ lineloop1:
 		ldr r1, [snesStatus, #SPC_CycleRatio]
 		mul r2, r1, r0
 		ldr r1, [snesStatus, #SPC_LastCycle]
-		sub r0, r2, r1
+		subs r0, r2, r1
 		ldr r1, [snesStatus, #SPC_CyclesPerLine]
 		sub r2, r2, r1
 		str r2, [snesStatus, #SPC_LastCycle]
-		movs r0, r0, asr #24
-		movmis r0, #0
-		blne SPC_Run
+		@movs r0, r0, asr #24
+		@movmis r0, #0
+		@blne SPC_Run
+		blgt SPC_Run
 		
 		ldr r0, =((1364<<16) + 340)
 		sub snesCycles, snesCycles, r0
@@ -814,13 +841,14 @@ lineloop2:
 		ldr r1, [snesStatus, #SPC_CycleRatio]
 		mul r2, r1, r0
 		ldr r1, [snesStatus, #SPC_LastCycle]
-		sub r0, r2, r1
+		subs r0, r2, r1
 		ldr r1, [snesStatus, #SPC_CyclesPerLine]
 		sub r2, r2, r1
 		str r2, [snesStatus, #SPC_LastCycle]
-		movs r0, r0, asr #24
-		movmis r0, #0
-		blne SPC_Run
+		@movs r0, r0, asr #24
+		@movmis r0, #0
+		@blne SPC_Run
+		blgt SPC_Run
 		
 		ldr r0, =(1364<<16)
 		sub snesCycles, snesCycles, r0
@@ -1081,19 +1109,29 @@ frame_end:
 @ --- ADC ---------------------------------------------------------------------
 
 .macro ADC_8
+	tst snesP, #flagD
+	beq 1f
+		and r1, snesA, #0xF
+		and r2, r0, #0xF
+		add r1, r1, r2
+		tst snesP, #flagC
+		addne r1, r1, #0x1
+		cmp r1, #0xA
+		addge r1, r1, #0x6
+
+		and r2, snesA, #0xF0
+		add r1, r1, r2
+		and r2, r0, #0xF0
+		add r1, r1, r2
+		cmp r1, #0xA0
+		addge r1, r1, #0x60
+		b 2f
+1:
 	and r1, snesA, #0xFF
 	add r1, r1, r0
 	tst snesP, #flagC
 	addne r1, r1, #0x1
-	tst snesP, #flagD
-	beq 1f
-		and r2, r1, #0xF
-		cmp r2, #0xA
-		addge r1, r1, #0x6
-		and r2, r1, #0xF0
-		cmp r2, #0xA0
-		addge r1, r1, #0x60
-1:
+2:
 	bic snesP, snesP, #flagNVZC
 	tst r1, #0x80
 	orrne snesP, snesP, #flagN
@@ -1101,11 +1139,11 @@ frame_end:
 	orrne snesP, snesP, #flagC
 	eor r2, snesA, r0
 	tst r2, #0x80
-	bne 2f
+	bne 3f
 	eor r2, snesA, r1
 	tst r2, #0x80
 	orrne snesP, snesP, #flagV
-2:
+3:
 	and r1, r1, #0xFF
 	bic snesA, snesA, #0xFF
 	orr snesA, snesA, r1
@@ -1115,24 +1153,42 @@ frame_end:
 .endm
 
 .macro ADC_16
+	tst snesP, #flagD
+	beq 1f
+		and r1, snesA, #0xF
+		and r2, r0, #0xF
+		add r1, r1, r2
+		tst snesP, #flagC
+		addne r1, r1, #0x1
+		cmp r1, #0xA
+		addge r1, r1, #0x6
+
+		and r2, snesA, #0xF0
+		add r1, r1, r2
+		and r2, r0, #0xF0
+		add r1, r1, r2
+		cmp r1, #0xA0
+		addge r1, r1, #0x60
+
+		and r2, snesA, #0xF00
+		add r1, r1, r2
+		and r2, r0, #0xF00
+		add r1, r1, r2
+		cmp r1, #0xA00
+		addge r1, r1, #0x600
+
+		and r2, snesA, #0xF000
+		add r1, r1, r2
+		and r2, r0, #0xF000
+		add r1, r1, r2
+		cmp r1, #0xA000
+		addge r1, r1, #0x6000
+		b 2f
+1:
 	add r1, snesA, r0
 	tst snesP, #flagC
 	addne r1, r1, #0x1
-	tst snesP, #flagD
-	beq 1f
-		and r2, r1, #0xF
-		cmp r2, #0xA
-		addge r1, r1, #0x6
-		and r2, r1, #0xF0
-		cmp r2, #0xA0
-		addge r1, r1, #0x60
-		and r2, r1, #0xF00
-		cmp r2, #0xA00
-		addge r1, r1, #0x600
-		and r2, r1, #0xF000
-		cmp r2, #0xA000
-		addge r1, r1, #0x6000
-1:
+2:
 	bic snesP, snesP, #flagNVZC
 	tst r1, #0x8000
 	orrne snesP, snesP, #flagN
@@ -1140,11 +1196,11 @@ frame_end:
 	orrne snesP, snesP, #flagC
 	eor r2, snesA, r0
 	tst r2, #0x8000
-	bne 2f
+	bne 3f
 	eor r2, snesA, r1
 	tst r2, #0x8000
 	orrne snesP, snesP, #flagV
-2:
+3:
 	mov r1, r1, lsl #0x10
 	movs snesA, r1, lsr #0x10
 	orreq snesP, snesP, #flagZ
@@ -3630,19 +3686,30 @@ OP_RTS:
 @ --- SBC ---------------------------------------------------------------------
 
 .macro SBC_8
+	tst snesP, #flagD
+	beq 1f
+		and r1, snesA, #0xF
+		and r2, r0, #0xF
+		sub r1, r1, r2
+		tst snesP, #flagC
+		subeq r1, r1, #0x1
+		cmp r1, #0x0
+		sublt r1, r1, #0x6
+
+		and r2, snesA, #0xF0
+		add r1, r1, r2
+		and r2, r0, #0xF0
+		sub r1, r1, r2
+		cmp r1, #0x0
+		sublt r1, r1, #0x60
+
+		b 2f
+1:
 	and r1, snesA, #0xFF
 	sub r1, r1, r0
 	tst snesP, #flagC
 	subeq r1, r1, #0x1
-	tst snesP, #flagD
-	beq 1f
-		and r2, r1, #0xF
-		cmp r2, #0xA
-		subge r1, r1, #0x6
-		and r2, r1, #0xF0
-		cmp r2, #0xA0
-		subge r1, r1, #0x60
-1:
+2:
 	bic snesP, snesP, #flagNVZC
 	tst r1, #0x80
 	orrne snesP, snesP, #flagN
@@ -3650,11 +3717,11 @@ OP_RTS:
 	orreq snesP, snesP, #flagC
 	eor r2, snesA, r0
 	tst r2, #0x80
-	beq 2f
+	beq 3f
 	eor r2, snesA, r1
 	tst r2, #0x80
 	orrne snesP, snesP, #flagV
-2:
+3:
 	and r1, r1, #0xFF
 	bic snesA, snesA, #0xFF
 	orr snesA, snesA, r1
@@ -3664,24 +3731,43 @@ OP_RTS:
 .endm
 
 .macro SBC_16
+	tst snesP, #flagD
+	beq 1f
+		and r1, snesA, #0xF
+		and r2, r0, #0xF
+		sub r1, r1, r2
+		tst snesP, #flagC
+		subeq r1, r1, #0x1
+		cmp r1, #0x0
+		sublt r1, r1, #0x6
+
+		and r2, snesA, #0xF0
+		add r1, r1, r2
+		and r2, r0, #0xF0
+		sub r1, r1, r2
+		cmp r1, #0x0
+		sublt r1, r1, #0x60
+
+		and r2, snesA, #0xF00
+		add r1, r1, r2
+		and r2, r0, #0xF00
+		sub r1, r1, r2
+		cmp r1, #0x0
+		sublt r1, r1, #0x600
+
+		and r2, snesA, #0xF000
+		add r1, r1, r2
+		and r2, r0, #0xF000
+		sub r1, r1, r2
+		cmp r1, #0x0
+		sublt r1, r1, #0x6000
+
+		b 2f
+1:
 	sub r1, snesA, r0
 	tst snesP, #flagC
 	subeq r1, r1, #0x1
-	tst snesP, #flagD
-	beq 1f
-		and r2, r1, #0xF
-		cmp r2, #0xA
-		subge r1, r1, #0x6
-		and r2, r1, #0xF0
-		cmp r2, #0xA0
-		subge r1, r1, #0x60
-		and r2, r1, #0xF00
-		cmp r2, #0xA00
-		subge r1, r1, #0x600
-		and r2, r1, #0xF000
-		cmp r2, #0xA000
-		subge r1, r1, #0x6000
-1:
+2:
 	bic snesP, snesP, #flagNVZC
 	tst r1, #0x8000
 	orrne snesP, snesP, #flagN
@@ -3689,11 +3775,11 @@ OP_RTS:
 	orreq snesP, snesP, #flagC
 	eor r2, snesA, r0
 	tst r2, #0x8000
-	beq 2f
+	beq 3f
 	eor r2, snesA, r1
 	tst r2, #0x8000
 	orrne snesP, snesP, #flagV
-2:
+3:
 	mov r1, r1, lsl #0x10
 	movs snesA, r1, lsr #0x10
 	orreq snesP, snesP, #flagZ

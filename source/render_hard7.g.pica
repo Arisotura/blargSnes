@@ -1,0 +1,195 @@
+; -----------------------------------------------------------------------------
+; Copyright 2014-2022 Arisotura
+;
+; This file is part of blargSnes.
+;
+; blargSnes is free software: you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free
+; Software Foundation, either version 3 of the License, or (at your option)
+; any later version.
+;
+; blargSnes is distributed in the hope that it will be useful, but WITHOUT ANY
+; WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+; FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License along
+; with blargSnes. If not, see http:;www.gnu.org/licenses/.
+; -----------------------------------------------------------------------------
+
+.gsh point c0
+
+; setup constants
+.constf myconst (256.0, 1.0, 0.0, 1.0)
+
+.alias  mycolor myconst.yyyy
+
+; setup outmap
+.out outpos position
+.out outclr color
+.out outtc0 texcoord0.xy
+
+.alias projMtx c0
+.alias mode7Type c5
+
+; INPUT
+; - VERTEX ATTRIBUTES -
+; v0: vertex (x, y, and optional z)
+; v1: texcoord
+; - UNIFORMS -
+; c0-c3: projection matrix
+; c4: texcoord scale
+
+.entry gmain
+.proc gmain
+	; turn two vertices into a rectangle
+	; setemit: vtxid, primemit winding
+
+	; v0 = (------, scanline)
+	; v1 = (1st tex coord)
+	; v2 = (1st ratio, 2nd ratio)
+	; v3 = (2nd tex coord)
+
+
+	mov r4, v2.xxxx
+	mov r5, v2.yyyy
+	
+	; Are we handling the outer area or inner?
+	mov r0, myconst.w
+	cmp mode7Type, eq, eq, r0
+	jmpc cmp.x, Draw_Outer
+
+Draw_Inner:
+	; If v2.x > v2.y, then there is no inner part to render
+	cmp r4, gt, gt, r5
+	ifc cmp.x
+		end
+	.end
+	
+	call CalcProjMtx
+
+	; Does the inner part cover the entire line?
+	cmp myconst.zw, eq, eq, v2
+	ifc cmp.x & cmp.y
+		call Draw_Line
+		end
+	.end
+
+	; It does not, so let's adjust it
+
+	add r6, r1, -r0
+	mad r1.x, r5.x, r6.x, r0.x
+	mad r0.x, r4.x, r6.x, r0.x
+	
+	add r6, r3, -r2
+	mad r3, r5, r6, r2
+	mad r2, r4, r6, r2
+	
+	call Draw_Line
+
+	end
+
+Draw_Outer:
+	; Examine if there are even outer tiles to render (where v2.x > 0.0 and v2.y < 1.0)
+	cmp myconst.zw, eq, eq, v2
+	ifc cmp.x & cmp.y
+		end
+	.end
+
+	call CalcProjMtx
+
+	; Is the entire line part of the outer area?
+	cmp r4, gt, gt, r5
+	ifc cmp.x		
+		call Draw_Line
+		end
+	.end
+
+	; If here, then the outer part is visible, but are parts of either one or both sides to the inner part
+
+	; Is there any outer part on the left side of the inner section?
+	;cmp myconst.zw, lt, lt, r4
+	;ifc cmp.x
+		add r6, r1, -r0
+		mad r1.x, r4.x, r6.x, r0.x
+
+		add r6, r3, -r2
+		mad r3, r4, r6, r2
+
+		call Draw_Line		
+	;.end
+
+	;end
+
+	; Is there any outer part on the right side of the inner section?
+	;cmp myconst.zw, gt, gt, r5
+	;ifc cmp.y
+		; Because we may have done an outer left side render, we need to move the original values back into place
+		mov r1, r8
+		mov r3, v3
+
+		add r6, r1, -r0
+		mad r0.x, r5.x, r6.x, r0.x
+
+		add r6, r3, -r2
+		mad r2, r5, r6, r2
+
+		call Draw_Line		
+	;.end
+
+	end
+.end
+
+.proc CalcProjMtx
+	mov r2.xzw, myconst.zzw
+	mov r2.y, v0.y
+	mov r3, myconst
+	add r3.y, v0.y, r3.y
+
+	dp4 r7.x, projMtx[0], r2
+	dp4 r7.y, projMtx[1], r2
+	dp4 r7.z, projMtx[2], r2
+	dp4 r7.w, projMtx[3], r2
+
+	dp4 r8.x, projMtx[0], r3
+	dp4 r8.y, projMtx[1], r3
+	dp4 r8.z, projMtx[2], r3
+	dp4 r8.w, projMtx[3], r3
+
+	mov r0, r7
+	mov r1, r8
+	mov r2, v1
+	mov r3, v3
+.end
+
+
+.proc Draw_Line
+	; x1 y1
+	setemit 0
+	mov outpos, r0
+	mov outclr, myconst.w
+	mov outtc0, r2
+	emit
+
+	; x2 y1
+	setemit 1
+	mov outpos.x, r1.x
+	mov outpos.yzw, r0
+	mov outclr, myconst.w
+	mov outtc0, r3
+	emit
+
+	; x1 y2
+	setemit 2, prim
+	mov outpos.xzw, r0
+	mov outpos.y, r1.y
+	mov outclr, myconst.w
+	mov outtc0, r2
+	emit
+
+	; x2 y2
+	setemit 0, prim inv
+	mov outpos, r1
+	mov outclr, myconst.w
+	mov outtc0, r3
+	emit
+.end

@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2022 Arisotura
 
     This file is part of blargSnes.
 
@@ -19,8 +19,10 @@
 #include <3ds.h>
 #include "ui.h"
 #include "config.h"
+#include "ppu.h"
 
-extern badShader;
+
+void ApplyScaling();
 
 int configdirty = 0;
 
@@ -52,7 +54,7 @@ void Config_Render(bool force)
 
 	y += 26;
 
-	DrawCheckBox(26, y, RGB(255,255,255), "Hardware-assisted Mode7 (WIP)", Config.HardwareMode7);
+	DrawCheckBox(26, y, RGB(255,255,255), "Mode 7 filtering", Config.HardwareMode7Filter);
 	
 	y += 26;
 	
@@ -72,7 +74,7 @@ void Config_ButtonPress(u32 btn)
 {
 }
 
-void Config_Touch(int touch, u32 x, u32 y)
+void Config_Touch(bool touch, u32 x, u32 y)
 {
 	if (touch != 0) return;
 	
@@ -86,7 +88,7 @@ void Config_Touch(int touch, u32 x, u32 y)
 	}
 	else if (y >= 50 && y < 70)
 	{
-		Config.HardwareMode7 = !Config.HardwareMode7;
+		Config.HardwareMode7Filter = !Config.HardwareMode7Filter;
 		configdirty = 2;
 	}
 	else if (y >= 76 && y < 96)

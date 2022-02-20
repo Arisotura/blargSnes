@@ -1,0 +1,59 @@
+; -----------------------------------------------------------------------------
+; Copyright 2014-2022 Arisotura
+;
+; This file is part of blargSnes.
+;
+; blargSnes is free software: you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free
+; Software Foundation, either version 3 of the License, or (at your option)
+; any later version.
+;
+; blargSnes is distributed in the hope that it will be useful, but WITHOUT ANY
+; WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+; FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License along
+; with blargSnes. If not, see http:;www.gnu.org/licenses/.
+; -----------------------------------------------------------------------------
+
+; setup constants
+.constf const1(0.0078125, 0.00390625, 0.0, 1.0)
+.constf const2(-1.0, 0.0, 0.0, 0.0)
+.constf zfactors(-0.99609375, -0.0038909912109375, -0.00000762939453125, 0.0)
+
+; setup outmap
+.out o0 position
+.out o1 color
+.out o2 texcoord0
+
+; INPUT
+; - VERTEX ATTRIBUTES -
+; v0: vertex (x, y, and optional z)
+; v1: texcoord
+; - UNIFORMS -
+; c4: texcoord scale
+
+.entry vmain
+.proc vmain
+	; calculate Z based on prio values in v1.zw
+	mov r1.xy, v1.zw
+	mov r1.zw, const1.wz
+	
+	mov r0, const1
+	mul r0.xy, r0.xx, v0.xy
+	add r0.xy, const2.xx, r0.xy
+	dp3 r0.z, zfactors.xyz, r1.xyz
+	mov o0, r0
+	
+	; color
+	mov r1.rgb, const1.www
+	mul r1.a, const1.y, v0.z
+	mov o1, r1
+
+	; result.texcoord = in.texcoord * (uniform scale in c4)
+	mul r1, c4, v1
+	mov r1.zw, const1.zw
+	mov o2, r1
+	end
+	nop
+.end

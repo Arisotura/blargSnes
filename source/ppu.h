@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2022 Arisotura
 
     This file is part of blargSnes.
 
@@ -21,20 +21,12 @@
 
 typedef struct
 {
-	s32 x;
-	s32 y;
-	s32 slope;
-} PPU_Vertex;
-
-typedef struct
-{
-	u8 StartOffset;
 	u8 EndOffset;
-	u8 doHW, endSW;
-	u8 hflip, vflip;
-	u8 tileType;
-	
+	u8 modeType;
 	u8 Sel;
+
+	float* vertexStart;
+	u32 vertexLen;
 	
 	union
 	{
@@ -72,8 +64,6 @@ typedef struct
 		};
 		u32 ScrollParams;
 	};
-
-	PPU_Vertex vert[8];
 	
 } PPU_Mode7Section;
 
@@ -170,13 +160,6 @@ typedef struct
 
 typedef struct
 {
-	u16 Address;
-	u16 Color;		// 3DS-format color
-	
-} PPU_PaletteChange;
-
-typedef struct
-{
 	// no start offset in here; start offset is the end offset of the previous segment
 	u16 EndOffset;	// 256 = final segment
 	u8 WindowMask;	// each 2 bits: 2=inside, 3=outside
@@ -253,15 +236,9 @@ typedef struct
 	u8 CGRAMVal;
 	u16 CGRAM[256];		// SNES CGRAM, xBGR1555
 	u16 Palette[256];	// our own palette, converted to RGBx5551
-	u16 PaletteEx1[256];
-	u16 PaletteEx2[256];
+	u16 HardPalette[256]; // special copy for the hardware renderer
 	u8 PaletteUpdateCount[64];
-	u16 PaletteUpdateCount128;
 	u16 PaletteUpdateCount256;
-	
-	// mid-frame palette changes
-	//PPU_PaletteChange PaletteChanges[240][64];
-	//u8 NumPaletteChanges[240];
 
 	u16 VRAMAddr;
 	u16 VRAMPref;
@@ -271,6 +248,9 @@ typedef struct
 	u8 VRAM7[0x8000];
 	u8 VRAMUpdateCount[0x1000];
 	u16 VRAM7UpdateCount[0x800];
+	
+	u8 TileBitmap[0x74000];
+	u8 TileEmpty[0x1000];
 
 	u16 OAMAddr;
 	u8 OAMVal;
@@ -278,6 +258,7 @@ typedef struct
 	u8 FirstOBJ;
 	u16 OAMReload;
 	u8 OAM[0x220];
+	u8 HardOAM[0x220];
 	
 	u8* OBJWidth;
 	u8* OBJHeight;
@@ -391,7 +372,6 @@ typedef struct
 
 	PPU_OBJSection OBJSections[240];
 	PPU_OBJSection* CurOBJSection;
-	PPU_OBJSection* CurOBJSecSel;
 
 	u16 OBJTilesetAddr;
 	u16* OBJTileset;
@@ -454,8 +434,23 @@ void PPU_VBlank_Soft();
 
 void PPU_Init_Hard();
 void PPU_DeInit_Hard();
+void PPU_Reset_Hard();
 
 void PPU_RenderScanline_Hard(u32 line);
 void PPU_VBlank_Hard();
+
+
+u32 PPU_TranslateVRAMAddress(u32 addr);
+void PPU_ConvertVRAM8(u32 addr, u8 val);
+void PPU_ConvertVRAM16(u32 addr, u16 val);
+void PPU_ConvertVRAMAll();
+
+void PPU_ComputeWindows(PPU_WindowSegment* s);
+void PPU_BlendScreens(u32 colorformat);
+
+void PPU_SwitchRenderers();
+void ApplyScaling();
+void FinishRendering();
+void RenderTopScreen();
 
 #endif

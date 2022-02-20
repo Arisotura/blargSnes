@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2022 Arisotura
 
     This file is part of blargSnes.
 
@@ -17,12 +17,16 @@
 */
 
 #include <3ds.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
 #include "main.h"
 #include "mem.h"
 #include "snes.h"
 #include "cpu.h"
 #include "ppu.h"
+#include "spc700.h"
 
 
 u8* ROM_Bank0;
@@ -36,7 +40,6 @@ u32 SNES_SRAMMask;
 u8* SNES_SRAM = NULL;
 
 char SNES_SRAMPath[300];
-extern FS_archive sdmcArchive;
 
 // addressing: BBBBBBBB:AAAaaaaa:aaaaaaaa
 // bit4-31: argument
@@ -91,7 +94,7 @@ u8 SNES_ExecTrap[8192] __attribute__((aligned(256)));
 void SNES_Init()
 {
 	// TODO get rid of this junk!
-	SNES_Status = &_Mem_PtrTable[0];
+	SNES_Status = (SNES_StatusData*)&_Mem_PtrTable[0];
 	Mem_PtrTable = &_Mem_PtrTable[SNESSTATUS_SIZE >> 2];
 }
 
@@ -115,10 +118,13 @@ bool SNES_LoadROM(char* path)
 	SNES_Status->TotalLines = (ROM_Region ? 312 : 262) >> 1;
 	SNES_Status->ScreenHeight = 224;
 	
-	SNES_Status->SPC_CycleRatio = ROM_Region ? 0x000C51D9 : 0x000C39C6;
-	SNES_Status->SPC_CycleRatio += 0x1000; // hax -- TODO investigate why we need this to run at a somewhat proper rate
+	//SNES_Status->SPC_CycleRatio = ROM_Region ? 0x000C51D9 : 0x000C39C6;
+	//SNES_Status->SPC_CycleRatio += 0x1000; // hax -- TODO investigate why we need this to run at a somewhat proper rate
+	SNES_Status->SPC_CycleRatio = 6400;//6418;//6400;//ROM_Region ? 132990 : 134013;
 	SNES_Status->SPC_CyclesPerLine = SNES_Status->SPC_CycleRatio * 1364;
 	//SNES_Status->SPC_CyclesPerLine = ROM_Region ? 0x41A41A42 : 0x4123D3B5;
+	
+	SPC_CycleRatio = ROM_Region ? 132990 : 134013;
 	
 	SNES_SRAMMask = sramsize ? ((1024 << sramsize) - 1) : 0;
 	SNES_SRAMMask &= 0x000FFFFF;
@@ -126,27 +132,27 @@ bool SNES_LoadROM(char* path)
 	
 	if (SNES_SRAMMask)
 	{
-		strncpy(SNES_SRAMPath, path, strlen(path)-3);
-		strncpy(SNES_SRAMPath + strlen(path)-3, "srm", 3);
-		SNES_SRAMPath[strlen(path)] = '\0';
+		int pathlen = strlen(path);
+		if (pathlen > 299) pathlen = 299;
+		strncpy(SNES_SRAMPath, path, pathlen-3);
+		strncpy(SNES_SRAMPath + pathlen-3, "srm", 4);
 
-		Handle sram;
-		FS_path sramPath;
-		sramPath.type = PATH_CHAR;
-		sramPath.size = strlen(SNES_SRAMPath) + 1;
-		sramPath.data = (u8*)SNES_SRAMPath;
-	
-		Result res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_READ|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
-		if ((res & 0xFFFC03FF) != 0)
+		FILE *pFile = fopen(SNES_SRAMPath, "rb+");
+		if (pFile == NULL)
 		{
-			res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_CREATE|FS_OPEN_READ|FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
-			if ((res & 0xFFFC03FF) != 0)
-				bprintf("Error %08X while trying to open the savefile.\nMake sure it isn't read-only.\n", res);
+			pFile = fopen(SNES_SRAMPath, "wb");
+			if (pFile == NULL)
+				bprintf("Error while trying to open the savefile.\nMake sure it isn't read-only.\n");
 			else
-				FSFILE_SetSize(sram, SNES_SRAMMask + 1);
+			{
+				u8* temp = malloc(SNES_SRAMMask + 1);
+				memset(temp, 0, SNES_SRAMMask + 1);
+				fwrite(temp, sizeof(char), SNES_SRAMMask + 1, pFile);
+				free(temp);
+			}
 		}
-		if ((res & 0xFFFC03FF) == 0)
-			FSFILE_Close(sram);
+		if (pFile != NULL)
+			fclose(pFile);
 	}
 	
 	return true;
@@ -165,6 +171,9 @@ void SNES_Reset()
 		*(u32*)&SNES_SysRAM[i] = randblarg ^ (randblarg << 15) ^ (randblarg << 26) ^ (randblarg * 0x00700000);
 		randblarg = (randblarg * 0x17374) ^ (randblarg * 0x327) ^ (randblarg << 2) ^ (randblarg << 17);
 	}
+	
+	// debug: make mainRAM predictable
+	//memset(SNES_SysRAM, 0, 128*1024);
 	
 	// fill it with STP opcodes
 #ifdef OPENBUS_EXEC_TRAP
@@ -186,18 +195,11 @@ void SNES_Reset()
 		for (i = 0; i <= SNES_SRAMMask; i += 4)
 			*(u32*)&SNES_SRAM[i] = 0;
 		
-		Handle sram;
-		FS_path sramPath;
-		sramPath.type = PATH_CHAR;
-		sramPath.size = strlen(SNES_SRAMPath) + 1;
-		sramPath.data = (u8*)SNES_SRAMPath;
-	
-		Result res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
-		if ((res & 0xFFFC03FF) == 0)
+		FILE *pFile = fopen(SNES_SRAMPath, "rb");
+		if (pFile != NULL)
 		{
-			u32 bytesread = 0;
-			FSFILE_Read(sram, &bytesread, 0, (u32*)SNES_SRAM, SNES_SRAMMask + 1);
-			FSFILE_Close(sram);
+			fread(SNES_SRAM, sizeof(char), SNES_SRAMMask + 1, pFile);
+			fclose(pFile);
 		}
 	}
 	
@@ -287,22 +289,15 @@ void SNES_SaveSRAM()
 	if (!SNES_Status->SRAMDirty)
 		return;
 	
-	Handle sram;
-	FS_path sramPath;
-	sramPath.type = PATH_CHAR;
-	sramPath.size = strlen(SNES_SRAMPath) + 1;
-	sramPath.data = (u8*)SNES_SRAMPath;
-	
-	Result res = FSUSER_OpenFile(NULL, &sram, sdmcArchive, sramPath, FS_OPEN_WRITE, FS_ATTRIBUTE_NONE);
-	if ((res & 0xFFFC03FF) == 0)
+	FILE *pFile = fopen(SNES_SRAMPath, "wb");
+	if (pFile != NULL)
 	{
-		u32 byteswritten = 0;
-		FSFILE_Write(sram, &byteswritten, 0, (u32*)SNES_SRAM, SNES_SRAMMask + 1, FS_WRITE_FLUSH);
-		FSFILE_Close(sram);
+		fwrite(SNES_SRAM, sizeof(char), SNES_SRAMMask + 1, pFile);
+		fclose(pFile);
 		bprintf("SRAM saved\n");
 	}
 	else
-		bprintf("SRAM save failed (%08X)\n", res);
+		bprintf("SRAM save failed\n");
 		
 	SNES_Status->SRAMDirty = 0;
 }
@@ -312,7 +307,7 @@ inline u8 IO_ReadKeysLow()
 {
 	u32 keys = hidKeysHeld();
 	u8 ret = 0;
-	
+
 	if (keys & KEY_A) ret |= 0x80;
 	if (keys & KEY_X) ret |= 0x40;
 	if (keys & KEY_L) ret |= 0x20;
@@ -325,7 +320,7 @@ inline u8 IO_ReadKeysHigh()
 {
 	u32 keys =  hidKeysHeld();
 	u8 ret = 0;
-	
+
 	if (keys & KEY_B) 		ret |= 0x80;
 	if (keys & KEY_Y) 		ret |= 0x40;
 	if (keys & KEY_SELECT)	ret |= 0x20;
@@ -408,10 +403,10 @@ u8 SNES_GIORead8(u32 addr)
 			break;
 			
 		case 0x18:
-			ret = IO_ReadKeysLow();
+			ret = SNES_JoyBuffer & 0xFF;
 			break;
 		case 0x19:
-			ret = IO_ReadKeysHigh();
+			ret = (SNES_JoyBuffer >> 8) & 0xFF;
 			break;
 			
 		case 0x13:
@@ -446,7 +441,7 @@ u16 SNES_GIORead16(u32 addr)
 			break;
 			
 		case 0x18:
-			ret = IO_ReadKeysLow() | (IO_ReadKeysHigh() << 8);
+			ret = SNES_JoyBuffer & 0xFFFF;
 			break;
 			
 		default:
@@ -592,19 +587,23 @@ u8 SNES_JoyRead8(u32 addr)
 
 	if (addr == 0x16)
 	{
-		// TODO: investigate later
-		// this shit breaks SMAS SMB1 (pressing Start returns to menu)
-		/*if (SNES_Joy16 & 0x01)
+		if (SNES_Joy16 & 0x01)
 		{
-			ret = 0;
+			// Return Controller connected status (to which Pad 1 is always connected and Pad 3 is not, Pad 2/4 are linked to 4017h, but neither are connected)
+			ret = 0x1;
 		}
 		else
 		{
 			if (SNES_JoyBit == 0) IO_ManualReadKeys();
 			
-			ret = (SNES_JoyBuffer >> (SNES_JoyBit ^ 15)) & 1;
-			SNES_JoyBit++;
-		}*/
+			if (SNES_JoyBit < 16)
+			{
+				ret = (SNES_JoyBuffer >> (SNES_JoyBit ^ 15)) & 1;
+				SNES_JoyBit++;
+			}
+			else
+				ret = 0x1;
+		}
 		ret = 0x01;
 	}
 	else if (addr != 0x17) 

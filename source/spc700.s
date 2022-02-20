@@ -1,5 +1,5 @@
 @ -----------------------------------------------------------------------------
-@ Copyright 2014 StapleButter
+@ Copyright 2014-2022 Arisotura
 @
 @ This file is part of blargSnes.
 @
@@ -41,6 +41,7 @@ dbgcycles:
 nruns:
 	.long 0
 	
+.global SPC_CycleRatio
 .global SPC_TimerReload
 .global SPC_TimerVal
 .global SPC_TimerEnable
@@ -52,6 +53,8 @@ nruns:
 @ r0-r4, r12, lr
 @SPC_ResumeInfo:		@ -60
 @	.long 0,0,0,0,0,0,0
+SPC_CycleRatio:		@ -36
+	.long 0
 SPC_TimerReload:	@ -32
 	.long 0,0,0
 SPC_TimerVal: 		@ -20
@@ -342,17 +345,15 @@ SPC_Reset:
 	
 @ --- Main loop ---------------------------------------------------------------
 
-@ r0 = number of cycles to run
+@ r0 = number of cycles to run (6400 = 1 cycle)
 SPC_Run:
 	stmdb sp!, {r3-r12, lr}
 	LoadRegs
 	
-	add spcCycles, r0
-	
-	@SPCResume
+	adds spcCycles, r0
+	ble spcdone
 			
 spcloop:
-		
 		Prefetch8
 		ldr pc, [pc, r0, lsl #0x2]
 		nop
@@ -437,10 +438,12 @@ noTimer2:
 		str r0, [memory, #-4]
 		blge DSP_BufferSwap
 		
+		ldr r0, [memory, #-36]
+		mul r3, r3, r0
 		subs spcCycles, spcCycles, r3
 		bpl spcloop
 		
-spcpause:
+spcdone:
 	StoreRegs
 	ldmia sp!, {r3-r12, pc}
 		
@@ -1227,7 +1230,7 @@ OP_CMPW_YA_DP:
 	orrne spcPSW, spcPSW, #flagN
 	tst r12, #0x10000
 	orreq spcPSW, spcPSW, #flagC
-	AddCycles 5
+	AddCycles 4			@5
 	b op_return
 	
 @ --- DBNZ --------------------------------------------------------------------

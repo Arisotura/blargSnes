@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2022 Arisotura
 
     This file is part of blargSnes.
 
@@ -17,10 +17,12 @@
 */
 
 #include <3ds.h>
+#include <string.h>
 
 #include "config.h"
 #include "snes.h"
 #include "ppu.h"
+#include "spc700.h"
 
 
 u32 Mem_WRAMAddr = 0;
@@ -207,9 +209,9 @@ void PPU_Reset()
 		for (i = 1; i < 256; i++)
 		{
 			PPU.Palette[i] = 0x0001;
-			PPU.PaletteEx1[i] = (i < 128);
-			PPU.PaletteEx2[i] = (i >= 128);
+			PPU.HardPalette[i] = 0x0001;
 		}
+		PPU_Reset_Hard();
 	}
 }
 
@@ -285,48 +287,25 @@ inline void PPU_SetColor(u32 num, u16 val)
 	
 	if (PPU.HardwareRenderer)
 	{
-		// check if the write is happening mid-frame
-#if 0
-		if (PPU.VCount < PPU.ScreenHeight-1 && !PPU.ForcedBlank)
-		{
-			// writes happening during this scanline will be applied to the next one
-			// (we assume they happen during HBlank)
-			u32 line = PPU.VCount + 1;
-			
-			u32 n = PPU.NumPaletteChanges[line];
-			PPU.PaletteChanges[line][n].Address = num;
-			PPU.PaletteChanges[line][n].Color = temp | 0x0001;
-			PPU.NumPaletteChanges[line] = n+1;
-			
-			// tell the hardware renderer to start a new section
-			// TODO: also check if the OBJ palette was updated
-			PPU.ModeDirty = 1;
-		}
+		PPU.Palette[num] = temp | 0x0001;
+		
+		if(num == 0)
+			PPU.MainBackdropDirty = 1;
 		else
-#endif
 		{
-			
-
-			PPU.Palette[num] = temp | 0x0001;
-			if(num < 128)
-			{
-				PPU.PaletteEx1[num] = temp | 0x0001;
-				PPU.PaletteEx2[num + 128] = temp | 0x0001;
-				if(num > 0)
-					PPU.PaletteUpdateCount128++;
-			}
-			
-			if(num == 0)
-				PPU.MainBackdropDirty = 1;
-			else
-			{
-				PPU.PaletteUpdateCount[num >> 2]++;
-				PPU.PaletteUpdateCount256++;
-			}
+			PPU.PaletteUpdateCount[num >> 2]++;
+			PPU.PaletteUpdateCount256++;
 		}
 	}
 	else
 		PPU.Palette[num] = temp;
+}
+
+void PPU_UpdateHardMemory()
+{
+	memcpy(PPU.HardPalette, PPU.Palette, 256*2);
+	
+	memcpy(PPU.HardOAM, PPU.OAM, 0x220);
 }
 
 u32 PPU_TranslateVRAMAddress(u32 addr)
@@ -350,6 +329,9 @@ u32 PPU_TranslateVRAMAddress(u32 addr)
 				  ((addr & 0x00700) >> 7) |
 				  ((addr & 0x000FE) << 3);
 	}
+	
+	// herp
+	return addr;
 }
 
 
@@ -370,7 +352,7 @@ void SPC_Compensate()
 {
 	int cyclenow = (SNES_Status->HCount * SNES_Status->SPC_CycleRatio);
 	int torun = cyclenow - SNES_Status->SPC_LastCycle;
-	torun >>= 24;
+	//torun >>= 24;
 	if (torun > 0)
 	{
 		SPC_Run(torun);
@@ -464,10 +446,10 @@ u8 PPU_Read8(u32 addr)
 			PPU.OPVFlag = 0;
 			break;
 		
-		case 0x40: ret = SPC_IOPorts[4]; break;
-		case 0x41: ret = SPC_IOPorts[5]; break;
-		case 0x42: ret = SPC_IOPorts[6]; break;
-		case 0x43: ret = SPC_IOPorts[7]; break;
+		case 0x40: SPC_Compensate(); ret = SPC_IOPorts[4]; break;
+		case 0x41: SPC_Compensate(); ret = SPC_IOPorts[5]; break;
+		case 0x42: SPC_Compensate(); ret = SPC_IOPorts[6]; break;
+		case 0x43: SPC_Compensate(); ret = SPC_IOPorts[7]; break;
 		
 		case 0x80: ret = SNES_SysRAM[Mem_WRAMAddr++]; Mem_WRAMAddr &= ~0x20000; break;
 
@@ -492,8 +474,8 @@ u16 PPU_Read16(u32 addr)
 		// not in the right place, but well
 		// our I/O functions are mapped to the whole $21xx range
 		
-		case 0x40: ret = *(u16*)&SPC_IOPorts[4]; break;
-		case 0x42: ret = *(u16*)&SPC_IOPorts[6]; break;
+		case 0x40: SPC_Compensate(); ret = *(u16*)&SPC_IOPorts[4]; break;
+		case 0x42: SPC_Compensate(); ret = *(u16*)&SPC_IOPorts[6]; break;
 		
 		default:
 			ret = PPU_Read8(addr);
@@ -510,6 +492,12 @@ void PPU_Write8(u32 addr, u8 val)
 	{
 		case 0x00: // force blank/master brightness
 			{
+				if ((val & 0x80) && (!PPU.ForcedBlank))
+				{
+					if (PPU.HardwareRenderer)
+						PPU_UpdateHardMemory();
+				}
+				
 				PPU.ForcedBlank = val & 0x80;
 				if (val & 0x80) val = 0;
 				else val &= 0x0F;
@@ -538,30 +526,32 @@ void PPU_Write8(u32 addr, u8 val)
 				PPU.OBJTilesetAddr = (val & 0x03) << 14;	// 3rd bit would make it outside of VRAM? Then why reserve 3 bits for this?
 				PPU.OBJTileset = (u16*)&PPU.VRAM[PPU.OBJTilesetAddr];
 				PPU.OBJGap = (val & 0x18) << 10;
-				PPU.OBJDirty = 1;
+				PPU.OBJDirty |= 0x01;
 			}
 			break;
 			
 		case 0x02:
 			PPU.OAMAddr = (PPU.OAMAddr & 0x200) | (val << 1);
 			PPU.OAMReload = PPU.OAMAddr;
-			PPU.FirstOBJ = PPU.OAMPrio ? ((PPU.OAMAddr >> 1) & 0x7F) : 0;
+			PPU.FirstOBJ = PPU.OAMPrio ? ((PPU.OAMAddr >> 2) & 0x7F) : 0;
 			break;
 		case 0x03:
 			PPU.OAMAddr = (PPU.OAMAddr & 0x1FE) | ((val & 0x01) << 9);
 			PPU.OAMPrio = val & 0x80;
 			PPU.OAMReload = PPU.OAMAddr;
-			PPU.FirstOBJ = PPU.OAMPrio ? ((PPU.OAMAddr >> 1) & 0x7F) : 0;
+			PPU.FirstOBJ = PPU.OAMPrio ? ((PPU.OAMAddr >> 2) & 0x7F) : 0;
 			break;
 			
 		case 0x04:
 			if (PPU.OAMAddr >= 0x200)
 			{
 				PPU.OAM[PPU.OAMAddr & 0x21F] = val;
+				//PPU.OBJDirty |= 0x02;
 			}
 			else if (PPU.OAMAddr & 0x1)
 			{
 				*(u16*)&PPU.OAM[PPU.OAMAddr - 1] = PPU.OAMVal | (val << 8);
+				//PPU.OBJDirty |= 0x02;
 			}
 			else
 			{
@@ -637,8 +627,9 @@ void PPU_Write8(u32 addr, u8 val)
 				addr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
 				if (PPU.VRAM[addr] != val)
 				{
+					if (PPU.HardwareRenderer)
+						PPU_ConvertVRAM8(addr, val);
 					PPU.VRAM[addr] = val;
-					PPU.VRAMUpdateCount[addr >> 4]++;
 				}
 				if (!(PPU.VRAMInc & 0x80))
 					PPU.VRAMAddr += PPU.VRAMStep;
@@ -649,10 +640,9 @@ void PPU_Write8(u32 addr, u8 val)
 				addr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
 				if (PPU.VRAM[addr+1] != val)
 				{
+					if (PPU.HardwareRenderer)
+						PPU_ConvertVRAM8(addr+1, val);
 					PPU.VRAM[addr+1] = val;
-					PPU.VRAMUpdateCount[addr >> 4]++;
-					PPU.VRAM7[addr >> 1] = val;
-					PPU.VRAM7UpdateCount[addr >> 7]++;
 				}
 				if (PPU.VRAMInc & 0x80)
 					PPU.VRAMAddr += PPU.VRAMStep;
@@ -790,9 +780,9 @@ void PPU_Write8(u32 addr, u8 val)
 			break;
 			
 		case 0x2B:
-			if(PPU.WinCombine[1] != val & 0xF)
+			if(PPU.WinCombine[1] != (val & 0xF))
 			{
-				PPU.WinCombine[1] = val & 0xF;
+				PPU.WinCombine[1] = (val & 0xF);
 				PPU.OBJWindowCombine = PPU_WindowCombine[(val & 0x03)];
 				PPU.ColorMathWindowCombine = PPU_WindowCombine[(val & 0x0C) >> 2];
 				PPU.WindowDirty = 2;
@@ -804,6 +794,7 @@ void PPU_Write8(u32 addr, u8 val)
 			{
 				PPU.MainLayerEnable = val;
 				PPU.ModeDirty = 1;
+				PPU.WindowDirty = 1;
 			}
 			break;
 		case 0x2D:
@@ -811,6 +802,7 @@ void PPU_Write8(u32 addr, u8 val)
 			{
 				PPU.SubLayerEnable = val;
 				PPU.ModeDirty = 1;
+				PPU.WindowDirty = 1;
 			}
 			break;
 			
@@ -885,7 +877,7 @@ void PPU_Write8(u32 addr, u8 val)
 		case 0x83: Mem_WRAMAddr = (Mem_WRAMAddr & 0x0000FFFF) | ((val & 0x01) << 16); break;
 				
 		default:
-			iprintf("PPU_Write8(%08X, %08X)\n", addr, val);
+			//iprintf("PPU_Write8(%08X, %08X)\n", addr, val);
 			break;
 	}
 }
@@ -906,10 +898,9 @@ void PPU_Write16(u32 addr, u16 val)
 			addr = PPU_TranslateVRAMAddress(PPU.VRAMAddr);
 			if (*(u16*)&PPU.VRAM[addr] != val)
 			{
+				if (PPU.HardwareRenderer)
+					PPU_ConvertVRAM16(addr, val);
 				*(u16*)&PPU.VRAM[addr] = val;
-				PPU.VRAMUpdateCount[addr >> 4]++;
-				PPU.VRAM7[addr >> 1] = val >> 8;
-				PPU.VRAM7UpdateCount[addr >> 7]++;
 			}
 			PPU.VRAMAddr += PPU.VRAMStep;
 			break;
@@ -1141,8 +1132,8 @@ void PPU_ComputeWindows(PPU_WindowSegment* s)
 
 void PPU_RenderScanline(u32 line)
 {
-	if (!(line & 7))
-		ContinueRendering();
+	//if (!(line & 7))
+	//	ContinueRendering();
 	
 	if (SkipThisFrame) return;
 	
@@ -1154,14 +1145,13 @@ void PPU_RenderScanline(u32 line)
 
 void PPU_VBlank()
 {
-	int i;
-	
 	FinishRendering();
 	
 	if (!SkipThisFrame)
 	{
 		if (PPU.HardwareRenderer)
 		{
+			PPU_UpdateHardMemory();
 			PPU_VBlank_Hard(240);
 		}
 		else
@@ -1178,5 +1168,9 @@ void PPU_VBlank()
 		PPU.OBJOverflow = 0;
 		
 	if (SNES_AutoJoypad)
+	{
+		SNES_Joy16 = 0;
+		IO_ManualReadKeys();
 		SNES_JoyBit = 16;
+	}
 }

@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2022 Arisotura
 
     This file is part of blargSnes.
 
@@ -136,5 +136,7 @@ void SNES_Write16(u32 addr, u8 val);
 void SPC_IORead(int side);
 void SPC_IOWrite(int side);
 void SPC_IOWriteDone(int side);
+
+void bprintf(char* fmt, ...);
 
 #endif

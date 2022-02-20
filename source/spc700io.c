@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2022 Arisotura
 
     This file is part of blargSnes.
 
@@ -17,6 +17,7 @@
 */
 
 #include <3ds/types.h>
+#include <string.h>
 
 #include "snes.h"
 #include "spc700.h"

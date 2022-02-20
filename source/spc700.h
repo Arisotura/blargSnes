@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2022 Arisotura
 
     This file is part of blargSnes.
 
@@ -33,6 +33,7 @@ typedef union
 extern u8 SPC_RAM[0x10040];
 
 extern u32 SPC_ElapsedCycles;
+extern u32 SPC_CycleRatio;
 
 extern u8 SPC_TimerEnable;
 extern u32 SPC_TimerReload[3];

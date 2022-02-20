@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2022 Arisotura
 
     This file is part of blargSnes.
 
@@ -34,10 +34,13 @@ void bglInit();
 void bglDeInit();
 
 
+void bglUseShader(shaderProgram_s* shader);
+
+u32 bglUniformLoc(GPU_SHADER_TYPE type, const char* name);
 void bglUniform(GPU_SHADER_TYPE type, u32 id, float* val);
 void bglUniformMatrix(GPU_SHADER_TYPE type, u32 id, float* val);
 
-void bglOutputBuffers(void* color, void* depth);
+void bglOutputBuffers(void* color, void* depth, GPU_TEXCOLOR colortype, u32 w, u32 h);
 void bglViewport(u32 x, u32 y, u32 w, u32 h);
 
 void bglScissorMode(GPU_SCISSORMODE mode);

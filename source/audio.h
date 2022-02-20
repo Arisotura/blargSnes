@@ -1,5 +1,5 @@
 /*
-    Copyright 2014 StapleButter
+    Copyright 2014-2022 Arisotura
 
     This file is part of blargSnes.
 
@@ -19,6 +19,8 @@
 #ifndef AUDIO_H
 #define AUDIO_H
 
+#include "mixrate.h"
+
 void Audio_Init();
 void Audio_DeInit();
 
@@ -26,7 +28,7 @@ void Audio_Pause();
 
 bool Audio_Begin();
 
-void Audio_Mix();
+void Audio_Mix(u32 samples, bool restart);
 
 void Audio_Inc();
 void Audio_Dec();
