@@ -50,9 +50,6 @@ extern shaderProgram_s hardRenderOBJShaderP;
 extern shaderProgram_s plainQuadShaderP;
 extern shaderProgram_s windowMaskShaderP;
 
-extern float snesM7Matrix[16];
-extern float snesM7Offset[4];
-
 extern u32* SNESFrame;
 extern u16* MainScreenTex;
 extern u16* SubScreenTex;

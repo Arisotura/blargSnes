@@ -108,12 +108,9 @@ int exitspc = 0;
 
 void SPCThreadFunc(void *arg)
 {
-
 	int audCnt = 512;
 	u32 lastpos = 0;
 
-
-	int i;
 	while (!exitspc)
 	{
 		svcWaitSynchronization(SPCSync, U64_MAX);
@@ -154,14 +151,6 @@ void dbg_save(char* path, void* buf, int size)
 		fwrite(buf, sizeof(char), size, pFile);
 		fclose(pFile);
 	}
-}
-
-void debugcrapo(u32 op, u32 op2)
-{
-	bprintf("DBG: %08X %08X\n", op, op2);
-	DrawConsole();
-	//SwapBottomBuffers(0);
-	//ClearBottomBuffer();
 }
 
 void SPC_ReportUnk(u8 op, u32 pc)
@@ -238,21 +227,6 @@ void dbgcolor(u32 col)
 }
 
 
-
-
-float snesM7Matrix[16] = 
-{
-	1, 0, 0, 0,
-	0, 1, 0, 0,
-	0, 0, 1, 0,
-	0, 0, 0, 1
-};
-
-float snesM7Offset[4] =
-{
-	0.0625, 0.0625, 0.0625, 0.0625
-};
-
 float vertexList[] = 
 {
 	// border
@@ -328,32 +302,6 @@ void ApplyScaling()
 
 
 void VSyncAndFrameskip();
-
-bool PeekEvent(Handle evt)
-{
-	// do a wait that returns immediately.
-	// if we get a timeout error code, the event didn't occur
-	Result res = svcWaitSynchronization(evt, 0);
-	if (!res)
-	{
-		svcClearEvent(evt);
-		return true;
-	}
-	
-	return false;
-}
-
-void SafeWait(Handle evt)
-{
-	// sometimes, we end up waiting for a given event, but for whatever reason the associated action failed to start
-	// and we end up 'freezing'
-	// this method of waiting avoids that
-	// it's dirty and doesn't solve the actual issue but atleast it avoids a freeze
-	
-	Result res = svcWaitSynchronization(evt, 40*1000*1000);
-	if (!res)
-		svcClearEvent(evt);
-}
 
 void RenderTopScreen()
 {
@@ -677,13 +625,12 @@ bool LoadBorder(char* path)
 bool StartROM(char* path, char* dir)
 {
 	char temppath[0x210];
-	Result res;
-	
+
 	if (SPCThread)
 	{
 		exitspc = 1; pause = 1;
 		svcSignalEvent(SPCSync);
-		svcWaitSynchronization(SPCThread, U64_MAX);
+		//svcWaitSynchronization(SPCThread, U64_MAX);
 		threadJoin(SPCThread, U64_MAX);
 		exitspc = 0;
 	}
@@ -728,34 +675,6 @@ bool StartROM(char* path, char* dir)
 }
 
 
-
-int reported=0;extern u32 debugpc;
-u32 oldshiz=0;
-void reportshit(u32 pc, u32 a, u32 y)
-{
-	/*if (*(u32*)&SNES_SysRAM[0x300] != 0xEFEFEFEF && oldshiz==0xEFEFEFEF)
-	{
-		if (reported) return; reported=1;
-		bprintf("%06X A=%04X %04X\n", pc, a, *(u32*)&SNES_SysRAM[0x300]);
-	}
-	oldshiz = *(u32*)&SNES_SysRAM[0x300];*/
-	//bprintf("!! IRQ %04X %02X\n", SNES_Status->IRQ_CurHMatch, SNES_Status->IRQCond);
-	//pause=1;
-	//bprintf("TSX S=%04X X=%04X P=%04X  %04X\n", pc>>16, a, y&0xFFFF, y>>16);
-	bprintf("%06X\n", debugpc);
-	running=0; pause=1;
-}
-
-int reported2=0;
-void reportshit2(u32 pc, u32 a, u32 y)
-{
-	//bprintf("TSC S=%04X A=%04X P=%04X  %04X\n", pc>>16, a, y&0xFFFF, y>>16);
-	if (SNES_SysRAM[0x3C8] == 0 && reported2 != 0)
-		bprintf("[%06X] 3C8=0\n", debugpc);
-	reported2 = SNES_SysRAM[0x3C8];
-}
-
-
 void APTHookFunc(APT_HookType type, void* param)
 {
 	static int oldpause = 0;
@@ -774,6 +693,9 @@ void APTHookFunc(APT_HookType type, void* param)
 	case APTHOOK_ONRESTORE:
 	case APTHOOK_ONWAKEUP:
 		pause = oldpause;
+		break;
+		
+	default:
 		break;
 	}
 }
@@ -980,7 +902,7 @@ int main()
 						{
 							u32 timestamp = (u32)(svcGetSystemTick() / 446872);
 							char file[256];
-							snprintf(file, 256, "/blargSnes%08d.bmp", timestamp);
+							snprintf(file, 256, "/blargSnes%08u.bmp", timestamp);
 							if (TakeScreenshot(file))
 							{
 								bprintf("Screenshot saved as:\n");
@@ -1044,7 +966,7 @@ int main()
 	svcSignalEvent(SPCSync);
 	if (SPCThread) 
 	{
-		svcWaitSynchronization(SPCThread, U64_MAX);
+		//svcWaitSynchronization(SPCThread, U64_MAX);
 		threadJoin(SPCThread, U64_MAX);
 	}
 	

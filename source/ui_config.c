@@ -20,7 +20,8 @@
 #include "ui.h"
 #include "config.h"
 
-extern badShader;
+
+void ApplyScaling();
 
 int configdirty = 0;
 
@@ -52,7 +53,7 @@ void Config_Render(bool force)
 
 	y += 26;
 
-	DrawCheckBox(26, y, RGB(255,255,255), "Mode 7 filter", Config.HardwareMode7Filter);
+	DrawCheckBox(26, y, RGB(255,255,255), "Mode 7 filtering", Config.HardwareMode7Filter);
 	
 	y += 26;
 	

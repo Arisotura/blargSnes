@@ -440,6 +440,7 @@ void PPU_RenderScanline_Hard(u32 line);
 void PPU_VBlank_Hard();
 
 
+u32 PPU_TranslateVRAMAddress(u32 addr);
 void PPU_ConvertVRAM8(u32 addr, u8 val);
 void PPU_ConvertVRAM16(u32 addr, u16 val);
 
