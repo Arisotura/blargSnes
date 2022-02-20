@@ -67,7 +67,7 @@ u8 ScreenYStart, ScreenYEnd;
 int doingBG = 0;
 int scissorY = 0; // gross hack
 
-u32 objUseLayer[8] = {0};
+u8 OBJLayerUsed[4];
 
 
 // tile cache:
@@ -1658,6 +1658,8 @@ int PPU_HardRenderOBJ(u8* oam, u32 oamextra, int y, int width, int height, int y
 		x = firstx;
 	}
 	
+	if (ntiles) OBJLayerUsed[(oam[3] >> 4) & 0x3] = 1;
+	
 #undef ADDVERTEX
 	
 	vertexPtr = vptr;
@@ -1673,6 +1675,7 @@ void PPU_HardRenderOBJs()
 	int ystart = ScreenYStart, yend;
 	u8* cur_oam = PPU.HardOAM;
 	
+	*(u32*)&OBJLayerUsed[0] = 0;
 	
 	bglOutputBuffers(OBJColorBuffer, OBJPrioBuffer, GPU_RGBA8, 256, 256);
 			
@@ -1775,6 +1778,9 @@ void PPU_HardRenderOBJs()
 void PPU_HardRenderOBJLayer(u32 setalpha, u32 prio, int ystart, int yend)
 {
 	u16* vptr = (u16*)vertexPtr;
+	
+	if (!OBJLayerUsed[prio >> 4])
+		return;
 	
 #define ADDVERTEX(x, y, z, s, t) \
 	*vptr++ = x; \
