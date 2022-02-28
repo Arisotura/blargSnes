@@ -79,6 +79,7 @@ int GPUState = 0;
 DVLB_s* CurShader = NULL;
 
 u32* BorderTex;
+bool BorderDirty;
 u16* MainScreenTex;
 u16* SubScreenTex;
 
@@ -297,6 +298,8 @@ void ApplyScaling()
 	screenVertices[5*1 + 0] = x2; screenVertices[5*1 + 1] = y2; 
 	
 	GSPGPU_FlushDataCache((u32*)screenVertices, 5*2*sizeof(float));
+	
+	BorderDirty = true;
 }
 
 
@@ -333,14 +336,20 @@ void RenderTopScreen()
 	bglDummyTexEnv(4);
 	bglDummyTexEnv(5);
 	
-	bglTexImage(GPU_TEXUNIT0, BorderTex,512,256,0,GPU_RGBA8);
-	
 	bglNumAttribs(2);
 	bglAttribType(0, GPU_FLOAT, 3);	// vertex
 	bglAttribType(1, GPU_FLOAT, 2);	// texcoord
-	bglAttribBuffer(borderVertices);
 	
-	bglDrawArrays(GPU_GEOMETRY_PRIM, 2); // border
+	if (BorderDirty)
+	{
+		bglTexImage(GPU_TEXUNIT0, BorderTex,512,256,0,GPU_RGBA8);
+		
+		bglAttribBuffer(borderVertices);
+		
+		bglDrawArrays(GPU_GEOMETRY_PRIM, 2); // border
+		
+		BorderDirty = false;
+	}
 
 	// filtering enabled only when scaling
 	// filtering at 1:1 causes output to not be pixel-perfect, but not filtering at higher res looks like total shit
@@ -544,7 +553,9 @@ bool LoadBitmap(char* path, u32 width, u32 height, void* dst, u32 alpha, u32 sta
 
 bool LoadBorder(char* path)
 {
-	return LoadBitmap(path, 400, 240, BorderTex, 0xFF, 0, 64, 0x1);
+	bool res = LoadBitmap(path, 400, 240, BorderTex, 0xFF, 0, 64, 0x1);
+	if (res) BorderDirty = true;
+	return res;
 }
 
 
@@ -709,6 +720,8 @@ int main()
 	// load border
 	if (!LoadBorder("/blargSnesBorder.bmp"))
 		CopyBitmapToTexture(defaultborder, BorderTex, 400, 240, 0xFF, 0, 64, 0x1);
+	
+	BorderDirty = true;
 
 	// copy splashscreen
 	u32* tempbuf = (u32*)linearAlloc(256*256*2);
