@@ -668,10 +668,7 @@ int main()
 	VRAM_Init();
 	gpuOut = (u32*)VRAM_Alloc(400*240*4);
 	
-	//SNESFrame = (u32*)VRAM_Alloc(256*256*4);
-	// TODO: these two have to sit in FCRAM because there isn't enough space left in VRAM
-	// hardware renderer takes up 5.5MB out of 6
-	SNESFrame = (u32*)linearAlloc(256*256*4);
+	SNESFrame = (u32*)VRAM_Alloc(256*256*2);
 	BorderTex = (u32*)linearAlloc(512*256*4);
 	
 	SNES_Init();
@@ -837,7 +834,7 @@ int main()
 						{
 							u32 timestamp = (u32)(svcGetSystemTick() / 446872);
 							char file[256];
-							snprintf(file, 256, "/blargSnes%08u.bmp", timestamp);
+							snprintf(file, 256, "/blargSnes%08lu.bmp", timestamp);
 							if (TakeScreenshot(file))
 							{
 								bprintf("Screenshot saved as:\n");
@@ -910,8 +907,7 @@ int main()
 	GX_BindQueue(NULL);
 	free(GXQueue.entries);
 
-	//VRAM_Free(SNESFrame);
-	linearFree(SNESFrame);
+	VRAM_Free(SNESFrame);
 	VRAM_Free(gpuOut);
 
 	Audio_DeInit();

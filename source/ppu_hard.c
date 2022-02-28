@@ -123,7 +123,7 @@ u16* PPU_M7VertBuf;
 u32 PPU_M7SecFlg[4];
 u32 PPU_M7TileFlg[256];
 u16 PPU_M7TileCnt[256*4];
-u16 PPU_M7PalUpdate;
+u32 PPU_M7PalHash;
 
 typedef struct
 {
@@ -380,7 +380,7 @@ void PPU_ConvertVRAMAll()
 		PPU.TileEmpty[i >> 4] += bitcount(*ptr);
 		PPU_ConvertVRAM16(i, *ptr++);
 	}
-	PPU_M7PalUpdate = PPU.PaletteUpdateCount256;
+	PPU_M7PalHash = PPU_PalHash256;
 }
 
 void PPU_DecodeTile(u8* src, u16* pal, u16* dst)
@@ -1897,7 +1897,7 @@ void PPU_UpdateMode7()
 {
 	int i, j;
 
-	if((PPU_M7PalUpdate != PPU.PaletteUpdateCount256) || !lastM7)
+	if((PPU_M7PalHash != PPU_PalHash256) || !lastM7)
 	{
 		//Update all tiles, then start updating all layer sections
 		for(i = 0; i < 256; i++)
@@ -1909,7 +1909,7 @@ void PPU_UpdateMode7()
 		}
 		for(i = 0; i < 4; i++)
 			PPU_M7SecFlg[i] = 1;
-		PPU_M7PalUpdate = PPU.PaletteUpdateCount256;
+		PPU_M7PalHash = PPU_PalHash256;
 	}
 	else
 	{
