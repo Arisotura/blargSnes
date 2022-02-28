@@ -107,6 +107,9 @@ const u16 PPU_WindowCombine[] =
 PPUState PPU;
 
 
+void PPU_UpdateHardMemory();
+
+
 void PPU_Init()
 {
 	PPU.MainBuffer = (u16*)linearAlloc(256*512*2);
@@ -155,7 +158,10 @@ void PPU_SwitchRenderers()
 	}
 	
 	if (PPU.HardwareRenderer)
+	{
 		PPU_Init_Hard();
+		PPU_UpdateHardMemory();
+	}
 	else
 		PPU_Init_Soft();
 }

@@ -1397,7 +1397,7 @@ void PPU_BlendScreens(u32 colorformat)
 
 	bglUseShader(&softRenderShaderP);
 	
-	bglOutputBuffers(SNESFrame, NULL, GPU_RGBA8, 256, 256); // depth buffer doesn't matter
+	bglOutputBuffers(SNESFrame, NULL, GPU_RGBA5551, 256, 256); // depth buffer doesn't matter
 	bglViewport(0, 0, 256, 256);
 	
 	bglEnableDepthTest(false);

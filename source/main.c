@@ -344,7 +344,7 @@ void RenderTopScreen()
 
 	// filtering enabled only when scaling
 	// filtering at 1:1 causes output to not be pixel-perfect, but not filtering at higher res looks like total shit
-	bglTexImage(GPU_TEXUNIT0, SNESFrame,256,256, Config.ScaleMode?0x6:0 ,GPU_RGBA8);
+	bglTexImage(GPU_TEXUNIT0, SNESFrame,256,256, Config.ScaleMode?0x6:0 ,GPU_RGBA5551);
 	
 	bglAttribBuffer(screenVertices);
 	
@@ -711,11 +711,11 @@ int main()
 		CopyBitmapToTexture(defaultborder, BorderTex, 400, 240, 0xFF, 0, 64, 0x1);
 
 	// copy splashscreen
-	u32* tempbuf = (u32*)linearAlloc(256*256*4);
-	CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x0);
-	GSPGPU_FlushDataCache(tempbuf, 256*256*4);
+	u32* tempbuf = (u32*)linearAlloc(256*256*2);
+	CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x2);
+	GSPGPU_FlushDataCache(tempbuf, 256*256*2);
 
-	GX_DisplayTransfer(tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
+	GX_DisplayTransfer(tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3303);
 	gspWaitForPPF();
 
 	linearFree(tempbuf);
@@ -795,14 +795,13 @@ int main()
 						FinishRendering();
 						SNES_Status->ScreenHeight = 224;
 						ApplyScaling();
-						u32* tempbuf = (u32*)linearAlloc(256*256*4);
-						CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x0);
-						GSPGPU_FlushDataCache(tempbuf, 256*256*4);
+						u32* tempbuf = (u32*)linearAlloc(256*256*2);
+						CopyBitmapToTexture(screenfill, tempbuf, 256, 224, 0xFF, 0, 32, 0x2);
+						GSPGPU_FlushDataCache(tempbuf, 256*256*2);
 
-						GX_DisplayTransfer(tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3);
+						GX_DisplayTransfer(tempbuf, 0x01000100, (u32*)SNESFrame, 0x01000100, 0x3303);
 						gspWaitForPPF();
 
-						//SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
 						linearFree(tempbuf);
 					}
 					else if (release & KEY_START)

@@ -227,6 +227,8 @@ void PPU_Init_Hard()
 		
 		YOffset256[i] = y;
 	}
+	
+	PPU_ConvertVRAMAll();
 }
 
 void PPU_DeInit_Hard()

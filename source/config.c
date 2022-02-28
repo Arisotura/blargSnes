@@ -71,7 +71,7 @@ void LoadConfig(u8 init)
 		return;
 	}
 
-	char* tempbuf = (char*)linearAlloc(size + 1);
+	char* tempbuf = (char*)malloc(size + 1);
 	fseek(pFile, 0, SEEK_SET);
 	fread(tempbuf, sizeof(char), size, pFile);
 	tempbuf[size] = '\0';
@@ -99,7 +99,7 @@ void LoadConfig(u8 init)
 	}
 	
 	fclose(pFile);
-	linearFree(tempbuf);
+	free(tempbuf);
 }
 
 void SaveConfig(u8 saveCurDir)
