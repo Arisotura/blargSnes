@@ -9,6 +9,8 @@ endif
 TOPDIR ?= $(CURDIR)
 include $(DEVKITARM)/3ds_rules
 
+export BLARG_VERSION := 1.4
+
 #---------------------------------------------------------------------------------
 # TARGET is the name of the output
 # BUILD is the directory where object files & intermediate files will be placed
@@ -50,7 +52,7 @@ CFLAGS	:=	-g -Wall -O2 -mword-relocations \
 			-fomit-frame-pointer -ffunction-sections \
 			$(ARCH)
 
-CFLAGS	+=	$(INCLUDE) -DARM11 -D_3DS
+CFLAGS	+=	$(INCLUDE) -DARM11 -D_3DS -DBLARGSNES_VERSION="\"$(BLARG_VERSION)\""
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 
@@ -149,6 +151,10 @@ ifeq ($(strip $(ICON)),)
 else
 	export APP_ICON := $(TOPDIR)/$(ICON)
 endif
+
+export APP_TITLE := blargSNES $(BLARG_VERSION)
+export APP_DESCRIPTION := SNES emulator
+export APP_AUTHOR := Arisotura & DiscostewSM
 
 ifeq ($(strip $(NO_SMDH)),)
 	export _3DSXFLAGS += --smdh=$(CURDIR)/$(TARGET).smdh

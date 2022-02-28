@@ -46,8 +46,6 @@
 #include "plain_quad_shbin.h"
 #include "window_mask_shbin.h"
 
-#include "version.h"
-
 
 aptHookCookie APTHook;
 

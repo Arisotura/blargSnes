@@ -79,7 +79,9 @@ void LoadConfig(u8 init)
 	sscanf(tempbuf, configFileL, 
 		&Config.HardwareRenderer,
 		&Config.ScaleMode,
-		tempDir);
+		tempDir,
+		&Config.VSync,
+		&Config.FrameSkip);
 
 	if (Config.HardwareMode7Filter == -1)
 		Config.HardwareMode7Filter = 0;
@@ -120,7 +122,9 @@ void SaveConfig(u8 saveCurDir)
 	u32 size = snprintf(tempbuf, 1024, configFileS, 
 		Config.HardwareRenderer,
 		Config.ScaleMode,
-		tempDir);
+		tempDir,
+		Config.VSync,
+		Config.FrameSkip);
 	
 	fwrite(tempbuf, sizeof(char), size, pFile);
 	fclose(pFile);
