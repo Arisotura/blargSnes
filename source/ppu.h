@@ -208,7 +208,7 @@ typedef struct
 typedef struct
 {
 	u8 EndOffset;
-	u8 *OBJWidth, *OBJHeight;
+	const u8 *OBJWidth, *OBJHeight;
 	u16 OBJTilesetAddr;
 	u32 OBJGap;
 } PPU_OBJSection;
@@ -260,8 +260,8 @@ typedef struct
 	u8 OAM[0x220];
 	u8 HardOAM[0x220];
 	
-	u8* OBJWidth;
-	u8* OBJHeight;
+	const u8* OBJWidth;
+	const u8* OBJHeight;
 
 
 	u8 CurBrightness;
@@ -403,8 +403,7 @@ typedef struct
 
 extern PPUState PPU;
 
-extern bool SkipThisFrame;
-extern u8 RenderState;
+extern int SkipThisFrame;
 
 
 void PPU_Init();

@@ -32,12 +32,16 @@ const char* configFilePath = "/blargSnes.ini";
 const char* configFileL = 
 	"HardwareRenderer=%d\n"
 	"ScaleMode=%d\n"
-	"DirPath=%[^\t\n]\n";
+	"DirPath=%[^\t\n]\n"
+	"VSync=%d\n"
+	"FrameSkip=%d\n";
 
 const char* configFileS = 
 	"HardwareRenderer=%d\n"
 	"ScaleMode=%d\n"
-	"DirPath=%s\n";
+	"DirPath=%s\n"
+	"VSync=%d\n"
+	"FrameSkip=%d\n";
 
 char lastDir[0x106];
 
@@ -47,6 +51,8 @@ void LoadConfig(u8 init)
 	char tempDir[0x106];
 	Config.HardwareRenderer = 1;
 	Config.ScaleMode = 0;
+	Config.VSync = 0;
+	Config.FrameSkip = 0;
 	if(init) 
 	{
 		strncpy(Config.DirPath,"/\0",2);

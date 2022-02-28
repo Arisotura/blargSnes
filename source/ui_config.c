@@ -66,6 +66,20 @@ void Config_Render(bool force)
 	if (themode < 0 || themode > 4) themode = 0;
 	DrawButton(x, y-3, 140, RGB(255,255,255), scalemodes[themode]);
 	
+	y += 26;
+	
+	DrawCheckBox(10, y, RGB(255,255,255), "Force VSync", Config.VSync);
+	
+	y += 26;
+	
+	DrawText(10, y+1, RGB(255,255,255), "Frameskip:");
+	x = 10 + MeasureText("Frameskip:") + 6;
+	
+	char* fskip[] = {"None", "1", "2", "3", "4", "Auto"};
+	themode = Config.FrameSkip;
+	if (themode < 0 || themode > 5) themode = 0;
+	DrawButton(x, y-3, 100, RGB(255,255,255), fskip[themode]);
+	
 	DrawButton(10, 212, 0, RGB(255,128,128), "Cancel");
 	DrawButton(-10, 212, 0, RGB(128,255,128), "Save changes");
 }
@@ -95,6 +109,17 @@ void Config_Touch(bool touch, u32 x, u32 y)
 	{
 		Config.ScaleMode++;
 		if (Config.ScaleMode > 4) Config.ScaleMode = 0;
+		configdirty = 2;
+	}
+	else if (y >= 102 && y < 122)
+	{
+		Config.VSync = !Config.VSync;
+		configdirty = 2;
+	}
+	else if (y >= 126 && y < 146)
+	{
+		Config.FrameSkip++;
+		if (Config.FrameSkip > 5) Config.FrameSkip = 0;
 		configdirty = 2;
 	}
 	else if (x < 106 && y >= 200)

@@ -90,9 +90,10 @@ int running = 0;
 int pause = 0;
 u32 framecount = 0;
 
-u8 RenderState = 0;
+int VBlankCount = 0;
 int FramesSkipped = 0;
-bool SkipThisFrame = false;
+int SkipNextFrame = 0;
+int SkipThisFrame = 0;
 u64 LastVBlank = 0;
 
 // debug
@@ -301,7 +302,13 @@ void ApplyScaling()
 }
 
 
+void SwapVertexBuf();
 void VSyncAndFrameskip();
+
+void VBlankCB(void* blarg)
+{
+	VBlankCount++;
+}
 
 void RenderTopScreen()
 {
@@ -344,77 +351,20 @@ void RenderTopScreen()
 	bglAttribBuffer(screenVertices);
 	
 	bglDrawArrays(GPU_GEOMETRY_PRIM, 2); // screen
+	
+	// TODO: bottom screen UI should be rendered with the GPU too
 
-	//if (!RenderState)
-	{
-		bglFlush();
-		GX_DisplayTransfer(gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
-		gxCmdQueueRun(&GXQueue);
-		//RenderState = 1;
-	}
-}
-
-void ContinueRendering()
-{return;
-	switch (RenderState)
-	{
-		case 0: return;
-		
-		case 3:
-			//if (PeekEvent(gspEvents[GSPGPU_EVENT_PPF]))
-			{
-				bglFlush();
-				RenderState = 1;
-			}
-			break;
-			
-		case 1:
-			//if (PeekEvent(gspEvents[GSPGPU_EVENT_P3D]))
-			{
-				GX_DisplayTransfer(gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
-				RenderState = 2;
-			}
-			break;
-			
-		case 2:
-			//if (PeekEvent(gspEvents[GSPGPU_EVENT_PPF]))
-			{
-				RenderState = 0;
-				VSyncAndFrameskip();
-			}
-			break;
-	}
+	bglFlush();
+	GX_DisplayTransfer(gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
+	gxCmdQueueRun(&GXQueue);
+	
+	SwapVertexBuf();
+	
+	SkipThisFrame = SkipNextFrame;
 }
 
 void FinishRendering()
 {
-	/*if (RenderState == 3)
-	{
-		gspWaitForPPF();
-		//SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
-		bglFlush();
-		RenderState = 1;
-	}
-	if (RenderState == 1)
-	{
-		gspWaitForP3D();
-		//SafeWait(gspEvents[GSPGPU_EVENT_P3D]);
-		GX_DisplayTransfer(gpuOut, 0x019000F0, (u32*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL), 0x019000F0, 0x00001000);
-		RenderState = 2;
-	}
-	if (RenderState == 2)
-	{
-		gspWaitForPPF();
-		//SafeWait(gspEvents[GSPGPU_EVENT_PPF]);
-		VSyncAndFrameskip();
-	}
-	if (RenderState == 4)
-	{
-		VSyncAndFrameskip();
-	}
-	
-	RenderState = 0;*/
-	
 	gxCmdQueueWait(&GXQueue, -1);
 	gxCmdQueueClear(&GXQueue);
 	
@@ -427,60 +377,39 @@ void FinishRendering()
 	}
 	
 	gfxSwapBuffersGpu();
-	gspWaitForEvent(GSPGPU_EVENT_VBlank0, false);
-	//gspWaitForVBlank();
+	VSyncAndFrameskip();
 }
 
 u32 PALCount = 0;
 
 void VSyncAndFrameskip()
 {
-	//if (running && !pause && PeekEvent(gspEvents[GSPGPU_EVENT_VBlank0]) && FramesSkipped<5)
-	if (false)
+	int nmissed = VBlankCount;
+	
+	gspWaitForEvent(GSPGPU_EVENT_VBlank0, Config.VSync != 0);
+	
+	VBlankCount = 0;
+	
+	if (Config.FrameSkip == 5) // auto frameskip
 	{
-		// we missed the VBlank
-		// skip the next frames to compensate
-		
-		// TODO: doesn't work
-		/*s64 time = (s64)(svcGetSystemTick() - LastVBlank);
-		while (time > 4468724)
+		if (!SkipNextFrame)
 		{
-			FramesSkipped++;
-			time -= 4468724;
-		}*/
-		
-		SkipThisFrame = true;
-		FramesSkipped++;
+			SkipNextFrame = nmissed;
+			if (SkipNextFrame > 4)
+				SkipNextFrame = 4;
+		}
+		else
+			SkipNextFrame--;
+	}
+	else if (Config.FrameSkip > 0)
+	{
+		if (!SkipNextFrame)
+			SkipNextFrame = Config.FrameSkip;
+		else
+			SkipNextFrame--;
 	}
 	else
-	{
-		SkipThisFrame = false;
-		FramesSkipped = 0;
-		
-		{
-			u8* bottomfb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
-			
-			UI_SetFramebuffer(bottomfb);
-			UI_Render();
-			GSPGPU_FlushDataCache(bottomfb, 0x38400);
-		}
-		
-		gfxSwapBuffersGpu();
-		//gspWaitForVBlank();
-		gspWaitForEvent(GSPGPU_EVENT_VBlank0, false);
-		//LastVBlank = svcGetSystemTick();
-	}
-	
-	// in PAL mode, wait one extra frame every 5 frames to slow down to 50FPS
-	if (running && !pause && ROM_Region)
-	{
-		PALCount++;
-		if (PALCount >= 5)
-		{
-			PALCount = 0;
-			gspWaitForVBlank();
-		}
-	}
+		SkipNextFrame = 0;
 }
 
 void SwapVertexBuf()
@@ -656,7 +585,6 @@ bool StartROM(char* path, char* dir)
 	CPU_Reset();
 	SPC_Reset();
 
-	RenderState = 0;
 	FramesSkipped = 0;
 	SkipThisFrame = false;
 	PALCount = 0;
@@ -740,10 +668,8 @@ int main()
 	SNES_Init();
 	PPU_Init();
 	
-	//GPU_Init(NULL);
 	gfxSet3D(false);
 	bglInit();
-	RenderState = 0;
 	
 	vertexBuf = linearAlloc(vertexBufSize * 2);
 	vertexPtr = vertexBuf;
@@ -801,6 +727,8 @@ int main()
 	GXQueue.entries = (gxCmdEntry_s*)malloc(GXQueue.maxEntries * sizeof(gxCmdEntry_s));
 	GX_BindQueue(&GXQueue);
 	
+	gspSetEventCallback(GSPGPU_EVENT_VBlank0, VBlankCB, NULL, false);
+	
 	Audio_Init();
 	svcCreateEvent(&SPCSync, 0); 
 	
@@ -821,8 +749,6 @@ int main()
 			{
 				// emulate
 				CPU_MainLoop(); // runs the SNES for one frame. Handles PPU rendering.
-				//ContinueRendering();
-				//FinishRendering();
 				
 				/*{
 					extern u32 dbgcycles, nruns;

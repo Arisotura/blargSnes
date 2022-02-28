@@ -97,6 +97,8 @@ bool ROM_LoadFile(char* name);
 void ROM_MapBank(u32 bank, u8* ptr);
 void ROM_SpeedChanged();
 
+void IO_ManualReadKeys();
+
 void SNES_Init();
 
 bool SNES_LoadROM(char* path);

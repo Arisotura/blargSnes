@@ -41,7 +41,6 @@ u8 CurForcedBlank = 0;
 extern void* vertexBuf;
 extern void* vertexPtr;
 void* vertexPtrStart;
-void SwapVertexBuf();
 
 
 extern shaderProgram_s hardRenderShaderP;
@@ -2589,10 +2588,9 @@ void PPU_HardRenderSection(u32 endline)
 	PPU_FinishHardSection(endline);
 	
 	if (CurForcedBlank) return;
-	
+
 	if (FirstScreenSection)
 	{
-		SwapVertexBuf();
 		vertexPtrStart = vertexPtr;
 	}
 	
@@ -2659,7 +2657,6 @@ void PPU_VBlank_Hard(int endLine)
 	// just in case nothing was rendered
 	if (FirstScreenSection)
 	{
-		SwapVertexBuf();
 		vertexPtrStart = vertexPtr;
 	}
 	

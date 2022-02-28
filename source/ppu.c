@@ -1132,9 +1132,6 @@ void PPU_ComputeWindows(PPU_WindowSegment* s)
 
 void PPU_RenderScanline(u32 line)
 {
-	//if (!(line & 7))
-	//	ContinueRendering();
-	
 	if (SkipThisFrame) return;
 	
 	if (PPU.HardwareRenderer)
@@ -1156,11 +1153,9 @@ void PPU_VBlank()
 		}
 		else
 			PPU_VBlank_Soft();
-		
-		RenderTopScreen();
 	}
-	else
-		RenderState = 4;
+	
+	RenderTopScreen();
 	
 	PPU.OAMAddr = PPU.OAMReload;
 	

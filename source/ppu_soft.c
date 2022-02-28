@@ -26,7 +26,6 @@
 
 extern void* vertexBuf;
 extern void* vertexPtr;
-void SwapVertexBuf();
 
 extern DVLB_s* softRenderShader;
 
@@ -1538,10 +1537,5 @@ void PPU_VBlank_Soft()
 	
 	PPU.CurColorEffect->EndOffset = 240;
 	
-	SwapVertexBuf();
-	
 	PPU_BlendScreens(GPU_RGBA5551);
-	
-	RenderState = 3;
-	//bglFlush();
 }

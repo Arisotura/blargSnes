@@ -25,6 +25,9 @@ typedef struct
 	int ScaleMode;
 	char DirPath[0x106];
 	int HardwareMode7Filter;
+	int VSync;
+	int FrameSkip;
+	
 } Config_t;
 
 extern Config_t Config;
