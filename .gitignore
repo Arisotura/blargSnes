@@ -1,6 +1,9 @@
 build/
-blargSnes.bin
 blargSnes.elf
-blargSnes_s.elf
-blargSnes.3ds
 blargSnes.3dsx
+blargSnes.smdh
+blargSnes.cia
+
+# old?
+blargSnes.bin
+blargSnes_s.elf
