@@ -75,6 +75,10 @@ LIBDIRS	:= $(CTRULIB)
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 #---------------------------------------------------------------------------------
 
+ifneq ($(NO_SMDH),)
+NO_CIA = 1
+endif
+
 export OUTPUT	:=	$(CURDIR)/$(TARGET)
 export TOPDIR	:=	$(CURDIR)
 
@@ -200,11 +204,23 @@ else
 #---------------------------------------------------------------------------------
 # main targets
 #---------------------------------------------------------------------------------
+
+ifeq ($(NO_CIA),)
+.PHONY: all
+
+all: $(OUTPUT).3dsx $(OUTPUT).cia
+endif
+
 $(OUTPUT).3dsx	:	$(OUTPUT).elf $(_3DSXDEPS)
 
 $(OFILES_SOURCES) : $(HFILES)
 
 $(OUTPUT).elf	:	$(OFILES)
+
+$(OUTPUT).cia	:	$(OUTPUT).elf  $(_3DSXDEPS)
+	@makerom -f cia -o $(OUTPUT).cia -exefslogo -elf $(OUTPUT).elf -rsf $(TOPDIR)/banner/app.rsf \
+	-ver 0 -icon $(OUTPUT).smdh -banner $(TOPDIR)/banner/banner.bnr
+	@echo "built ... $(notdir $(OUTPUT)).cia"
 
 #---------------------------------------------------------------------------------
 # you need a rule like this for each extension you use as binary data
