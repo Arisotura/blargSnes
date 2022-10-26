@@ -52,7 +52,7 @@ CFLAGS	:=	-g -Wall -O2 -mword-relocations \
 			-fomit-frame-pointer -ffunction-sections \
 			$(ARCH)
 
-CFLAGS	+=	$(INCLUDE) -DARM11 -D_3DS -DBLARGSNES_VERSION="\"$(BLARG_VERSION)\""
+CFLAGS	+=	$(INCLUDE) -D__3DS__ -DBLARGSNES_VERSION="\"$(BLARG_VERSION)\""
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 
