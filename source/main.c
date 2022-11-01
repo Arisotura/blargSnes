@@ -598,8 +598,15 @@ bool StartROM(char* path, char* dir)
 	SkipThisFrame = false;
 	PALCount = 0;
 	
-	// SPC700 thread (running on syscore)
-	SPCThread = threadCreate(SPCThreadFunc, 0x0, SPC_THREAD_STACK_SIZE, 0x18, 1, true);
+	_Bool isN3DS;
+    APT_CheckNew3DS(&isN3DS);
+
+	if(isN3DS)
+		// SPC700 thread (running on n3dscore)
+		SPCThread = threadCreate(SPCThreadFunc, 0x0, SPC_THREAD_STACK_SIZE, 0x18, 2, true);
+	else
+		// SPC700 thread (running on syscore)
+		SPCThread = threadCreate(SPCThreadFunc, 0x0, SPC_THREAD_STACK_SIZE, 0x18, 1, true);
 	if (!SPCThread) 
 	{
 		bprintf("Failed to create DSP thread\n");

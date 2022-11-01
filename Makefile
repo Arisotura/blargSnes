@@ -42,14 +42,14 @@ GRAPHICS	:=	gfx
 GFXBUILD	:=	$(BUILD)
 #ROMFS		:=	romfs
 #GFXBUILD	:=	$(ROMFS)/gfx
-
+CTRULIB		:=	$(CURDIR)/libctru
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 
-CFLAGS	:=	-g -Wall -O2 -mword-relocations \
-			-fomit-frame-pointer -ffunction-sections \
+CFLAGS	:=	-g -Wall -O3 -mword-relocations \
+			-fomit-frame-pointer -ffunction-sections -ffast-math \
 			$(ARCH)
 
 CFLAGS	+=	$(INCLUDE) -D__3DS__ -DBLARGSNES_VERSION="\"$(BLARG_VERSION)\""
@@ -196,7 +196,7 @@ clean:
 $(GFXBUILD)/%.t3x	$(BUILD)/%.h	:	%.t3s
 #---------------------------------------------------------------------------------
 	@echo $(notdir $<)
-	@tex3ds -i $< -H $(BUILD)/$*.h -d $(DEPSDIR)/$*.d -o $(GFXBUILD)/$*.t3x
+	@C:\\devkitPro\\tools\\bin\\tex3ds -i $< -H $(BUILD)/$*.h -d $(DEPSDIR)/$*.d -o $(GFXBUILD)/$*.t3x
 
 #---------------------------------------------------------------------------------
 else
@@ -218,7 +218,7 @@ $(OFILES_SOURCES) : $(HFILES)
 $(OUTPUT).elf	:	$(OFILES)
 
 $(OUTPUT).cia	:	$(OUTPUT).elf  $(_3DSXDEPS)
-	@makerom -f cia -o $(OUTPUT).cia -exefslogo -elf $(OUTPUT).elf -rsf $(TOPDIR)/banner/app.rsf \
+	@C:\\devkitPro\\tools\\bin\\makerom -f cia -o $(OUTPUT).cia -exefslogo -elf $(OUTPUT).elf -rsf $(TOPDIR)/banner/app.rsf \
 	-ver 0 -icon $(OUTPUT).smdh -banner $(TOPDIR)/banner/banner.bnr
 	@echo "built ... $(notdir $(OUTPUT)).cia"
 
@@ -248,8 +248,8 @@ define shader-as
 	echo "extern const u8" `(echo $(CURBIN) | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`"_end[];" > `(echo $(CURBIN) | tr . _)`.h
 	echo "extern const u8" `(echo $(CURBIN) | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`"[];" >> `(echo $(CURBIN) | tr . _)`.h
 	echo "extern const u32" `(echo $(CURBIN) | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`_size";" >> `(echo $(CURBIN) | tr . _)`.h
-	picasso -o $(CURBIN) $1
-	bin2s $(CURBIN) | $(AS) -o $*.shbin.o
+	C:\\devkitPro\\tools\\bin\\picasso -o $(CURBIN) $1
+	C:\\devkitPro\\tools\\bin\\bin2s $(CURBIN) | $(AS) -o $*.shbin.o
 endef
 
 %.shbin.o %_shbin.h : %.v.pica %.g.pica
