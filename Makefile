@@ -50,7 +50,7 @@ CTRULIB		:=	$(CURDIR)/libctru
 ARCH	:=	-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 
 CFLAGS	:=	-g -Wall -O3 -mword-relocations \
-			-fomit-frame-pointer -ffunction-sections -ffast-math \
+			-fomit-frame-pointer -ffunction-sections  \
 			$(ARCH)
 
 CFLAGS	+=	$(INCLUDE) -D__3DS__ -DBLARGSNES_VERSION="\"$(BLARG_VERSION)\""
