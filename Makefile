@@ -42,6 +42,7 @@ GRAPHICS	:=	gfx
 GFXBUILD	:=	$(BUILD)
 #ROMFS		:=	romfs
 #GFXBUILD	:=	$(ROMFS)/gfx
+#https://github.com/RetroGamer02/libctru
 CTRULIB		:=	$(CURDIR)/libctru
 #---------------------------------------------------------------------------------
 # options for code generation
@@ -196,7 +197,7 @@ clean:
 $(GFXBUILD)/%.t3x	$(BUILD)/%.h	:	%.t3s
 #---------------------------------------------------------------------------------
 	@echo $(notdir $<)
-	@C:\\devkitPro\\tools\\bin\\tex3ds -i $< -H $(BUILD)/$*.h -d $(DEPSDIR)/$*.d -o $(GFXBUILD)/$*.t3x
+	@tex3ds -i $< -H $(BUILD)/$*.h -d $(DEPSDIR)/$*.d -o $(GFXBUILD)/$*.t3x
 
 #---------------------------------------------------------------------------------
 else
@@ -218,7 +219,7 @@ $(OFILES_SOURCES) : $(HFILES)
 $(OUTPUT).elf	:	$(OFILES)
 
 $(OUTPUT).cia	:	$(OUTPUT).elf  $(_3DSXDEPS)
-	@C:\\devkitPro\\tools\\bin\\makerom -f cia -o $(OUTPUT).cia -exefslogo -elf $(OUTPUT).elf -rsf $(TOPDIR)/banner/app.rsf \
+	@makerom -f cia -o $(OUTPUT).cia -exefslogo -elf $(OUTPUT).elf -rsf $(TOPDIR)/banner/app.rsf \
 	-ver 0 -icon $(OUTPUT).smdh -banner $(TOPDIR)/banner/banner.bnr
 	@echo "built ... $(notdir $(OUTPUT)).cia"
 
@@ -248,8 +249,8 @@ define shader-as
 	echo "extern const u8" `(echo $(CURBIN) | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`"_end[];" > `(echo $(CURBIN) | tr . _)`.h
 	echo "extern const u8" `(echo $(CURBIN) | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`"[];" >> `(echo $(CURBIN) | tr . _)`.h
 	echo "extern const u32" `(echo $(CURBIN) | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`_size";" >> `(echo $(CURBIN) | tr . _)`.h
-	C:\\devkitPro\\tools\\bin\\picasso -o $(CURBIN) $1
-	C:\\devkitPro\\tools\\bin\\bin2s $(CURBIN) | $(AS) -o $*.shbin.o
+	picasso -o $(CURBIN) $1
+	bin2s $(CURBIN) | $(AS) -o $*.shbin.o
 endef
 
 %.shbin.o %_shbin.h : %.v.pica %.g.pica
