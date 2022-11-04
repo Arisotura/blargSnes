@@ -664,7 +664,7 @@ int main()
 	osSetSpeedupEnable(true);
 	
 	//aptOpenSession();
-	APT_SetAppCpuTimeLimit(30); // enables syscore usage
+	APT_SetAppCpuTimeLimit(70); // enables syscore usage
 	//aptCloseSession();
 
 	gfxInitDefault();
