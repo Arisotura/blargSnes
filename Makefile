@@ -42,14 +42,15 @@ GRAPHICS	:=	gfx
 GFXBUILD	:=	$(BUILD)
 #ROMFS		:=	romfs
 #GFXBUILD	:=	$(ROMFS)/gfx
-
+#https://github.com/RetroGamer02/libctru
+CTRULIB		:=	$(CURDIR)/libctru
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 
-CFLAGS	:=	-g -Wall -O2 -mword-relocations \
-			-fomit-frame-pointer -ffunction-sections \
+CFLAGS	:=	-g -Wall -O3 -mword-relocations \
+			-fomit-frame-pointer -ffunction-sections  \
 			$(ARCH)
 
 CFLAGS	+=	$(INCLUDE) -D__3DS__ -DBLARGSNES_VERSION="\"$(BLARG_VERSION)\""
